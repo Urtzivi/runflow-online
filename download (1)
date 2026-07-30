@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#126f60">
+  <title>RunFlow Athlete</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+  <header class="topbar"><div class="topbar-inner"><div class="brand"><div class="logo">RF</div><div><strong>RunFlow Athlete</strong><small>Tu semana con contexto</small></div></div><div class="user-actions"><button id="coachButton" class="btn soft small hidden" type="button">Vista coach</button><button id="logout" class="btn secondary small" type="button">Salir</button></div></div></header>
+  <main class="shell athlete-mobile">
+    <div class="athlete-header"><div><p class="eyebrow">Semana actual</p><h1 id="hello">Hola</h1><p id="weekDates" class="muted"></p></div><span id="weekBadge" class="badge">Publicada</span></div>
+    <div id="athleteMessage" class="notice hidden"></div>
+
+    <section class="hero">
+      <div class="gauge"><div><strong id="score">—</strong><small>estado</small></div></div>
+      <div><p class="eyebrow" style="color:#bfe8df">Estado para entrenar</p><h2 id="scoreLabel">Sin datos suficientes</h2><p id="scoreText">La aplicación explicará la carga y la recuperación de forma clara.</p></div>
+      <div class="goal-count"><strong id="days">—</strong><span>días para</span><b id="mainGoal">objetivo</b></div>
+    </section>
+
+    <section class="card" style="margin-top:16px">
+      <div class="card-head"><div><h2 id="weekTitle">Objetivo de la semana</h2><p id="weekType">Planificación</p></div></div>
+      <div class="card-body"><p id="weekComment" style="line-height:1.6;margin-bottom:0"></p></div>
+    </section>
+
+    <div class="grid grid-4" style="margin-top:16px">
+      <article class="metric"><span>Aptitud</span><strong id="fitness">—</strong><small>Capacidad acumulada</small></article>
+      <article class="metric"><span>Fatiga</span><strong id="fatigue">—</strong><small>Carga reciente</small></article>
+      <article class="metric"><span>Forma</span><strong id="form">—</strong><small>Balance actual</small></article>
+      <article class="metric"><span>Carga semanal</span><strong id="load">—</strong><small id="planned">Programada: —</small></article>
+    </div>
+
+    <section class="card" style="margin-top:16px">
+      <div class="card-head"><div><h2>Sesiones programadas</h2><p>Respeta la intención de cada día y no añadas carga por tu cuenta.</p></div></div>
+      <div class="card-body"><div id="athleteWeek" class="athlete-week"></div></div>
+    </section>
+
+    <section class="card" style="margin-top:16px">
+      <div class="card-head"><div><h2>Próximos objetivos</h2><p>La planificación tiene en cuenta cuánto falta para cada uno.</p></div></div>
+      <div class="card-body"><div id="athleteGoals" class="goal-list"></div></div>
+    </section>
+  </main>
+
+  <div id="sessionDetail" class="modal-backdrop hidden">
+    <div class="modal">
+      <div class="modal-head"><div><p class="eyebrow">Sesión programada</p><h2 id="detailTitle"></h2></div><button id="closeDetail" class="btn secondary" type="button">Cerrar</button></div>
+      <div class="modal-body"><p id="detailSummary" style="line-height:1.6"></p><pre id="detailStructured" style="white-space:pre-wrap;background:var(--surface-2);border:1px solid var(--line);padding:14px;border-radius:14px;line-height:1.5"></pre><button id="openLog" class="btn primary" type="button" style="width:100%;margin-top:14px">Registrar cómo ha ido</button></div>
+    </div>
+  </div>
+
+  <div id="logModal" class="modal-backdrop hidden">
+    <div class="modal">
+      <div class="modal-head"><div><p class="eyebrow">Después de entrenar</p><h2>Registrar sesión</h2></div><button id="closeLog" class="btn secondary" type="button">Cerrar</button></div>
+      <div class="modal-body">
+        <label>Resultado<select id="logStatus"><option value="completed">Completada</option><option value="partial">Parcial</option><option value="skipped">No realizada</option></select></label>
+        <div class="field-row-3" style="margin-top:12px"><label>Duración (min)<input id="logDuration" type="number" min="0"></label><label>RPE (1–10)<input id="logRpe" type="number" min="1" max="10"></label><label>Dolor (0–10)<input id="logPain" type="number" min="0" max="10"></label></div>
+        <label style="margin-top:12px">Comentario<textarea id="logComment" placeholder="Sensaciones, molestias, interrupciones…"></textarea></label>
+        <button id="saveLog" class="btn primary" type="button" style="width:100%;margin-top:14px">Guardar registro</button>
+      </div>
+    </div>
+  </div>
+  <script src="/js/athlete.js"></script>
+<script src="/js/register-sw.js"></script></body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "name": "runflow-online-pilot",
+  "version": "1.1.0",
+  "private": true,
+  "description": "RunFlow Online Pilot: web privada del coach y API compartida para la app de deportistas.",
+  "engines": {
+    "node": ">=20 <27"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "demo": "DEMO_MODE=1 node server.js",
+    "bootstrap": "node scripts/bootstrap-pilot.mjs",
+    "check": "node --check server.js && node --check launcher.js",
+    "verify:online": "node scripts/check-online.mjs"
+  }
+}
