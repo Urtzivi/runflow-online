@@ -52,7 +52,7 @@
 
         <div class="layout">
           <section class="card">
-            <div class="card-head"><div><h2>Semana en curso</h2><p>Vista rápida de lo que recibirá el deportista.</p></div><button class="btn soft" data-go="week" type="button">Editar semana</button></div>
+            <div class="card-head"><div><h2>Semana seleccionada</h2><p id="summaryWeekLabel">Vista rápida de lo que recibirá el deportista.</p></div><button class="btn soft" data-go="week" type="button">Editar semana</button></div>
             <div class="card-body"><div id="weekStrip" class="week-strip"></div></div>
           </section>
           <aside class="stack">
@@ -74,6 +74,14 @@
         <section class="card">
           <div class="card-head"><div><h2>Planificación semanal</h2><p>Crea las siete sesiones y publica la semana cuando esté lista.</p></div><span id="weekConnectionBadge" class="badge pending">Intervals pendiente</span></div>
           <div class="card-body">
+            <div class="actions" style="justify-content:space-between;margin-bottom:14px;gap:8px;flex-wrap:wrap">
+              <div class="actions" style="gap:8px;flex-wrap:wrap">
+                <button id="previousWeek" class="btn secondary small" type="button">← Semana anterior</button>
+                <button id="currentWeek" class="btn soft small" type="button">Semana actual</button>
+                <button id="nextWeek" class="btn secondary small" type="button">Semana siguiente →</button>
+              </div>
+              <span id="selectedWeekLabel" class="badge pending">Cargando semana…</span>
+            </div>
             <div class="field-row-3">
               <label>Inicio de semana<input id="weekStart" type="date"></label>
               <label>Tipo de semana<select id="weekType"><option>Carga controlada</option><option>Construcción</option><option>Descarga</option><option>Afinamiento</option><option>Competición</option><option>Adaptación</option></select></label>
