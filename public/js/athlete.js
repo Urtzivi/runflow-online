@@ -5,7 +5,7 @@ const dayNames = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 async function api(url, options = {}) {
   const response = await fetch(url, { ...options, headers: { 'Content-Type': 'application/json', ...(options.headers || {}) } });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) { if (response.status === 401) location.href = '/login'; throw new Error(data.error || 'No se pudo completar la operación.'); }
+  if (!response.ok) { if (response.status === 401) location.href = localStorage.getItem('runflow_client') === 'athlete' ? '/login?mode=athlete' : '/login'; throw new Error(data.error || 'No se pudo completar la operación.'); }
   return data;
 }
 function escapeHtml(value) { return String(value ?? '').replace(/[&<>'"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;' }[c])); }
@@ -19,7 +19,7 @@ function goalCard(goal) { return `<article class="goal"><div class="goal-days"><
 function render() {
   const athlete=state.athlete, metrics=athlete.metrics||{}, week=athlete.week;
   $('hello').textContent=`Hola, ${athlete.display_name}`;
-  $('coachButton').classList.toggle('hidden', !state.user.roles.includes('coach'));
+  $('coachButton').classList.toggle('hidden', localStorage.getItem('runflow_client') === 'athlete' || !state.user.roles.includes('coach'));
   if(!week){ $('weekBadge').textContent='Sin publicar'; $('weekBadge').className='badge pending'; $('weekComment').textContent='Tu entrenador todavía no ha publicado esta semana.'; return; }
   const end=new Date(`${week.week_start}T12:00:00`); end.setDate(end.getDate()+6);
   $('weekDates').textContent=`${dateLabel(week.week_start)} – ${new Intl.DateTimeFormat('es-ES',{day:'numeric',month:'short'}).format(end)}`;
@@ -36,7 +36,7 @@ function render() {
 function openWorkout(id){ const w=state.athlete.week.workouts.find(item=>item.id===id); state.selectedWorkout=w; $('detailTitle').textContent=w.title; $('detailSummary').textContent=w.summary||''; $('detailStructured').textContent=w.structured_description||w.summary||'Sin estructura adicional.'; $('sessionDetail').classList.remove('hidden'); }
 
 async function init(){ try{ const me=await api('/api/auth/me'); state.user=me.user; if(!state.user.roles.includes('athlete')) return location.href='/coach'; const data=await api('/api/athlete/dashboard'); state.athlete=data.athlete; render(); }catch(error){ message(error.message,'error'); } }
-$('logout').addEventListener('click',async()=>{await api('/api/auth/logout',{method:'POST'});location.href='/login';});
+$('logout').addEventListener('click',async()=>{await api('/api/auth/logout',{method:'POST'});location.href=localStorage.getItem('runflow_client')==='athlete'?'/login?mode=athlete':'/login';});
 $('coachButton').addEventListener('click',()=>location.href='/coach');
 $('closeDetail').addEventListener('click',()=>$('sessionDetail').classList.add('hidden'));
 $('sessionDetail').addEventListener('click',e=>{if(e.target===$('sessionDetail'))$('sessionDetail').classList.add('hidden');});
