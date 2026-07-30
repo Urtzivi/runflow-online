@@ -1,0 +1,5 @@
+const $ = id => document.getElementById(id);
+function show(text, type=''){const el=$('message');el.textContent=text;el.className=`notice ${type}`;el.classList.remove('hidden');}
+async function json(url, options={}){const r=await fetch(url,{...options,headers:{'Content-Type':'application/json',...(options.headers||{})}});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'No se pudo activar la cuenta.');return d;}
+const hash=new URLSearchParams(location.hash.slice(1));const token=hash.get('access_token');
+$('activate').addEventListener('click',async()=>{const password=$('password').value;if(password.length<8)return show('La contraseña debe tener al menos 8 caracteres.','error');if(password!==$('repeat').value)return show('Las contraseñas no coinciden.','error');if(!token)return show('La invitación no es válida o ha caducado.','error');$('activate').disabled=true;try{await json('/api/auth/accept-invite',{method:'POST',body:JSON.stringify({access_token:token,password})});show('Cuenta activada. Ya puedes abrir la APK e iniciar sesión.','success');}catch(e){show(e.message,'error');}finally{$('activate').disabled=false;}});
