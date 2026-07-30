@@ -793,7 +793,7 @@ async function syncWeekToIntervals(athleteId, week) {
   if (DEMO_MODE) return { demo: true, exported: week.workouts.length };
   const apiKey = await getIntervalsKey(athleteId);
   if (!apiKey) return { skipped: true, reason: 'Intervals pendiente de conectar.' };
-  const events = week.workouts.filter(item => item.sport !== 'Strength').map(item => ({
+  const events = week.workouts.filter(item => !['Strength', 'Rest'].includes(item.sport)).map(item => ({
     category: 'WORKOUT',
     start_date_local: `${item.workout_date}T00:00:00`,
     type: item.sport || 'Run',
