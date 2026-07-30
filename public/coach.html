@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#126f60">
+  <title>RunFlow Coach · Online Pilot 1.1</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand"><div class="logo">RF</div><div><strong>RunFlow Coach</strong><small>Gestión privada de deportistas</small></div></div>
+      <div class="user-actions"><span id="modeBadge" class="badge">Cargando…</span><span id="userChip" class="user-chip"></span><button id="logout" class="btn secondary small" type="button">Salir</button></div>
+    </div>
+  </header>
+
+  <main class="shell">
+    <div class="page-head">
+      <div><p class="eyebrow">Centro de entrenamiento</p><h1>Planificar con contexto</h1><p>Selecciona un deportista, prepara su semana y publícala en su app.</p></div>
+      <div class="athlete-picker"><label>Deportista<select id="athleteSelect"></select></label><button id="newAthlete" class="btn primary" type="button">+ Nuevo deportista</button></div>
+    </div>
+
+    <div id="globalMessage" class="notice hidden"></div>
+
+    <nav class="tabs" aria-label="Secciones del coach">
+      <button class="tab active" data-view="summary">Resumen</button>
+      <button class="tab" data-view="week">Planificar semana</button>
+      <button class="tab" data-view="activities">Actividades</button>
+      <button class="tab" data-view="recovery">Recuperación</button>
+      <button class="tab" data-view="profile">Ficha y zonas</button>
+      <button class="tab" data-view="goals">Objetivos</button>
+      <button class="tab" data-view="connections">Conexiones</button>
+    </nav>
+
+    <section id="summaryView" class="view active" style="margin-top:18px">
+      <div class="stack">
+        <section class="hero">
+          <div class="gauge"><div><strong id="readinessScore">—</strong><small>estado</small></div></div>
+          <div><p class="eyebrow" style="color:#bfe8df">Disposición para entrenar</p><h2 id="readinessLabel">Sin datos suficientes</h2><p id="readinessText">La nota combina carga, forma y recuperación. El entrenador mantiene siempre la decisión final.</p></div>
+          <div class="goal-count"><strong id="goalDays">—</strong><span>días para</span><b id="goalName">objetivo principal</b></div>
+        </section>
+
+        <div class="grid grid-4">
+          <article class="metric"><span>Aptitud</span><strong id="fitness">—</strong><small>Capacidad acumulada</small></article>
+          <article class="metric"><span>Fatiga</span><strong id="fatigue">—</strong><small>Carga aguda</small></article>
+          <article class="metric"><span>Forma</span><strong id="form">—</strong><small>Balance de carga</small></article>
+          <article class="metric"><span>Carga semanal</span><strong id="weekLoad">—</strong><small id="plannedLoadText">Programada: —</small></article>
+        </div>
+
+        <div class="layout">
+          <section class="card">
+            <div class="card-head"><div><h2>Semana en curso</h2><p>Vista rápida de lo que recibirá el deportista.</p></div><button class="btn soft" data-go="week" type="button">Editar semana</button></div>
+            <div class="card-body"><div id="weekStrip" class="week-strip"></div></div>
+          </section>
+          <aside class="stack">
+            <section class="card">
+              <div class="card-head"><div><h2>Objetivo de la semana</h2><p id="weekTypeLabel">Sin definir</p></div><span id="weekStatus" class="badge pending">Borrador</span></div>
+              <div class="card-body"><h3 id="weekTitlePreview">Pendiente de planificación</h3><p id="weekCommentPreview" class="muted">Escribe un comentario que explique la intención de la semana.</p></div>
+            </section>
+            <section class="card">
+              <div class="card-head"><div><h2>Próximos objetivos</h2><p>Principal y secundarios.</p></div><button class="btn secondary small" data-go="goals" type="button">Gestionar</button></div>
+              <div class="card-body"><div id="goalPreview" class="goal-list"></div></div>
+            </section>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <section id="weekView" class="view" style="margin-top:18px">
+      <div class="layout">
+        <section class="card">
+          <div class="card-head"><div><h2>Planificación semanal</h2><p>Crea las siete sesiones y publica la semana cuando esté lista.</p></div><span id="weekConnectionBadge" class="badge pending">Intervals pendiente</span></div>
+          <div class="card-body">
+            <div class="field-row-3">
+              <label>Inicio de semana<input id="weekStart" type="date"></label>
+              <label>Tipo de semana<select id="weekType"><option>Carga controlada</option><option>Construcción</option><option>Descarga</option><option>Afinamiento</option><option>Competición</option><option>Adaptación</option></select></label>
+              <label>Carga objetivo<input id="targetLoad" type="number" min="0"></label>
+            </div>
+            <label style="margin-top:13px">Objetivo de la semana<input id="weekTitle" placeholder="Ej.: consolidar el umbral sin acumular fatiga"></label>
+            <label style="margin-top:13px">Comentario para el deportista<textarea id="weekComment" placeholder="Explica qué buscamos y qué no debe añadir por su cuenta."></textarea></label>
+            <div class="card-head" style="padding-left:0;padding-right:0;margin-top:8px"><div><h2>Sesiones</h2><p>Puedes editar el resumen y abrir el constructor de cada día.</p></div><button id="fillWeek" class="btn secondary small" type="button">Rellenar semana básica</button></div>
+            <div id="sessionEditor" class="session-editor"></div>
+            <div class="actions" style="margin-top:18px">
+              <button id="saveWeek" class="btn secondary" type="button">Guardar borrador</button>
+              <button id="publishWeek" class="btn primary" type="button">Publicar semana</button>
+              <span id="saveWeekStatus" class="muted small"></span>
+            </div>
+          </div>
+        </section>
+        <aside class="stack">
+          <section class="card">
+            <div class="card-head"><div><h2>Qué ocurre al publicar</h2><p>Un único botón actualiza todos los destinos.</p></div></div>
+            <div class="card-body">
+              <div class="stack small">
+                <div class="form-section"><strong>1. App del deportista</strong><p class="muted" style="margin:5px 0 0">La semana, el comentario y los objetivos quedan visibles.</p></div>
+                <div class="form-section"><strong>2. Intervals.icu</strong><p class="muted" style="margin:5px 0 0">Si está conectado, se envían las sesiones estructuradas.</p></div>
+                <div class="form-section"><strong>3. Reloj</strong><p class="muted" style="margin:5px 0 0">Intervals sincroniza con Garmin, Suunto o COROS.</p></div>
+              </div>
+            </div>
+          </section>
+        </aside>
+      </div>
+    </section>
+
+
+    <section id="activitiesView" class="view" style="margin-top:18px">
+      <div class="stack">
+        <section class="card">
+          <div class="card-head"><div><h2>Actividades realizadas</h2><p>Sincroniza las sesiones desde Intervals.icu y revisa cada actividad con su análisis.</p></div><span id="activityCount" class="badge pending">0 actividades</span></div>
+          <div class="card-body">
+            <div class="field-row-3">
+              <label>Desde<input id="activityOldest" type="date"></label>
+              <label>Hasta<input id="activityNewest" type="date"></label>
+              <button id="syncActivities" class="btn primary align-end" type="button">Actualizar desde Intervals</button>
+            </div>
+            <p id="activitiesStatus" class="muted small" style="margin:12px 0 0"></p>
+          </div>
+        </section>
+
+        <div class="activity-layout">
+          <section class="card">
+            <div class="card-head"><div><h2>Historial</h2><p>Selecciona una sesión para ver el detalle.</p></div></div>
+            <div class="card-body"><div id="activityList" class="activity-list"><div class="empty-state">Todavía no se han cargado actividades.</div></div></div>
+          </section>
+          <section class="card">
+            <div id="activityPlaceholder" class="empty-detail">Selecciona una actividad para revisar métricas, intervalos y análisis.</div>
+            <div id="activityDetail" class="card-body hidden">
+              <div class="activity-title-row"><div><p id="activityDate" class="eyebrow"></p><h2 id="activityName">Actividad</h2><p id="activitySport" class="muted"></p></div><span id="activityLoadBadge" class="badge">Carga —</span></div>
+              <div class="grid grid-4" style="margin-top:16px">
+                <article class="metric"><span>Duración</span><strong id="activityDuration">—</strong><small>Tiempo en movimiento</small></article>
+                <article class="metric"><span>Distancia</span><strong id="activityDistance">—</strong><small>Recorrido total</small></article>
+                <article class="metric"><span>Ritmo medio</span><strong id="activityPace">—</strong><small>min/km</small></article>
+                <article class="metric"><span>Pulso</span><strong id="activityHr">—</strong><small>media / máxima</small></article>
+              </div>
+
+              <div class="form-section" style="margin-top:18px">
+                <div class="card-head compact"><div><h3>Intervalos detectados</h3><p>Datos recibidos desde Intervals.icu.</p></div></div>
+                <div class="table-wrap"><table><thead><tr><th>#</th><th>Tipo</th><th>Duración</th><th>Distancia</th><th>Ritmo</th><th>FC media</th><th>FC máx.</th></tr></thead><tbody id="intervalRows"></tbody></table></div>
+              </div>
+
+              <div class="analysis-shell">
+                <div class="card-head compact"><div><p class="eyebrow">Revisión de la sesión</p><h2>Análisis del entrenamiento</h2><p>Compara lo programado, lo realizado y el estado previo del deportista.</p></div><button id="analyzeActivity" class="btn primary" type="button">Analizar con IA</button></div>
+                <div id="analysisSummary" class="analysis-empty">Pulsa «Analizar con IA» para generar una valoración estructurada. Si OpenAI no está configurado, RunFlow mostrará un preanálisis por reglas.</div>
+                <label style="margin-top:14px">Contexto adicional del coach<textarea id="analysisContext" placeholder="Dolor, calor, terreno, interrupciones, sensaciones comunicadas por el deportista…"></textarea></label>
+              </div>
+
+              <div class="form-section" style="margin-top:18px">
+                <h3>Decisión del entrenador</h3>
+                <div class="field-row">
+                  <label>Valoración<select id="coachDecision"><option value="">Sin decidir</option><option value="maintain">Mantener carga</option><option value="progress">Progresar</option><option value="reduce">Reducir carga</option><option value="recover">Priorizar recuperación</option><option value="pain_review">Revisar dolor</option></select></label>
+                  <label>Estado del análisis<input id="analysisState" value="Pendiente" readonly></label>
+                </div>
+                <label style="margin-top:12px">Comentario del coach<textarea id="coachReviewComment" placeholder="Tu interpretación y la decisión que aplicarás en la planificación."></textarea></label>
+                <button id="saveActivityReview" class="btn secondary" type="button" style="margin-top:12px">Guardar revisión</button>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>
+
+    <section id="recoveryView" class="view" style="margin-top:18px">
+      <div class="stack">
+        <section class="card">
+          <div class="card-head"><div><h2>Recuperación y descanso</h2><p>Sueño, HRV y frecuencia cardiaca en reposo recibidos desde Intervals.icu.</p></div><span id="recoveryDays" class="badge pending">0 días</span></div>
+          <div class="card-body">
+            <div class="field-row-3">
+              <label>Desde<input id="recoveryOldest" type="date"></label>
+              <label>Hasta<input id="recoveryNewest" type="date"></label>
+              <button id="syncRecovery" class="btn primary align-end" type="button">Actualizar recuperación</button>
+            </div>
+            <p id="recoveryStatus" class="muted small" style="margin:12px 0 0"></p>
+          </div>
+        </section>
+
+        <section class="recovery-hero">
+          <div class="gauge small-gauge"><div><strong id="recoveryScore">—</strong><small>estado</small></div></div>
+          <div><p class="eyebrow" style="color:#bfe8df">Disposición del último día</p><h2 id="recoveryLabel">Sin datos</h2><p id="recoveryExplanation">Actualiza los datos para comparar el último registro con la línea base individual.</p></div>
+        </section>
+
+        <div class="grid grid-4">
+          <article class="metric"><span>Sueño</span><strong id="recoverySleep">—</strong><small id="recoverySleepBase">Media 21 días: —</small></article>
+          <article class="metric"><span>FC reposo</span><strong id="recoveryRhr">—</strong><small id="recoveryRhrBase">Media 21 días: —</small></article>
+          <article class="metric"><span>HRV</span><strong id="recoveryHrv">—</strong><small id="recoveryHrvBase">Media 21 días: —</small></article>
+          <article class="metric"><span>Forma</span><strong id="recoveryForm">—</strong><small>Aptitud − fatiga</small></article>
+        </div>
+
+        <div class="grid grid-3">
+          <section class="chart-panel"><h3>Sueño</h3><svg id="sleepChart" viewBox="0 0 360 160" role="img" aria-label="Evolución del sueño"></svg></section>
+          <section class="chart-panel"><h3>FC en reposo</h3><svg id="rhrChart" viewBox="0 0 360 160" role="img" aria-label="Evolución de la frecuencia cardiaca en reposo"></svg></section>
+          <section class="chart-panel"><h3>HRV</h3><svg id="hrvChart" viewBox="0 0 360 160" role="img" aria-label="Evolución de la HRV"></svg></section>
+        </div>
+
+        <section class="card">
+          <div class="card-head"><div><h2>Histórico diario</h2><p>Últimos registros disponibles.</p></div></div>
+          <div class="card-body"><div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Sueño</th><th>FC reposo</th><th>HRV</th><th>Aptitud</th><th>Fatiga</th><th>Forma</th><th>Estado</th></tr></thead><tbody id="recoveryRows"></tbody></table></div></div>
+        </section>
+      </div>
+    </section>
+
+    <section id="profileView" class="view" style="margin-top:18px">
+      <div class="layout">
+        <section class="card">
+          <div class="card-head"><div><h2>Ficha del deportista</h2><p>Se puede completar progresivamente, incluso antes de conectar Intervals.</p></div><span id="profileProgress" class="badge">0% completa</span></div>
+          <div class="card-body">
+            <div class="form-section">
+              <h3>Datos básicos</h3>
+              <div class="field-row"><label>Nombre<input id="displayName"></label><label>Correo<input id="athleteEmail" type="email"></label></div>
+              <div class="field-row-3" style="margin-top:12px"><label>Fecha de nacimiento<input id="birthDate" type="date"></label><label>Sexo<select id="sex"><option value="">Sin indicar</option><option value="M">Hombre</option><option value="F">Mujer</option><option value="X">Otro / no binario</option></select></label><label>Teléfono<input id="phone"></label></div>
+              <div class="field-row" style="margin-top:12px"><label>Peso (kg)<input id="weight" type="number" step="0.1"></label><label>Altura (cm)<input id="height" type="number" step="0.1"></label></div>
+            </div>
+            <div class="form-section">
+              <h3>Experiencia y disponibilidad</h3>
+              <div class="field-row-3"><label>Nivel<input id="level" placeholder="Inicial, intermedio, avanzado"></label><label>Años de experiencia<input id="experience" type="number" step="0.5"></label><label>Sesiones semanales<input id="weeklySessions" type="number"></label></div>
+              <div class="field-row" style="margin-top:12px"><label>Kilómetros actuales<input id="weeklyKm" type="number" step="0.1"></label><label>Horas actuales<input id="weeklyHours" type="number" step="0.1"></label></div>
+              <label style="margin-top:12px">Disponibilidad<textarea id="availability" placeholder="Días disponibles, tiempo entre semana, fin de semana, preferencias…"></textarea></label>
+              <label style="margin-top:12px">Restricciones laborales o familiares<textarea id="restrictions"></textarea></label>
+            </div>
+            <div class="form-section">
+              <h3>Salud y objetivos</h3>
+              <label>Historial de lesiones<textarea id="injuryHistory"></textarea></label>
+              <label style="margin-top:12px">Molestias actuales<textarea id="currentIssues"></textarea></label>
+              <label style="margin-top:12px">Objetivo general<textarea id="objective"></textarea></label>
+              <label style="margin-top:12px">Notas internas del coach<textarea id="coachNotes"></textarea></label>
+            </div>
+            <div class="actions" style="margin-top:18px"><button id="saveProfile" class="btn primary" type="button">Guardar ficha</button><span id="profileStatus" class="muted small"></span></div>
+          </div>
+        </section>
+
+        <aside class="stack">
+          <section class="card">
+            <div class="card-head"><div><h2>Zonas de pulso</h2><p>Introducción manual.</p></div><button id="addHrZone" class="btn secondary small" type="button">+ Zona</button></div>
+            <div class="card-body"><div id="hrZones" class="zone-table"></div></div>
+          </section>
+          <section class="card">
+            <div class="card-head"><div><h2>Zonas de ritmo</h2><p>Ritmo lento y rápido en min/km.</p></div><button id="addPaceZone" class="btn secondary small" type="button">+ Zona</button></div>
+            <div class="card-body"><div id="paceZones" class="zone-table"></div><button id="saveZones" class="btn primary" type="button" style="margin-top:15px;width:100%">Guardar zonas</button></div>
+          </section>
+        </aside>
+      </div>
+    </section>
+
+    <section id="goalsView" class="view" style="margin-top:18px">
+      <div class="layout">
+        <section class="card">
+          <div class="card-head"><div><h2>Objetivos deportivos</h2><p>La cuenta atrás será visible en la app y en la planificación.</p></div></div>
+          <div class="card-body"><div id="goalList" class="goal-list"></div></div>
+        </section>
+        <aside class="card">
+          <div class="card-head"><div><h2>Nuevo objetivo</h2><p>Principal o secundario.</p></div></div>
+          <div class="card-body">
+            <label>Nombre<input id="goalInputName"></label>
+            <div class="field-row" style="margin-top:12px"><label>Fecha<input id="goalInputDate" type="date"></label><label>Prioridad<select id="goalInputPriority"><option>Principal</option><option>Secundario</option></select></label></div>
+            <div class="field-row" style="margin-top:12px"><label>Distancia (km)<input id="goalDistance" type="number" step="0.1"></label><label>Desnivel (m+)<input id="goalElevation" type="number"></label></div>
+            <label style="margin-top:12px">Objetivo de rendimiento<input id="goalPerformance"></label>
+            <button id="addGoal" class="btn primary" type="button" style="margin-top:15px;width:100%">Añadir objetivo</button>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section id="connectionsView" class="view" style="margin-top:18px">
+      <div class="layout">
+        <section class="stack">
+          <article class="card">
+            <div class="card-head"><div><h2>Acceso a la app</h2><p>El perfil se crea primero aquí. Después puedes enviar al deportista su acceso a la APK.</p></div><span id="appAccessBadge" class="badge pending">Sin acceso</span></div>
+            <div class="card-body">
+              <p id="appAccessText" class="muted">Todavía no se ha creado el acceso del deportista.</p>
+              <button id="inviteAthlete" class="btn primary" type="button">Enviar acceso a la app</button>
+              <p id="inviteHint" class="muted small" style="margin-top:10px"></p>
+            </div>
+          </article>
+          <article class="card">
+          <div class="card-head"><div><h2>Intervals.icu</h2><p>Conexión individual para cada deportista durante el piloto.</p></div><span id="intervalsBadge" class="badge pending">Pendiente</span></div>
+          <div class="card-body">
+            <div class="notice">La API key se envía al servidor y se cifra. No se guarda en el navegador ni dentro de la app.</div>
+            <label>API key del deportista<input id="intervalsKey" type="password" autocomplete="off" placeholder="Pegar solo cuando se vaya a conectar"></label>
+            <button id="saveIntervalsKey" class="btn primary" type="button" style="margin-top:14px">Guardar conexión</button>
+          </div>
+          </article>
+        </section>
+        <aside class="card">
+          <div class="card-head"><div><h2>Estado del piloto</h2><p>Servicios compartidos.</p></div></div>
+          <div class="card-body stack">
+            <div class="form-section"><strong>Base de datos</strong><p id="databaseState" class="muted" style="margin:5px 0 0">Comprobando…</p></div>
+            <div class="form-section"><strong>OpenAI</strong><p id="openaiState" class="muted" style="margin:5px 0 0">Comprobando…</p></div>
+            <div class="form-section"><strong>App del deportista</strong><p class="muted" style="margin:5px 0 0">Lista para leer semanas publicadas.</p></div>
+          </div>
+        </aside>
+      </div>
+    </section>
+  </main>
+
+  <div id="athleteModal" class="modal-backdrop hidden">
+    <div class="modal modal-narrow">
+      <div class="modal-head"><div><p class="eyebrow">Alta de deportista</p><h2>Crear nuevo perfil</h2></div><button id="closeAthleteModal" class="btn secondary" type="button">Cerrar</button></div>
+      <div class="modal-body">
+        <div class="notice">Puedes crear la ficha aunque el deportista todavía no tenga Intervals ni acceso a la app.</div>
+        <label>Nombre completo<input id="newAthleteName" placeholder="Nombre y apellidos"></label>
+        <label style="margin-top:12px">Correo electrónico<input id="newAthleteEmail" type="email" placeholder="correo@ejemplo.com"></label>
+        <div class="field-row" style="margin-top:12px"><label>Teléfono<input id="newAthletePhone"></label><label>Estado de Intervals<select id="newAthleteIntervals"><option value="pending">Pendiente</option><option value="disabled">Sin Intervals por ahora</option></select></label></div>
+        <div class="field-row" style="margin-top:12px"><label>Marca del reloj<input id="newAthleteWatchBrand" placeholder="Garmin, Suunto, COROS…"></label><label>Modelo<input id="newAthleteWatchModel"></label></div>
+        <label style="margin-top:12px">Objetivo inicial<textarea id="newAthleteObjective" placeholder="Se puede completar más adelante"></textarea></label>
+        <div class="form-check" style="margin-top:14px"><input id="newAthleteInvite" class="form-check-input" type="checkbox"><label class="form-check-label" for="newAthleteInvite">Preparar también su acceso a la app</label></div>
+        <p class="muted small">En modo demo el acceso se activa con contraseña <code>runflow</code>. En la versión online recibirá una invitación segura.</p>
+        <div class="actions" style="margin-top:18px"><button id="createAthlete" class="btn primary" type="button">Crear deportista</button><span id="createAthleteStatus" class="muted small"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="sessionModal" class="modal-backdrop hidden">
+    <div class="modal">
+      <div class="modal-head"><div><p class="eyebrow">Constructor de sesión</p><h2 id="modalTitle">Editar entrenamiento</h2></div><button id="closeModal" class="btn secondary" type="button">Cerrar</button></div>
+      <div class="modal-body">
+        <div class="field-row"><label>Deporte<select id="modalSport"><option value="Run">Carrera</option><option value="Ride">Ciclismo</option><option value="Strength">Fuerza</option><option value="Rest">Descanso</option></select></label><label>Carga prevista<input id="modalLoad" type="number" min="0"></label></div>
+        <label style="margin-top:12px">Título<input id="modalWorkoutTitle"></label>
+        <label style="margin-top:12px">Resumen visible para el deportista<textarea id="modalSummary"></textarea></label>
+        <div class="form-section" style="margin-top:14px"><h3>Calentamiento</h3><div class="field-row"><label>Duración (min)<input id="warmupMinutes" type="number" min="0"></label><label>Objetivo<input id="warmupTarget" placeholder="Z2 Pace / Z2 HR"></label></div></div>
+        <div class="form-section"><h3>Activación opcional</h3><div class="field-row-3"><label>Repeticiones<input id="activationReps" type="number" min="0"></label><label>Trabajo (s)<input id="activationWork" type="number" min="0"></label><label>Recuperación (s)<input id="activationRecovery" type="number" min="0"></label></div><div class="field-row" style="margin-top:10px"><label>Objetivo trabajo<input id="activationTarget" placeholder="Z4 Pace"></label><label>Objetivo recuperación<input id="activationRecoveryTarget" placeholder="Z1 Pace"></label></div></div>
+        <div class="form-section"><div class="card-head" style="padding:0 0 10px"><div><h3>Bloques centrales</h3></div><button id="addBlock" class="btn secondary small" type="button">+ Bloque</button></div><div id="centralBlocks" class="stack"></div></div>
+        <div class="form-section"><h3>Vuelta a la calma</h3><div class="field-row"><label>Duración (min)<input id="cooldownMinutes" type="number" min="0"></label><label>Objetivo<input id="cooldownTarget" placeholder="Z1 Pace"></label></div></div>
+        <label style="margin-top:14px">Texto estructurado para Intervals<textarea id="structuredDescription" style="min-height:170px"></textarea></label>
+        <div class="actions" style="margin-top:16px"><button id="generateDescription" class="btn secondary" type="button">Generar texto</button><button id="saveSessionModal" class="btn primary" type="button">Guardar sesión</button></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/coach.js"></script>
+<script src="/js/register-sw.js"></script></body>
+</html>
