@@ -1,5 +1,5 @@
 const $ = id => document.getElementById(id);
-const state = { user: null, config: null, athletes: [], athlete: null, editingSession: -1, modalBlocks: [], activities: [], recovery: [], currentActivityId: null, currentActivity: null };
+const state = { user: null, config: null, athletes: [], athlete: null, editingSession: null, modalBlocks: [], activities: [], recovery: [], currentActivityId: null, currentActivity: null, calendar: { month: new Date(new Date().getFullYear(), new Date().getMonth(), 1), weeks: new Map(), selectedWeekStart: isoMonday(), loading: false } };
 const dayNames = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
 async function api(url, options = {}) {
@@ -49,6 +49,11 @@ function daysUntil(dateString) {
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
 }
+function newId() {
+  return globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function'
+    ? globalThis.newId()
+    : `rf-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
 
 function switchView(name) {
   document.querySelectorAll('.tab').forEach(button => button.classList.toggle('active', button.dataset.view === name));
@@ -57,24 +62,17 @@ function switchView(name) {
 }
 
 function ensureWeek() {
-  const weekStart = state.athlete.week?.week_start || isoMonday();
-  const byDate = new Map((state.athlete.week?.workouts || []).map(item => [item.workout_date, item]));
-  const workouts = Array.from({ length: 7 }, (_, index) => {
-    const date = addDays(weekStart, index);
-    return byDate.get(date) || {
-      id: crypto.randomUUID(), workout_date: date, sport: 'Run', title: index === 0 ? 'Descanso' : 'Sesión pendiente', summary: '',
-      structured_description: '', planned_load: 0, blocks: [],
-    };
-  });
+  const source = state.athlete.week || {};
   state.athlete.week = {
-    id: state.athlete.week?.id || null,
-    week_start: weekStart,
-    week_type: state.athlete.week?.week_type || 'Carga controlada',
-    title: state.athlete.week?.title || '',
-    coach_comment: state.athlete.week?.coach_comment || '',
-    target_load: state.athlete.week?.target_load || workouts.reduce((sum, item) => sum + Number(item.planned_load || 0), 0),
-    status: state.athlete.week?.status || 'draft',
-    workouts,
+    id: source.id || null,
+    week_start: source.week_start || isoMonday(),
+    week_type: source.week_type || 'Carga controlada',
+    title: source.title || '',
+    coach_comment: source.coach_comment || '',
+    target_load: Number(source.target_load ?? 0),
+    status: source.status || 'draft',
+    published_at: source.published_at || null,
+    workouts: Array.isArray(source.workouts) ? source.workouts : [],
   };
 }
 
@@ -90,6 +88,7 @@ function readinessCopy(metrics) {
 function renderSummary() {
   const athlete = state.athlete;
   const metrics = athlete.metrics || {};
+  const week = athlete.week || { week_start: isoMonday(), workouts: [], status: 'draft' };
   const goals = [...(athlete.goals || [])].sort((a, b) => String(a.goal_date).localeCompare(String(b.goal_date)));
   const principal = goals.find(goal => goal.priority === 'Principal') || goals[0];
   $('readinessScore').textContent = metrics.readiness_score ?? '—';
@@ -99,22 +98,33 @@ function renderSummary() {
   $('fatigue').textContent = metrics.fatigue ?? '—';
   $('form').textContent = metrics.form ?? '—';
   $('weekLoad').textContent = metrics.week_load ?? 0;
-  $('plannedLoadText').textContent = `Programada: ${metrics.planned_load ?? athlete.week.target_load ?? 0}`;
+  $('plannedLoadText').textContent = `Programada: ${metrics.planned_load ?? week.target_load ?? 0}`;
   $('goalDays').textContent = principal ? daysUntil(principal.goal_date) : '—';
   $('goalName').textContent = principal ? principal.name : 'objetivo principal';
-  $('weekTypeLabel').textContent = athlete.week.week_type || 'Sin definir';
-  $('weekTitlePreview').textContent = athlete.week.title || 'Pendiente de planificación';
-  $('weekCommentPreview').textContent = athlete.week.coach_comment || 'Escribe un comentario que explique la intención de la semana.';
-  $('weekStatus').textContent = athlete.week.status === 'published' ? 'Publicada' : 'Borrador';
-  $('weekStatus').className = `badge ${athlete.week.status === 'published' ? '' : 'pending'}`;
+  $('weekTypeLabel').textContent = week.week_type || 'Sin definir';
+  $('weekTitlePreview').textContent = week.title || 'Pendiente de planificación';
+  $('weekCommentPreview').textContent = week.coach_comment || 'Escribe un comentario que explique la intención de la semana.';
+  $('weekStatus').textContent = week.status === 'published' ? 'Publicada' : 'Borrador';
+  $('weekStatus').className = `badge ${week.status === 'published' ? '' : 'pending'}`;
+  $('summaryWeekLabel').textContent = `${dateLabel(week.week_start)} – ${dateLabel(addDays(week.week_start, 6))}`;
 
   const today = new Date().toISOString().slice(0, 10);
-  $('weekStrip').innerHTML = athlete.week.workouts.map((workout, index) => `
-    <article class="day-card ${workout.workout_date === today ? 'today' : ''}">
-      <span class="day">${dayNames[index]}</span><span class="date">${dateLabel(workout.workout_date)}</span>
-      <h3>${escapeHtml(workout.title)}</h3><p>${escapeHtml(workout.summary || 'Sin indicaciones todavía.')}</p>
-      <span class="load">Carga ${Number(workout.planned_load || 0)}</span>
-    </article>`).join('');
+  const byDate = new Map();
+  (week.workouts || []).forEach(workout => {
+    if (!byDate.has(workout.workout_date)) byDate.set(workout.workout_date, []);
+    byDate.get(workout.workout_date).push(workout);
+  });
+  $('weekStrip').innerHTML = Array.from({ length: 7 }, (_, index) => {
+    const date = addDays(week.week_start, index);
+    const workouts = byDate.get(date) || [];
+    const load = workouts.reduce((sum, item) => sum + Number(item.planned_load || 0), 0);
+    return `<article class="day-card ${date === today ? 'today' : ''}">
+      <span class="day">${dayNames[index]}</span><span class="date">${dateLabel(date)}</span>
+      ${workouts.length ? workouts.map(item => `<h3>${escapeHtml(item.title)}</h3>`).join('') : '<h3>Sin sesión</h3>'}
+      <p>${workouts.length ? escapeHtml(workouts.map(item => item.summary).filter(Boolean).join(' · ') || 'Sesión programada.') : 'Día todavía sin planificar.'}</p>
+      <span class="load">Carga ${load}</span>
+    </article>`;
+  }).join('');
 
   $('goalPreview').innerHTML = goals.length ? goals.slice(0, 3).map(goalCard).join('') : '<p class="muted">Todavía no hay objetivos.</p>';
 }
@@ -127,36 +137,158 @@ function goalCard(goal, removable = false) {
   </article>`;
 }
 
-function renderWeekEditor() {
-  const week = state.athlete.week;
-  $('weekStart').value = week.week_start;
+function parseLocalDate(value) {
+  const [year, month, day] = String(value).slice(0, 10).split('-').map(Number);
+  return new Date(year, (month || 1) - 1, day || 1, 12, 0, 0, 0);
+}
+
+function dateToIso(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function addCalendarDays(date, days) {
+  const result = new Date(date);
+  result.setDate(result.getDate() + days);
+  return result;
+}
+
+function monthCalendarRange(monthDate = state.calendar.month) {
+  const first = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1, 12);
+  const last = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0, 12);
+  const start = parseLocalDate(isoMonday(first));
+  const endMonday = parseLocalDate(isoMonday(last));
+  return { start, end: addCalendarDays(endMonday, 6) };
+}
+
+function emptyCalendarWeek(weekStart) {
+  return {
+    id: null,
+    week_start: weekStart,
+    week_type: 'Carga controlada',
+    title: '',
+    coach_comment: '',
+    target_load: 0,
+    status: 'draft',
+    published_at: null,
+    workouts: [],
+  };
+}
+
+function calendarWeek(weekStart, create = true) {
+  let week = state.calendar.weeks.get(weekStart);
+  if (!week && create) {
+    week = emptyCalendarWeek(weekStart);
+    state.calendar.weeks.set(weekStart, week);
+  }
+  return week || null;
+}
+
+function generatedLoad(week) {
+  return (week?.workouts || []).reduce((sum, item) => sum + Number(item.planned_load || 0), 0);
+}
+
+function workoutVisualClass(workout) {
+  const title = String(workout.title || '').toLowerCase();
+  if (workout.sport === 'Rest') return 'rest';
+  if (workout.sport === 'Strength') return 'strength';
+  if (/tirada|larga|trail/.test(title)) return 'long';
+  if (/umbral|tempo|vo2|serie|interval|calidad|cambio|rápid|rapid/.test(title)) return 'quality';
+  return 'easy';
+}
+
+function selectCalendarWeek(weekStart, rerender = true) {
+  state.calendar.selectedWeekStart = weekStart;
+  localStorage.setItem(`runflow_calendar_week_${state.athlete?.id || 'default'}`, weekStart);
+  const week = calendarWeek(weekStart);
+  $('weekStart').value = weekStart;
   $('weekType').value = week.week_type || 'Carga controlada';
-  $('targetLoad').value = week.target_load || 0;
+  $('targetLoad').value = Number(week.target_load || 0);
   $('weekTitle').value = week.title || '';
   $('weekComment').value = week.coach_comment || '';
+  $('selectedWeekLabel').textContent = `${dateLabel(weekStart)} – ${dateLabel(addDays(weekStart, 6))}`;
+  $('selectedWeekStatus').textContent = week.status === 'published' ? 'Publicada' : 'Borrador';
+  $('selectedWeekStatus').className = `badge ${week.status === 'published' ? '' : 'pending'}`;
+  $('generatedWeekLoad').textContent = generatedLoad(week);
+  $('generatedSessionCount').textContent = (week.workouts || []).length;
+  $('saveWeek').textContent = week.status === 'published' ? 'Guardar cambios' : 'Guardar borrador';
+  $('publishWeek').textContent = week.status === 'published' ? 'Actualizar en la app' : 'Publicar semana';
+  if (rerender) renderCalendar();
+}
+
+function renderWeekEditor() {
+  if (!state.athlete) return;
   $('weekConnectionBadge').textContent = state.athlete.intervals_status === 'connected' ? 'Intervals conectado' : 'Intervals pendiente';
   $('weekConnectionBadge').className = `badge ${state.athlete.intervals_status === 'connected' ? '' : 'pending'}`;
-  renderSessionEditor();
+  renderCalendar();
+}
+
+function renderCalendar() {
+  if (!state.athlete || !$('calendarGrid')) return;
+  const month = state.calendar.month;
+  $('calendarMonthLabel').textContent = new Intl.DateTimeFormat('es-ES', { month: 'long', year: 'numeric' }).format(month).replace(/^./, letter => letter.toUpperCase());
+  const { start, end } = monthCalendarRange(month);
+  const today = new Date().toISOString().slice(0, 10);
+  const cells = [];
+  let cursor = new Date(start);
+  while (cursor <= end) {
+    const weekStart = dateToIso(cursor);
+    const week = calendarWeek(weekStart);
+    const selected = weekStart === state.calendar.selectedWeekStart;
+    for (let index = 0; index < 7; index += 1) {
+      const date = dateToIso(addCalendarDays(cursor, index));
+      const dayDate = parseLocalDate(date);
+      const workouts = (week.workouts || []).filter(item => item.workout_date === date);
+      const dayLoad = workouts.reduce((sum, item) => sum + Number(item.planned_load || 0), 0);
+      cells.push(`<article class="calendar-day ${dayDate.getMonth() !== month.getMonth() ? 'outside' : ''} ${date === today ? 'today' : ''} ${selected ? 'selected-week' : ''}" data-select-week="${weekStart}">
+        <div class="calendar-day-head"><span class="calendar-day-number">${dayDate.getDate()}</span><button class="calendar-add" data-add-date="${date}" type="button" aria-label="Añadir sesión el ${date}">+</button></div>
+        <div class="calendar-sessions">${workouts.map(workout => `<button class="calendar-session ${workoutVisualClass(workout)}" data-session-id="${workout.id}" data-session-week="${weekStart}" type="button"><strong>${escapeHtml(workout.title)}</strong><small><span>${escapeHtml(workout.sport || 'Run')}</span><b>${Number(workout.planned_load || 0)}</b></small></button>`).join('')}</div>
+        <div class="calendar-day-load"><span>${workouts.length} sesión${workouts.length === 1 ? '' : 'es'}</span><b>Carga ${dayLoad}</b></div>
+      </article>`);
+    }
+    const load = generatedLoad(week);
+    const target = Number(week.target_load || 0);
+    const percentage = target > 0 ? Math.round((load / target) * 100) : 0;
+    cells.push(`<button class="calendar-week-summary ${selected ? 'active' : ''}" data-select-week="${weekStart}" type="button">
+      <strong>${dateLabel(weekStart)} – ${dateLabel(addDays(weekStart, 6))}</strong>
+      <span>Programada <b>${load}</b></span><span>Objetivo <b>${target || '—'}</b></span><span>${week.status === 'published' ? 'Publicada' : 'Borrador'}</span>
+      <i><em style="width:${Math.min(100, percentage)}%"></em></i>
+    </button>`);
+    cursor = addCalendarDays(cursor, 7);
+  }
+  $('calendarGrid').innerHTML = cells.join('');
+  $('calendarGrid').querySelectorAll('[data-add-date]').forEach(button => button.addEventListener('click', event => {
+    event.stopPropagation();
+    openSessionModal(null, button.dataset.addDate);
+  }));
+  $('calendarGrid').querySelectorAll('[data-session-id]').forEach(button => button.addEventListener('click', event => {
+    event.stopPropagation();
+    selectCalendarWeek(button.dataset.sessionWeek, false);
+    openSessionModal(button.dataset.sessionId, null);
+  }));
+  $('calendarGrid').querySelectorAll('[data-select-week]').forEach(element => element.addEventListener('click', () => selectCalendarWeek(element.dataset.selectWeek)));
+  selectCalendarWeek(state.calendar.selectedWeekStart, false);
+}
+
+async function loadCalendarMonth() {
+  if (!state.athlete) return;
+  state.calendar.loading = true;
+  $('calendarGrid').innerHTML = '<div class="empty-state calendar-loading">Cargando sesiones…</div>';
+  const { start, end } = monthCalendarRange();
+  const data = await api(`/api/coach/athletes/${state.athlete.id}/calendar?oldest=${dateToIso(start)}&newest=${dateToIso(end)}`);
+  state.calendar.weeks = new Map((data.weeks || []).map(week => [week.week_start, { ...emptyCalendarWeek(week.week_start), ...week, workouts: Array.isArray(week.workouts) ? week.workouts : [] }]));
+  let selected = localStorage.getItem(`runflow_calendar_week_${state.athlete.id}`) || state.calendar.selectedWeekStart || isoMonday();
+  if (parseLocalDate(selected) < start || parseLocalDate(selected) > end) selected = isoMonday(new Date(state.calendar.month.getFullYear(), state.calendar.month.getMonth(), 1, 12));
+  calendarWeek(selected);
+  state.calendar.selectedWeekStart = selected;
+  state.calendar.loading = false;
+  renderCalendar();
 }
 
 function renderSessionEditor() {
-  $('sessionEditor').innerHTML = state.athlete.week.workouts.map((workout, index) => `
-    <div class="session-row" data-session="${index}">
-      <label>${dayNames[index]}<input data-field="workout_date" type="date" value="${workout.workout_date}"></label>
-      <input class="wide" data-field="title" value="${escapeHtml(workout.title)}" aria-label="Título de la sesión">
-      <input class="wide" data-field="summary" value="${escapeHtml(workout.summary || '')}" aria-label="Resumen de la sesión" placeholder="Resumen visible para el deportista">
-      <input data-field="planned_load" type="number" min="0" value="${Number(workout.planned_load || 0)}" aria-label="Carga">
-      <button class="btn soft small" data-edit-session="${index}" type="button">Constructor</button>
-    </div>`).join('');
-  $('sessionEditor').querySelectorAll('[data-field]').forEach(input => input.addEventListener('input', event => {
-    const row = event.target.closest('[data-session]');
-    const index = Number(row.dataset.session);
-    const field = event.target.dataset.field;
-    state.athlete.week.workouts[index][field] = field === 'planned_load' ? Number(event.target.value || 0) : event.target.value;
-    state.athlete.week.target_load = state.athlete.week.workouts.reduce((sum, item) => sum + Number(item.planned_load || 0), 0);
-    $('targetLoad').value = state.athlete.week.target_load;
-  }));
-  $('sessionEditor').querySelectorAll('[data-edit-session]').forEach(button => button.addEventListener('click', () => openSessionModal(Number(button.dataset.editSession))));
+  renderCalendar();
 }
 
 function renderProfile() {
@@ -259,31 +391,68 @@ async function loadAthlete(id) {
   const data = await api(`/api/coach/athletes/${id}?week_start=${isoMonday()}`);
   state.athlete = data.athlete;
   if (!state.athlete.zones) state.athlete.zones = { hr: [], pace: [] };
+  state.calendar.month = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  state.calendar.weeks = new Map();
+  state.calendar.selectedWeekStart = localStorage.getItem(`runflow_calendar_week_${id}`) || isoMonday();
   renderAll();
   resetActivityViews();
-  await Promise.allSettled([loadActivities(false), loadRecovery(false)]);
+  await Promise.allSettled([loadCalendarMonth(), loadActivities(false), loadRecovery(false)]);
 }
 
-function weekPayload(status) {
+function weekPayload(status, weekStart = state.calendar.selectedWeekStart) {
+  const week = calendarWeek(weekStart);
+  if (weekStart === state.calendar.selectedWeekStart) syncWeekStateFromInputs();
   return {
-    week_start: $('weekStart').value || isoMonday(),
-    week_type: $('weekType').value,
-    title: $('weekTitle').value,
-    coach_comment: $('weekComment').value,
-    target_load: Number($('targetLoad').value || 0),
+    week_start: week.week_start,
+    week_type: week.week_type || 'Carga controlada',
+    title: week.title || '',
+    coach_comment: week.coach_comment || '',
+    target_load: Number(week.target_load || 0),
     status,
-    workouts: state.athlete.week.workouts,
+    workouts: week.workouts || [],
   };
 }
 
 function syncWeekStateFromInputs() {
-  state.athlete.week = { ...state.athlete.week, ...weekPayload(state.athlete.week.status) };
+  const week = calendarWeek(state.calendar.selectedWeekStart);
+  week.week_type = $('weekType').value;
+  week.title = $('weekTitle').value;
+  week.coach_comment = $('weekComment').value;
+  week.target_load = Number($('targetLoad').value || 0);
+  return week;
 }
 
-function openSessionModal(index) {
-  state.editingSession = index;
-  const workout = state.athlete.week.workouts[index];
-  $('modalTitle').textContent = `${dayNames[index]} · ${dateLabel(workout.workout_date)}`;
+async function persistCalendarWeek(weekStart, publish = false, quiet = false) {
+  if (weekStart === state.calendar.selectedWeekStart) syncWeekStateFromInputs();
+  const week = calendarWeek(weekStart);
+  const shouldPublish = publish || week.status === 'published';
+  const endpoint = shouldPublish ? `/api/coach/athletes/${state.athlete.id}/week/publish` : `/api/coach/athletes/${state.athlete.id}/week`;
+  const data = await api(endpoint, { method: shouldPublish ? 'POST' : 'PUT', body: JSON.stringify(weekPayload(shouldPublish ? 'published' : 'draft', weekStart)) });
+  state.calendar.weeks.set(weekStart, { ...emptyCalendarWeek(weekStart), ...data.week, workouts: Array.isArray(data.week.workouts) ? data.week.workouts : [] });
+  if (weekStart === isoMonday()) {
+    state.athlete.week = state.calendar.weeks.get(weekStart);
+    renderSummary();
+  }
+  if (!quiet) {
+    const extra = data.intervals?.skipped ? ` ${data.intervals.reason}` : (shouldPublish ? ` Se han preparado ${data.intervals?.exported ?? 0} sesiones para Intervals.` : '');
+    showMessage(`${shouldPublish ? 'Semana publicada.' : 'Semana guardada.'}${extra}`, 'success');
+  }
+  renderCalendar();
+  return data;
+}
+
+function openSessionModal(workoutId = null, date = null) {
+  const targetDate = date || state.calendar.selectedWeekStart;
+  const weekStart = isoMonday(parseLocalDate(targetDate));
+  selectCalendarWeek(weekStart, false);
+  const week = calendarWeek(weekStart);
+  const existing = workoutId ? (week.workouts || []).find(item => String(item.id) === String(workoutId)) : null;
+  const workout = existing ? { ...existing, blocks: Array.isArray(existing.blocks) ? existing.blocks : [] } : {
+    id: newId(), workout_date: date || weekStart, sport: 'Run', title: '', summary: '', structured_description: '', planned_load: 0, blocks: [],
+  };
+  state.editingSession = { weekStart, workoutId: existing ? existing.id : null, draft: workout };
+  $('modalTitle').textContent = existing ? `Editar · ${dateLabel(workout.workout_date)}` : `Nueva sesión · ${dateLabel(workout.workout_date)}`;
+  $('modalWorkoutDate').value = workout.workout_date;
   $('modalSport').value = workout.sport || 'Run';
   $('modalLoad').value = workout.planned_load || 0;
   $('modalWorkoutTitle').value = workout.title || '';
@@ -303,6 +472,7 @@ function openSessionModal(index) {
   $('activationRecoveryTarget').value = activation.recovery_target || 'Z1 Pace';
   $('cooldownMinutes').value = cooldown.duration_min ?? 10;
   $('cooldownTarget').value = cooldown.target || 'Z1 Pace';
+  $('deleteSessionModal').classList.toggle('hidden', !existing);
   renderCentralBlocks();
   $('sessionModal').classList.remove('hidden');
 }
@@ -442,50 +612,50 @@ $('inviteAthlete').addEventListener('click', async () => {
   }
 });
 
-$('weekStart').addEventListener('change', () => {
-  const start = $('weekStart').value;
-  state.athlete.week.week_start = start;
-  state.athlete.week.workouts.forEach((item, index) => item.workout_date = addDays(start, index));
-  renderSessionEditor();
+$('previousMonth').addEventListener('click', async () => {
+  state.calendar.month = new Date(state.calendar.month.getFullYear(), state.calendar.month.getMonth() - 1, 1);
+  await loadCalendarMonth().catch(error => showMessage(error.message, 'error'));
 });
-$('weekType').addEventListener('change', event => state.athlete.week.week_type = event.target.value);
-$('targetLoad').addEventListener('input', event => state.athlete.week.target_load = Number(event.target.value || 0));
-$('weekTitle').addEventListener('input', event => state.athlete.week.title = event.target.value);
-$('weekComment').addEventListener('input', event => state.athlete.week.coach_comment = event.target.value);
-
-$('fillWeek').addEventListener('click', () => {
-  const start = $('weekStart').value || isoMonday();
-  const template = [
-    ['Rest', 'Descanso', 'Descanso completo o movilidad suave', 0],
-    ['Run', 'Rodaje aeróbico', '45 min cómodos en Z2', 36],
-    ['Strength', 'Fuerza general', '35 min de fuerza técnica', 25],
-    ['Run', 'Sesión de calidad', 'Calentamiento + bloque central + vuelta a la calma', 55],
-    ['Rest', 'Recuperación', 'Descanso o paseo suave', 0],
-    ['Run', 'Rodaje suave', '40 min muy controlados', 30],
-    ['Run', 'Tirada larga', '75 min en terreno cómodo', 60],
-  ];
-  state.athlete.week.workouts = template.map((item, index) => ({ id: crypto.randomUUID(), workout_date: addDays(start, index), sport: item[0], title: item[1], summary: item[2], structured_description: item[2], planned_load: item[3], blocks: [] }));
-  state.athlete.week.target_load = state.athlete.week.workouts.reduce((sum, item) => sum + item.planned_load, 0);
-  $('targetLoad').value = state.athlete.week.target_load;
-  renderSessionEditor();
+$('nextMonth').addEventListener('click', async () => {
+  state.calendar.month = new Date(state.calendar.month.getFullYear(), state.calendar.month.getMonth() + 1, 1);
+  await loadCalendarMonth().catch(error => showMessage(error.message, 'error'));
 });
+$('currentMonth').addEventListener('click', async () => {
+  const now = new Date();
+  state.calendar.month = new Date(now.getFullYear(), now.getMonth(), 1);
+  state.calendar.selectedWeekStart = isoMonday(now);
+  await loadCalendarMonth().catch(error => showMessage(error.message, 'error'));
+});
+$('weekType').addEventListener('change', syncWeekStateFromInputs);
+$('targetLoad').addEventListener('input', syncWeekStateFromInputs);
+$('weekTitle').addEventListener('input', syncWeekStateFromInputs);
+$('weekComment').addEventListener('input', syncWeekStateFromInputs);
 
 $('saveWeek').addEventListener('click', async () => {
   try {
-    syncWeekStateFromInputs(); $('saveWeek').disabled = true; $('saveWeekStatus').textContent = 'Guardando…';
-    const data = await api(`/api/coach/athletes/${state.athlete.id}/week`, { method: 'PUT', body: JSON.stringify(weekPayload('draft')) });
-    state.athlete.week = data.week; ensureWeek(); renderAll(); $('saveWeekStatus').textContent = 'Borrador guardado'; showMessage('La semana se ha guardado como borrador.', 'success');
-  } catch (error) { showMessage(error.message, 'error'); } finally { $('saveWeek').disabled = false; }
+    $('saveWeek').disabled = true;
+    $('saveWeekStatus').textContent = 'Guardando…';
+    const week = calendarWeek(state.calendar.selectedWeekStart);
+    await persistCalendarWeek(state.calendar.selectedWeekStart, week.status === 'published');
+    $('saveWeekStatus').textContent = week.status === 'published' ? 'Cambios guardados en la app' : 'Borrador guardado';
+  } catch (error) {
+    showMessage(error.message, 'error');
+  } finally {
+    $('saveWeek').disabled = false;
+  }
 });
 
 $('publishWeek').addEventListener('click', async () => {
   try {
-    syncWeekStateFromInputs(); $('publishWeek').disabled = true; $('saveWeekStatus').textContent = 'Publicando…';
-    const data = await api(`/api/coach/athletes/${state.athlete.id}/week/publish`, { method: 'POST', body: JSON.stringify(weekPayload('published')) });
-    state.athlete.week = data.week; ensureWeek(); renderAll();
-    const extra = data.intervals?.skipped ? ` La app ya está actualizada; ${data.intervals.reason}` : ` Se han preparado ${data.intervals?.exported ?? 0} sesiones para Intervals.`;
-    showMessage(`Semana publicada.${extra}`, 'success'); $('saveWeekStatus').textContent = 'Semana publicada';
-  } catch (error) { showMessage(error.message, 'error'); } finally { $('publishWeek').disabled = false; }
+    $('publishWeek').disabled = true;
+    $('saveWeekStatus').textContent = 'Publicando…';
+    await persistCalendarWeek(state.calendar.selectedWeekStart, true);
+    $('saveWeekStatus').textContent = 'Semana publicada';
+  } catch (error) {
+    showMessage(error.message, 'error');
+  } finally {
+    $('publishWeek').disabled = false;
+  }
 });
 
 $('saveProfile').addEventListener('click', async () => {
@@ -532,13 +702,62 @@ $('closeModal').addEventListener('click', () => $('sessionModal').classList.add(
 $('sessionModal').addEventListener('click', event => { if (event.target === $('sessionModal')) $('sessionModal').classList.add('hidden'); });
 $('addBlock').addEventListener('click', () => { state.modalBlocks.push({ type: 'central', name: `Bloque ${state.modalBlocks.length + 1}`, repetitions: 4, work_value: 3, work_unit: 'm', target: 'Z4 Pace', recovery_value: 2, recovery_unit: 'm', recovery_target: 'Z1 Pace' }); renderCentralBlocks(); });
 $('generateDescription').addEventListener('click', generateStructuredDescription);
-$('saveSessionModal').addEventListener('click', () => {
-  const workout = state.athlete.week.workouts[state.editingSession];
-  workout.sport = $('modalSport').value; workout.planned_load = Number($('modalLoad').value || 0); workout.title = $('modalWorkoutTitle').value; workout.summary = $('modalSummary').value;
-  workout.blocks = buildBlocks(); workout.structured_description = $('structuredDescription').value || (generateStructuredDescription(), $('structuredDescription').value);
-  state.athlete.week.target_load = state.athlete.week.workouts.reduce((sum, item) => sum + Number(item.planned_load || 0), 0);
-  $('targetLoad').value = state.athlete.week.target_load; renderSessionEditor(); $('sessionModal').classList.add('hidden');
+$('saveSessionModal').addEventListener('click', async () => {
+  if (!state.editingSession) return;
+  const originalWeekStart = state.editingSession.weekStart;
+  const originalWeek = calendarWeek(originalWeekStart);
+  const workoutDate = $('modalWorkoutDate').value;
+  if (!workoutDate) return showMessage('Selecciona la fecha de la sesión.', 'error');
+  const targetWeekStart = isoMonday(parseLocalDate(workoutDate));
+  const targetWeek = calendarWeek(targetWeekStart);
+  const workout = {
+    ...state.editingSession.draft,
+    id: state.editingSession.draft.id || newId(),
+    workout_date: workoutDate,
+    sport: $('modalSport').value,
+    planned_load: Number($('modalLoad').value || 0),
+    title: $('modalWorkoutTitle').value.trim() || 'Sesión',
+    summary: $('modalSummary').value.trim(),
+    blocks: buildBlocks(),
+    structured_description: $('structuredDescription').value || (generateStructuredDescription(), $('structuredDescription').value),
+  };
+  try {
+    $('saveSessionModal').disabled = true;
+    if (state.editingSession.workoutId) {
+      originalWeek.workouts = (originalWeek.workouts || []).filter(item => String(item.id) !== String(state.editingSession.workoutId));
+    }
+    targetWeek.workouts = [...(targetWeek.workouts || []).filter(item => String(item.id) !== String(workout.id)), workout]
+      .sort((a, b) => String(a.workout_date).localeCompare(String(b.workout_date)));
+    $('sessionModal').classList.add('hidden');
+    if (originalWeekStart !== targetWeekStart) await persistCalendarWeek(originalWeekStart, originalWeek.status === 'published', true);
+    await persistCalendarWeek(targetWeekStart, targetWeek.status === 'published', true);
+    selectCalendarWeek(targetWeekStart);
+    showMessage(state.editingSession.workoutId ? 'Sesión actualizada.' : 'Sesión añadida.', 'success');
+    state.editingSession = null;
+  } catch (error) {
+    showMessage(error.message, 'error');
+  } finally {
+    $('saveSessionModal').disabled = false;
+  }
 });
+
+$('deleteSessionModal').addEventListener('click', async () => {
+  if (!state.editingSession?.workoutId) return;
+  const week = calendarWeek(state.editingSession.weekStart);
+  week.workouts = (week.workouts || []).filter(item => String(item.id) !== String(state.editingSession.workoutId));
+  try {
+    $('deleteSessionModal').disabled = true;
+    $('sessionModal').classList.add('hidden');
+    await persistCalendarWeek(week.week_start, week.status === 'published', true);
+    showMessage('Sesión eliminada.', 'success');
+    state.editingSession = null;
+  } catch (error) {
+    showMessage(error.message, 'error');
+  } finally {
+    $('deleteSessionModal').disabled = false;
+  }
+});
+
 
 
 function renderDataConnectionState() {
