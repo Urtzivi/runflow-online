@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#126f60">
-  <title>RunFlow Coach · Online Pilot 1.1</title>
+  <title>RunFlow Coach · Calendario 1.2</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
-  <link rel="stylesheet" href="/css/app.css">
+  <link rel="stylesheet" href="/css/app.css?v=1.2">
 </head>
 <body>
   <header class="topbar">
@@ -27,7 +27,7 @@
 
     <nav class="tabs" aria-label="Secciones del coach">
       <button class="tab active" data-view="summary">Resumen</button>
-      <button class="tab" data-view="week">Planificar semana</button>
+      <button class="tab" data-view="week">Calendario</button>
       <button class="tab" data-view="activities">Actividades</button>
       <button class="tab" data-view="recovery">Recuperación</button>
       <button class="tab" data-view="profile">Ficha y zonas</button>
@@ -70,49 +70,72 @@
     </section>
 
     <section id="weekView" class="view" style="margin-top:18px">
-      <div class="layout">
-        <section class="card">
-          <div class="card-head"><div><h2>Planificación semanal</h2><p>Crea las siete sesiones y publica la semana cuando esté lista.</p></div><span id="weekConnectionBadge" class="badge pending">Intervals pendiente</span></div>
-          <div class="card-body">
-            <div class="actions" style="justify-content:space-between;margin-bottom:14px;gap:8px;flex-wrap:wrap">
-              <div class="actions" style="gap:8px;flex-wrap:wrap">
-                <button id="previousWeek" class="btn secondary small" type="button">← Semana anterior</button>
-                <button id="currentWeek" class="btn soft small" type="button">Semana actual</button>
-                <button id="nextWeek" class="btn secondary small" type="button">Semana siguiente →</button>
+      <div class="calendar-workspace">
+        <section class="card calendar-card">
+          <div class="card-head calendar-head">
+            <div><h2>Calendario de planificación</h2><p>Añade sesiones una a una y controla la carga semanal en tiempo real.</p></div>
+            <span id="weekConnectionBadge" class="badge pending">Intervals pendiente</span>
+          </div>
+          <div class="calendar-toolbar">
+            <div class="actions">
+              <button id="previousMonth" class="btn secondary small" type="button">← Mes anterior</button>
+              <button id="currentMonth" class="btn soft small" type="button">Hoy</button>
+              <button id="nextMonth" class="btn secondary small" type="button">Mes siguiente →</button>
+            </div>
+            <strong id="calendarMonthLabel" class="calendar-month-label">Cargando calendario…</strong>
+          </div>
+          <div class="calendar-scroll">
+            <div class="calendar-shell">
+              <div class="calendar-weekdays">
+                <span>Lunes</span><span>Martes</span><span>Miércoles</span><span>Jueves</span><span>Viernes</span><span>Sábado</span><span>Domingo</span>
               </div>
-              <span id="selectedWeekLabel" class="badge pending">Cargando semana…</span>
-            </div>
-            <div class="field-row-3">
-              <label>Inicio de semana<input id="weekStart" type="date"></label>
-              <label>Tipo de semana<select id="weekType"><option>Carga controlada</option><option>Construcción</option><option>Descarga</option><option>Afinamiento</option><option>Competición</option><option>Adaptación</option></select></label>
-              <label>Carga objetivo<input id="targetLoad" type="number" min="0"></label>
-            </div>
-            <label style="margin-top:13px">Objetivo de la semana<input id="weekTitle" placeholder="Ej.: consolidar el umbral sin acumular fatiga"></label>
-            <label style="margin-top:13px">Comentario para el deportista<textarea id="weekComment" placeholder="Explica qué buscamos y qué no debe añadir por su cuenta."></textarea></label>
-            <div class="card-head" style="padding-left:0;padding-right:0;margin-top:8px"><div><h2>Sesiones</h2><p>Puedes editar el resumen y abrir el constructor de cada día.</p></div><button id="fillWeek" class="btn secondary small" type="button">Rellenar semana básica</button></div>
-            <div id="sessionEditor" class="session-editor"></div>
-            <div class="actions" style="margin-top:18px">
-              <button id="saveWeek" class="btn secondary" type="button">Guardar borrador</button>
-              <button id="publishWeek" class="btn primary" type="button">Publicar semana</button>
-              <span id="saveWeekStatus" class="muted small"></span>
+              <div id="calendarGrid" class="calendar-grid"><div class="empty-state calendar-loading">Cargando sesiones…</div></div>
             </div>
           </div>
         </section>
-        <aside class="stack">
+
+        <aside class="calendar-side stack">
           <section class="card">
-            <div class="card-head"><div><h2>Qué ocurre al publicar</h2><p>Un único botón actualiza todos los destinos.</p></div></div>
+            <div class="card-head"><div><h2>Semana seleccionada</h2><p id="selectedWeekLabel">Selecciona una semana del calendario.</p></div><span id="selectedWeekStatus" class="badge pending">Borrador</span></div>
             <div class="card-body">
-              <div class="stack small">
-                <div class="form-section"><strong>1. App del deportista</strong><p class="muted" style="margin:5px 0 0">La semana, el comentario y los objetivos quedan visibles.</p></div>
-                <div class="form-section"><strong>2. Intervals.icu</strong><p class="muted" style="margin:5px 0 0">Si está conectado, se envían las sesiones estructuradas.</p></div>
-                <div class="form-section"><strong>3. Reloj</strong><p class="muted" style="margin:5px 0 0">Intervals sincroniza con Garmin, Suunto o COROS.</p></div>
+              <input id="weekStart" type="hidden">
+              <div class="calendar-load-summary">
+                <div><span>Carga generada</span><strong id="generatedWeekLoad">0</strong></div>
+                <div><span>Sesiones</span><strong id="generatedSessionCount">0</strong></div>
+              </div>
+              <div class="field-row" style="margin-top:14px">
+                <label>Carga objetivo<input id="targetLoad" type="number" min="0"></label>
+                <label>Tipo de semana<select id="weekType"><option>Carga controlada</option><option>Construcción</option><option>Descarga</option><option>Afinamiento</option><option>Competición</option><option>Adaptación</option></select></label>
+              </div>
+              <label style="margin-top:13px">Objetivo de la semana<input id="weekTitle" placeholder="Ej.: consolidar el umbral sin acumular fatiga"></label>
+              <label style="margin-top:13px">Comentario para el deportista<textarea id="weekComment" placeholder="Explica qué buscamos y qué no debe añadir por su cuenta."></textarea></label>
+              <div class="actions" style="margin-top:16px">
+                <button id="saveWeek" class="btn secondary" type="button">Guardar borrador</button>
+                <button id="publishWeek" class="btn primary" type="button">Publicar semana</button>
+              </div>
+              <p id="saveWeekStatus" class="muted small" style="margin:10px 0 0"></p>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card-head"><div><h2>Lectura rápida</h2><p>La carga se recalcula al crear, editar o eliminar una sesión.</p></div></div>
+            <div class="card-body">
+              <div class="calendar-legend">
+                <span><i class="legend-dot easy"></i>Rodaje</span>
+                <span><i class="legend-dot quality"></i>Calidad</span>
+                <span><i class="legend-dot strength"></i>Fuerza</span>
+                <span><i class="legend-dot long"></i>Tirada larga</span>
+                <span><i class="legend-dot rest"></i>Descanso</span>
+              </div>
+              <div class="form-section" style="margin-top:14px">
+                <strong>Publicación segura</strong>
+                <p class="muted small" style="margin:6px 0 0">La primera publicación se envía a Intervals. Las modificaciones posteriores actualizan la app, pero no se reenvían automáticamente para evitar duplicados.</p>
               </div>
             </div>
           </section>
         </aside>
       </div>
     </section>
-
 
     <section id="activitiesView" class="view" style="margin-top:18px">
       <div class="stack">
@@ -323,7 +346,7 @@
     <div class="modal">
       <div class="modal-head"><div><p class="eyebrow">Constructor de sesión</p><h2 id="modalTitle">Editar entrenamiento</h2></div><button id="closeModal" class="btn secondary" type="button">Cerrar</button></div>
       <div class="modal-body">
-        <div class="field-row"><label>Deporte<select id="modalSport"><option value="Run">Carrera</option><option value="Ride">Ciclismo</option><option value="Strength">Fuerza</option><option value="Rest">Descanso</option></select></label><label>Carga prevista<input id="modalLoad" type="number" min="0"></label></div>
+        <div class="field-row-3"><label>Fecha<input id="modalWorkoutDate" type="date"></label><label>Deporte<select id="modalSport"><option value="Run">Carrera</option><option value="Ride">Ciclismo</option><option value="Strength">Fuerza</option><option value="Rest">Descanso</option></select></label><label>Carga prevista<input id="modalLoad" type="number" min="0"></label></div>
         <label style="margin-top:12px">Título<input id="modalWorkoutTitle"></label>
         <label style="margin-top:12px">Resumen visible para el deportista<textarea id="modalSummary"></textarea></label>
         <div class="form-section" style="margin-top:14px"><h3>Calentamiento</h3><div class="field-row"><label>Duración (min)<input id="warmupMinutes" type="number" min="0"></label><label>Objetivo<input id="warmupTarget" placeholder="Z2 Pace / Z2 HR"></label></div></div>
@@ -331,11 +354,11 @@
         <div class="form-section"><div class="card-head" style="padding:0 0 10px"><div><h3>Bloques centrales</h3></div><button id="addBlock" class="btn secondary small" type="button">+ Bloque</button></div><div id="centralBlocks" class="stack"></div></div>
         <div class="form-section"><h3>Vuelta a la calma</h3><div class="field-row"><label>Duración (min)<input id="cooldownMinutes" type="number" min="0"></label><label>Objetivo<input id="cooldownTarget" placeholder="Z1 Pace"></label></div></div>
         <label style="margin-top:14px">Texto estructurado para Intervals<textarea id="structuredDescription" style="min-height:170px"></textarea></label>
-        <div class="actions" style="margin-top:16px"><button id="generateDescription" class="btn secondary" type="button">Generar texto</button><button id="saveSessionModal" class="btn primary" type="button">Guardar sesión</button></div>
+        <div class="actions session-modal-actions" style="margin-top:16px"><button id="deleteSessionModal" class="btn danger hidden" type="button">Eliminar sesión</button><span class="actions-spacer"></span><button id="generateDescription" class="btn secondary" type="button">Generar texto</button><button id="saveSessionModal" class="btn primary" type="button">Guardar sesión</button></div>
       </div>
     </div>
   </div>
 
-  <script src="/js/coach.js"></script>
-<script src="/js/register-sw.js"></script></body>
+  <script src="/js/coach.js?v=1.2"></script>
+<script src="/js/register-sw.js?v=1.2"></script></body>
 </html>
