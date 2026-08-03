@@ -21,7 +21,7 @@ const APP_ENCRYPTION_KEY = String(process.env.APP_ENCRYPTION_KEY || '');
 const OPENAI_API_KEY = String(process.env.OPENAI_API_KEY || '');
 const OPENAI_MODEL = String(process.env.OPENAI_MODEL || 'gpt-5.6-terra');
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
-const APP_VERSION = 'Online Pilot 1.1';
+const APP_VERSION = 'Online Pilot 1.2';
 const INTERVALS_API_BASE = 'https://intervals.icu/api/v1';
 
 function validateRuntimeConfig() {
@@ -468,6 +468,53 @@ function normaliseWeek(body, athleteId) {
     status: body.status === 'published' ? 'published' : 'draft',
     workouts,
   };
+}
+
+
+function rangesOverlap(startA, endA, startB, endB) {
+  return startA <= endB && startB <= endA;
+}
+
+async function listCalendarWeeks(athleteId, oldest, newest) {
+  const rangeStart = validDate(oldest) || addDays(startOfWeek(), -35);
+  const rangeEnd = validDate(newest) || addDays(startOfWeek(), 42);
+  if (DEMO_MODE) {
+    const athlete = demo.athletes.find(item => item.id === athleteId);
+    if (!athlete) throw Object.assign(new Error('Deportista no encontrado.'), { status: 404 });
+    const candidates = [];
+    if (athlete.week && rangesOverlap(athlete.week.week_start, addDays(athlete.week.week_start, 6), rangeStart, rangeEnd)) {
+      candidates.push(JSON.parse(JSON.stringify(athlete.week)));
+    }
+    return candidates.sort((a, b) => String(a.week_start).localeCompare(String(b.week_start)));
+  }
+  const weeks = await prodRows(
+    'training_weeks',
+    `athlete_id=eq.${encodeURIComponent(athleteId)}&week_start=gte.${rangeStart}&week_start=lte.${rangeEnd}&select=*&order=week_start.asc`
+  );
+  if (!weeks.length) return [];
+  const ids = weeks.map(item => item.id);
+  const workouts = await prodRows(
+    'workouts',
+    `training_week_id=in.(${ids.join(',')})&select=*&order=workout_date.asc`
+  );
+  const grouped = new Map();
+  workouts.forEach(item => {
+    if (!grouped.has(item.training_week_id)) grouped.set(item.training_week_id, []);
+    grouped.get(item.training_week_id).push(item);
+  });
+  return weeks.map(week => ({ ...week, workouts: grouped.get(week.id) || [] }));
+}
+
+async function publishedWeekExists(athleteId, weekStart) {
+  if (DEMO_MODE) {
+    const athlete = demo.athletes.find(item => item.id === athleteId);
+    return Boolean(athlete && athlete.week && athlete.week.week_start === weekStart && athlete.week.status === 'published');
+  }
+  const rows = await prodRows(
+    'training_weeks',
+    `athlete_id=eq.${encodeURIComponent(athleteId)}&week_start=eq.${weekStart}&status=eq.published&select=id&limit=1`
+  );
+  return rows.length > 0;
 }
 
 async function demoAthleteBundle(athleteId) {
@@ -1231,6 +1278,15 @@ async function api(req, res, url) {
     return sendJson(res, 200, { athlete: DEMO_MODE ? await demoAthleteBundle(athleteId) : await prodAthleteBundle(athleteId, url.searchParams.get('week_start') || startOfWeek()) });
   }
 
+
+  const calendarMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/calendar$/);
+  if (calendarMatch && method === 'GET') {
+    const athleteId = calendarMatch[1];
+    await ensureCoachAccess(session, athleteId);
+    const { oldest, newest } = dateRangeParams(url, 70);
+    return sendJson(res, 200, { weeks: await listCalendarWeeks(athleteId, oldest, newest), oldest, newest });
+  }
+
   const profileMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/profile$/);
   if (profileMatch && method === 'PUT') {
     const athleteId = profileMatch[1];
@@ -1257,9 +1313,14 @@ async function api(req, res, url) {
   if (publishMatch && method === 'POST') {
     const athleteId = publishMatch[1];
     await ensureCoachAccess(session, athleteId);
-    const week = await saveWeek(athleteId, await readJson(req), true);
-    const intervals = await syncWeekToIntervals(athleteId, week);
-    return sendJson(res, 200, { week, intervals });
+    const body = await readJson(req);
+    const weekStart = validDate(body.week_start) || startOfWeek();
+    const alreadyPublished = await publishedWeekExists(athleteId, weekStart);
+    const week = await saveWeek(athleteId, body, true);
+    const intervals = alreadyPublished
+      ? { skipped: true, reason: 'La semana se ha actualizado en la app. No se ha reenviado a Intervals para evitar sesiones duplicadas.' }
+      : await syncWeekToIntervals(athleteId, week);
+    return sendJson(res, 200, { week, intervals, already_published: alreadyPublished });
   }
 
   const goalsMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/goals$/);
@@ -1381,6 +1442,26 @@ async function api(req, res, url) {
       ai_analysis: detail.review && detail.review.ai_analysis,
     });
     return sendJson(res, 200, { review });
+  }
+
+
+  if (pathname === '/api/athlete/activities' && method === 'GET') {
+    requireRole(session, 'athlete');
+    if (!session.athlete_id) throw Object.assign(new Error('Tu usuario todavía no está vinculado a una ficha de deportista.'), { status: 409 });
+    const { oldest, newest } = dateRangeParams(url, 120);
+    const limit = Math.max(1, Math.min(20, Number(url.searchParams.get('limit') || 5)));
+    const rows = url.searchParams.get('sync') === '1'
+      ? await syncActivities(session.athlete_id, oldest, newest)
+      : await listStoredActivities(session.athlete_id, oldest, newest);
+    return sendJson(res, 200, { activities: rows.slice(0, limit), oldest, newest });
+  }
+
+  const athleteActivityDetailMatch = pathname.match(/^\/api\/athlete\/activities\/([^/]+)$/);
+  if (athleteActivityDetailMatch && method === 'GET') {
+    requireRole(session, 'athlete');
+    if (!session.athlete_id) throw Object.assign(new Error('Tu usuario todavía no está vinculado a una ficha de deportista.'), { status: 409 });
+    const detail = await getActivityDetail(session, session.athlete_id, decodeURIComponent(athleteActivityDetailMatch[1]));
+    return sendJson(res, 200, { activity: detail.activity, planned: detail.planned, recovery: detail.recovery });
   }
 
   if (pathname === '/api/athlete/dashboard' && method === 'GET') {
