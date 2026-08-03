@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>RunFlow Coach · Calendario</title>
+  <style>
+    :root{
+      --bg:#eef5f3;--surface:#ffffff;--surface-2:#f6faf9;--ink:#102a2a;--muted:#66807d;
+      --line:#d7e4e1;--green:#0f7464;--green-dark:#075748;--green-soft:#ddf2ed;
+      --orange:#a96015;--orange-soft:#fff0dc;--blue:#276a9b;--blue-soft:#e5f2fb;
+      --red:#a73b48;--red-soft:#fbe8eb;--purple:#6651a6;--purple-soft:#eeeafd;
+      --shadow:0 18px 45px rgba(20,63,57,.11);
+    }
+    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    button,input,select,textarea{font:inherit} button{cursor:pointer}
+    .topbar{position:sticky;top:0;z-index:20;background:rgba(246,251,249,.93);backdrop-filter:blur(16px);border-bottom:1px solid var(--line)}
+    .topbar-inner{max-width:1540px;margin:auto;padding:13px 24px;display:flex;align-items:center;justify-content:space-between;gap:18px}
+    .brand{display:flex;align-items:center;gap:13px}.logo{width:50px;height:50px;border-radius:16px;background:var(--green);color:#fff;display:grid;place-items:center;font-size:1.1rem;font-weight:950}.brand strong{display:block;font-size:1.25rem}.brand small{color:var(--muted)}
+    .actions{display:flex;align-items:center;gap:10px}.chip{padding:8px 12px;background:#fff;border:1px solid var(--line);border-radius:999px;font-weight:800;font-size:.85rem}.badge{display:inline-flex;align-items:center;border-radius:999px;padding:7px 10px;background:var(--green-soft);color:var(--green-dark);font-weight:900;font-size:.75rem}
+    .shell{max-width:1540px;margin:auto;padding:24px}
+    .page-head{display:flex;justify-content:space-between;gap:24px;align-items:end;margin-bottom:18px}.eyebrow{text-transform:uppercase;letter-spacing:.11em;font-size:.71rem;font-weight:950;color:var(--green);margin:0 0 6px}.page-head h1{font-size:clamp(1.7rem,3vw,2.6rem);margin:0}.page-head p{margin:7px 0 0;color:var(--muted)}
+    .athlete-picker{display:flex;gap:10px;align-items:end}.field label,.athlete-picker label{display:block;font-size:.78rem;color:var(--muted);font-weight:850}.field select,.field input,.field textarea,.athlete-picker select{margin-top:6px;width:100%;border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:12px;padding:11px 12px;outline:none}.athlete-picker select{min-width:230px}
+    .btn{border:0;border-radius:12px;padding:11px 15px;font-weight:900}.btn.primary{background:var(--green);color:#fff}.btn.secondary{background:#fff;color:var(--ink);border:1px solid var(--line)}.btn.soft{background:var(--green-soft);color:var(--green-dark)}.btn.danger{background:var(--red-soft);color:var(--red)}.btn.icon{width:40px;height:40px;padding:0;display:grid;place-items:center}
+    .tabs{display:flex;gap:5px;background:#fff;border:1px solid var(--line);border-radius:17px;padding:6px;margin-bottom:18px;overflow:auto}.tab{white-space:nowrap;border:0;background:transparent;padding:11px 16px;border-radius:12px;font-weight:900;color:var(--muted)}.tab.active{background:var(--green);color:#fff}
+    .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}.metric{background:#fff;border:1px solid var(--line);border-radius:18px;padding:16px;box-shadow:0 8px 22px rgba(20,63,57,.05)}.metric span{font-size:.75rem;color:var(--muted);font-weight:850}.metric strong{display:block;font-size:1.9rem;margin:3px 0}.metric small{color:var(--muted)}
+    .workspace{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:16px}.card{background:#fff;border:1px solid var(--line);border-radius:22px;box-shadow:var(--shadow);overflow:hidden}.card-head{padding:17px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:14px}.card-head h2{margin:0;font-size:1.08rem}.card-head p{margin:4px 0 0;color:var(--muted);font-size:.85rem}.calendar-tools{display:flex;align-items:center;gap:8px}.month-label{min-width:175px;text-align:center;font-weight:950;font-size:1rem}
+    .calendar-wrap{overflow:auto}.calendar{min-width:1050px;padding:0 14px 14px}.weekdays{display:grid;grid-template-columns:repeat(7,1fr);gap:7px;padding:12px 0 7px}.weekday{text-align:center;color:var(--muted);font-size:.72rem;font-weight:950;text-transform:uppercase;letter-spacing:.07em}
+    .calendar-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:7px}.day{min-height:158px;background:var(--surface-2);border:1px solid var(--line);border-radius:15px;padding:9px;display:flex;flex-direction:column;gap:7px;position:relative}.day.outside{opacity:.48}.day.today{border:2px solid var(--green);padding:8px}.day.selected-week{background:#f3fbf8}.day-head{display:flex;align-items:center;justify-content:space-between;gap:8px}.day-number{width:29px;height:29px;border-radius:9px;display:grid;place-items:center;font-weight:950;font-size:.82rem}.today .day-number{background:var(--green);color:#fff}.add-day{width:27px;height:27px;border:0;border-radius:9px;background:#fff;border:1px solid var(--line);font-weight:950;color:var(--green-dark)}.add-day:hover{background:var(--green-soft)}
+    .sessions{display:grid;gap:5px}.session{border:0;text-align:left;border-radius:10px;padding:7px 8px;font-size:.73rem;line-height:1.25;background:#fff;border-left:4px solid var(--green);box-shadow:0 2px 6px rgba(20,63,57,.06)}.session strong{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.session small{display:flex;justify-content:space-between;gap:6px;color:var(--muted);margin-top:3px}.session.threshold{border-left-color:var(--orange);background:#fffaf3}.session.vo2{border-left-color:var(--red);background:#fff7f8}.session.strength{border-left-color:var(--purple);background:#faf8ff}.session.long{border-left-color:var(--blue);background:#f5fbff}.session.rest{border-left-color:#9aa8a6;background:#f4f7f6}.session.done{opacity:.7}.session.done:after{content:'✓';position:absolute}.day-load{margin-top:auto;display:flex;justify-content:space-between;color:var(--muted);font-size:.68rem;font-weight:800}
+    .week-summary{grid-column:1 / -1;background:#eef8f5;border:1px solid #cae5de;border-radius:14px;padding:9px 12px;display:grid;grid-template-columns:1fr auto auto auto;gap:15px;align-items:center;margin-top:2px;margin-bottom:1px}.week-summary strong{font-size:.82rem}.week-stat{font-size:.72rem;color:var(--muted)}.week-stat b{color:var(--ink);font-size:.8rem}.progress{height:8px;background:#d7e8e4;border-radius:999px;overflow:hidden;min-width:120px}.progress i{display:block;height:100%;background:var(--green);border-radius:999px}
+    .side{display:grid;gap:16px;align-content:start}.side .card{box-shadow:none}.side-body{padding:17px}.week-box{padding:13px;border:1px solid var(--line);border-radius:14px;background:var(--surface-2);margin-bottom:10px}.week-box.active{border-color:#77b5a9;background:var(--green-soft)}.week-box .row{display:flex;justify-content:space-between;gap:8px;align-items:center}.week-box h3{margin:0;font-size:.92rem}.week-box p{margin:6px 0 0;color:var(--muted);font-size:.78rem}.legend{display:grid;grid-template-columns:1fr 1fr;gap:9px}.legend-item{display:flex;align-items:center;gap:7px;font-size:.76rem;color:var(--muted)}.dot{width:10px;height:10px;border-radius:3px;background:var(--green)}.dot.orange{background:var(--orange)}.dot.red{background:var(--red)}.dot.purple{background:var(--purple)}.dot.blue{background:var(--blue)}.dot.gray{background:#9aa8a6}
+    .modal-backdrop{position:fixed;inset:0;background:rgba(7,34,31,.54);z-index:100;display:none;place-items:center;padding:18px}.modal-backdrop.open{display:grid}.modal{width:min(720px,100%);max-height:92vh;overflow:auto;background:#fff;border-radius:22px;box-shadow:0 35px 100px rgba(0,0,0,.3)}.modal-head{padding:17px 19px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}.modal-head h2{margin:0}.modal-body{padding:19px}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:13px}.field.full{grid-column:1 / -1}.field textarea{min-height:90px;resize:vertical}.modal-actions{display:flex;justify-content:space-between;gap:10px;margin-top:18px}.right-actions{display:flex;gap:9px}.hidden{display:none!important}.notice{position:fixed;right:22px;bottom:22px;z-index:200;background:var(--green-dark);color:#fff;border-radius:13px;padding:12px 15px;font-weight:800;box-shadow:var(--shadow);opacity:0;transform:translateY(12px);transition:.2s}.notice.show{opacity:1;transform:none}
+    @media(max-width:1100px){.workspace{grid-template-columns:1fr}.side{grid-template-columns:1fr 1fr}.metrics{grid-template-columns:repeat(2,1fr)}}
+    @media(max-width:700px){.topbar-inner,.shell{padding-left:14px;padding-right:14px}.page-head{align-items:stretch;flex-direction:column}.athlete-picker{align-items:stretch;flex-direction:column}.athlete-picker select{min-width:0}.metrics{grid-template-columns:1fr 1fr}.side{grid-template-columns:1fr}.brand small,.chip.email{display:none}.form-grid{grid-template-columns:1fr}.field.full{grid-column:auto}.modal-actions{flex-direction:column-reverse}.right-actions{width:100%}.right-actions .btn,.modal-actions>.btn{flex:1}}
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand"><div class="logo">RF</div><div><strong>RunFlow Coach</strong><small>Calendario de planificación</small></div></div>
+      <div class="actions"><span class="badge">Prototipo evolución</span><span class="chip email">urtzi@suibroker.es</span><button class="btn secondary">Salir</button></div>
+    </div>
+  </header>
+
+  <main class="shell">
+    <div class="page-head">
+      <div><p class="eyebrow">Centro de entrenamiento</p><h1>Planificar sobre el calendario</h1><p>Añade sesiones una a una y controla la carga de cada semana en tiempo real.</p></div>
+      <div class="athlete-picker"><label>Deportista<select><option>Urtzi</option><option>Ibon Larrinaga</option></select></label><button class="btn primary">+ Nuevo deportista</button></div>
+    </div>
+
+    <nav class="tabs"><button class="tab">Resumen</button><button class="tab active">Calendario</button><button class="tab">Actividades</button><button class="tab">Recuperación</button><button class="tab">Ficha y zonas</button><button class="tab">Objetivos</button><button class="tab">Conexiones</button></nav>
+
+    <section class="metrics">
+      <article class="metric"><span>Carga programada · agosto</span><strong id="monthPlanned">—</strong><small>Suma de todas las sesiones</small></article>
+      <article class="metric"><span>Carga realizada · agosto</span><strong id="monthDone">—</strong><small>Actividades sincronizadas</small></article>
+      <article class="metric"><span>Semana seleccionada</span><strong id="selectedPlanned">—</strong><small id="selectedTargetText">Objetivo: —</small></article>
+      <article class="metric"><span>Cumplimiento semanal</span><strong id="selectedCompliance">—</strong><small>Realizado / programado</small></article>
+    </section>
+
+    <div class="workspace">
+      <section class="card">
+        <div class="card-head">
+          <div><h2>Calendario mensual</h2><p>Pulsa + para crear una sesión o pulsa una sesión para editarla.</p></div>
+          <div class="calendar-tools"><button id="prevMonth" class="btn secondary icon" title="Mes anterior">←</button><button id="todayBtn" class="btn soft">Hoy</button><span id="monthLabel" class="month-label"></span><button id="nextMonth" class="btn secondary icon" title="Mes siguiente">→</button></div>
+        </div>
+        <div class="calendar-wrap"><div class="calendar"><div class="weekdays"><div class="weekday">Lunes</div><div class="weekday">Martes</div><div class="weekday">Miércoles</div><div class="weekday">Jueves</div><div class="weekday">Viernes</div><div class="weekday">Sábado</div><div class="weekday">Domingo</div></div><div id="calendarGrid" class="calendar-grid"></div></div></div>
+      </section>
+
+      <aside class="side">
+        <section class="card"><div class="card-head"><div><h2>Semanas del mes</h2><p>Programada, objetivo y realizada.</p></div></div><div id="weekList" class="side-body"></div></section>
+        <section class="card"><div class="card-head"><div><h2>Tipos de sesión</h2><p>Lectura rápida del calendario.</p></div></div><div class="side-body"><div class="legend"><div class="legend-item"><i class="dot"></i>Rodaje</div><div class="legend-item"><i class="dot orange"></i>Umbral</div><div class="legend-item"><i class="dot red"></i>VO₂max</div><div class="legend-item"><i class="dot purple"></i>Fuerza</div><div class="legend-item"><i class="dot blue"></i>Tirada larga</div><div class="legend-item"><i class="dot gray"></i>Descanso</div></div></div></section>
+        <section class="card"><div class="card-head"><div><h2>Publicación</h2><p>La semana seleccionada.</p></div></div><div class="side-body"><button class="btn secondary" style="width:100%;margin-bottom:9px">Guardar borrador</button><button class="btn primary" style="width:100%">Publicar semana</button><p style="font-size:.76rem;color:var(--muted);line-height:1.45;margin-bottom:0">En la versión real, al publicar se actualizarán la app del deportista e Intervals sin crear duplicados.</p></div></section>
+      </aside>
+    </div>
+  </main>
+
+  <div id="modalBackdrop" class="modal-backdrop">
+    <div class="modal">
+      <div class="modal-head"><div><p class="eyebrow" style="margin-bottom:3px">Sesión de entrenamiento</p><h2 id="modalTitle">Nueva sesión</h2></div><button id="closeModal" class="btn secondary icon">×</button></div>
+      <div class="modal-body">
+        <form id="sessionForm">
+          <input id="sessionId" type="hidden">
+          <div class="form-grid">
+            <div class="field"><label>Fecha<input id="sessionDate" type="date" required></label></div>
+            <div class="field"><label>Tipo<select id="sessionType"><option value="easy">Rodaje</option><option value="threshold">Umbral</option><option value="vo2">VO₂max</option><option value="strength">Fuerza</option><option value="long">Tirada larga</option><option value="rest">Descanso</option></select></label></div>
+            <div class="field full"><label>Nombre<input id="sessionName" required placeholder="Ej.: 4 × 6 min a ritmo umbral"></label></div>
+            <div class="field"><label>Duración (min)<input id="sessionDuration" type="number" min="0" value="45"></label></div>
+            <div class="field"><label>Carga prevista<input id="sessionLoad" type="number" min="0" value="35"></label></div>
+            <div class="field"><label>Estado<select id="sessionStatus"><option value="planned">Programada</option><option value="done">Realizada</option></select></label></div>
+            <div class="field"><label>Carga realizada<input id="sessionActualLoad" type="number" min="0" value="0"></label></div>
+            <div class="field full"><label>Descripción<textarea id="sessionDescription" placeholder="Calentamiento, bloques, recuperaciones y vuelta a la calma."></textarea></label></div>
+          </div>
+          <div class="modal-actions"><button id="deleteSession" class="btn danger hidden" type="button">Eliminar sesión</button><div class="right-actions"><button id="cancelModal" class="btn secondary" type="button">Cancelar</button><button class="btn primary" type="submit">Guardar sesión</button></div></div>
+        </form>
+      </div>
+    </div>
+  </div>
+  <div id="notice" class="notice">Sesión guardada</div>
+
+<script>
+(() => {
+  const TYPES={easy:{label:'Rodaje',cls:''},threshold:{label:'Umbral',cls:'threshold'},vo2:{label:'VO₂max',cls:'vo2'},strength:{label:'Fuerza',cls:'strength'},long:{label:'Tirada larga',cls:'long'},rest:{label:'Descanso',cls:'rest'}};
+  const targets={'2026-07-27':206,'2026-08-03':206,'2026-08-10':225,'2026-08-17':190,'2026-08-24':160,'2026-08-31':210};
+  const seed=[
+    {id:'s1',date:'2026-07-27',type:'easy',name:'Rodaje Z2',duration:45,load:30,status:'done',actualLoad:31,description:'Rodaje cómodo manteniendo respiración controlada.'},
+    {id:'s2',date:'2026-07-28',type:'strength',name:'Fuerza general',duration:35,load:20,status:'done',actualLoad:18,description:'Tren inferior, core y estabilidad.'},
+    {id:'s3',date:'2026-07-29',type:'threshold',name:'4 × 6 min umbral',duration:58,load:48,status:'done',actualLoad:50,description:'Recuperación 2 min al trote.'},
+    {id:'s4',date:'2026-07-30',type:'rest',name:'Descanso',duration:0,load:0,status:'planned',actualLoad:0,description:''},
+    {id:'s5',date:'2026-07-31',type:'easy',name:'Rodaje suave',duration:40,load:28,status:'done',actualLoad:27,description:''},
+    {id:'s6',date:'2026-08-01',type:'vo2',name:'6 × 400 m',duration:45,load:45,status:'done',actualLoad:47,description:'Ritmo vivo, técnica limpia.'},
+    {id:'s7',date:'2026-08-02',type:'long',name:'Tirada aeróbica',duration:55,load:35,status:'done',actualLoad:37,description:''},
+    {id:'s8',date:'2026-08-03',type:'easy',name:'Rodaje Z2 + técnica',duration:50,load:32,status:'planned',actualLoad:0,description:'40 min cómodos + 6 progresivos.'},
+    {id:'s9',date:'2026-08-04',type:'strength',name:'Fuerza específica',duration:35,load:20,status:'planned',actualLoad:0,description:'Unilateral, gemelo-sóleo y core.'},
+    {id:'s10',date:'2026-08-05',type:'threshold',name:'3 × 8 min umbral',duration:62,load:52,status:'planned',actualLoad:0,description:'2 min de recuperación al trote.'},
+    {id:'s11',date:'2026-08-06',type:'rest',name:'Descanso',duration:0,load:0,status:'planned',actualLoad:0,description:''},
+    {id:'s12',date:'2026-08-07',type:'easy',name:'Rodaje regenerativo',duration:38,load:24,status:'planned',actualLoad:0,description:''},
+    {id:'s13',date:'2026-08-08',type:'vo2',name:'8 × 1 min rápido',duration:42,load:38,status:'planned',actualLoad:0,description:'Recuperación 90 s suave.'},
+    {id:'s14',date:'2026-08-09',type:'long',name:'Tirada progresiva',duration:65,load:40,status:'planned',actualLoad:0,description:'Últimos 15 min alegres sin forzar.'},
+    {id:'s15',date:'2026-08-11',type:'easy',name:'Rodaje aeróbico',duration:48,load:31,status:'planned',actualLoad:0,description:''},
+    {id:'s16',date:'2026-08-12',type:'threshold',name:'Tempo continuo',duration:55,load:46,status:'planned',actualLoad:0,description:'20 min a ritmo controlado.'},
+    {id:'s17',date:'2026-08-14',type:'strength',name:'Fuerza + pliometría',duration:40,load:25,status:'planned',actualLoad:0,description:''},
+    {id:'s18',date:'2026-08-16',type:'long',name:'Tirada larga',duration:80,load:58,status:'planned',actualLoad:0,description:''}
+  ];
+  let sessions;
+  try{sessions=JSON.parse(localStorage.getItem('runflow-calendar-prototype'))||seed}catch{sessions=seed}
+  let viewDate=new Date(2026,7,1), selectedWeek='2026-08-03';
+  const $=id=>document.getElementById(id);
+  const iso=d=>{const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`};
+  const parse=s=>{const [y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d)};
+  const monday=d=>{const x=new Date(d);const day=(x.getDay()+6)%7;x.setDate(x.getDate()-day);x.setHours(0,0,0,0);return x};
+  const addDays=(d,n)=>{const x=new Date(d);x.setDate(x.getDate()+n);return x};
+  const fmtShort=d=>d.toLocaleDateString('es-ES',{day:'numeric',month:'short'}).replace('.','');
+  const weekKey=d=>iso(monday(d));
+  const save=()=>localStorage.setItem('runflow-calendar-prototype',JSON.stringify(sessions));
+  const sum=(arr,key)=>arr.reduce((a,s)=>a+(Number(s[key])||0),0);
+  function weekSessions(key){const start=parse(key),end=addDays(start,7);return sessions.filter(s=>{const d=parse(s.date);return d>=start&&d<end})}
+  function showNotice(text){const n=$('notice');n.textContent=text;n.classList.add('show');setTimeout(()=>n.classList.remove('show'),1700)}
+  function render(){
+    $('monthLabel').textContent=viewDate.toLocaleDateString('es-ES',{month:'long',year:'numeric'}).replace(/^./,c=>c.toUpperCase());
+    const first=new Date(viewDate.getFullYear(),viewDate.getMonth(),1); const start=monday(first); const last=new Date(viewDate.getFullYear(),viewDate.getMonth()+1,0); const end=addDays(monday(last),6);
+    const grid=$('calendarGrid');grid.innerHTML='';
+    let cursor=new Date(start); let lastWeek='';
+    while(cursor<=end){
+      const wk=weekKey(cursor);
+      if(wk!==lastWeek){lastWeek=wk}
+      for(let i=0;i<7;i++){
+        const d=new Date(cursor),key=iso(d),daySessions=sessions.filter(s=>s.date===key),day=document.createElement('div');
+        day.className='day'+(d.getMonth()!==viewDate.getMonth()?' outside':'')+(key==='2026-08-03'?' today':'')+(wk===selectedWeek?' selected-week':'');
+        day.innerHTML=`<div class="day-head"><span class="day-number">${d.getDate()}</span><button class="add-day" title="Añadir sesión">+</button></div><div class="sessions"></div><div class="day-load"><span>${daySessions.length} sesión${daySessions.length===1?'':'es'}</span><b>Carga ${sum(daySessions,'load')}</b></div>`;
+        day.querySelector('.add-day').onclick=()=>openNew(key);
+        const holder=day.querySelector('.sessions');
+        daySessions.sort((a,b)=>a.id.localeCompare(b.id)).forEach(s=>{const t=TYPES[s.type]||TYPES.easy,b=document.createElement('button');b.className=`session ${t.cls} ${s.status==='done'?'done':''}`;b.innerHTML=`<strong>${s.status==='done'?'✓ ':''}${s.name}</strong><small><span>${s.duration?`${s.duration} min`:t.label}</span><b>${s.load}</b></small>`;b.onclick=()=>openEdit(s.id);holder.appendChild(b)});
+        day.onclick=e=>{if(e.target===day||e.target.classList.contains('day-head')||e.target.classList.contains('day-number')){selectedWeek=wk;render()}};
+        grid.appendChild(day);cursor=addDays(cursor,1);
+      }
+      const ws=weekSessions(wk),planned=sum(ws,'load'),actual=sum(ws.filter(s=>s.status==='done'),'actualLoad'),target=targets[wk]||0,pct=target?Math.round(planned/target*100):0,summary=document.createElement('div');
+      summary.className='week-summary';summary.innerHTML=`<strong>${fmtShort(parse(wk))} – ${fmtShort(addDays(parse(wk),6))}</strong><span class="week-stat">Programada <b>${planned}</b></span><span class="week-stat">Objetivo <b>${target||'—'}</b></span><span class="week-stat">Realizada <b>${actual}</b></span><div class="progress" title="${pct}% del objetivo"><i style="width:${Math.min(100,pct)}%"></i></div>`;summary.onclick=()=>{selectedWeek=wk;render()};grid.appendChild(summary);
+    }
+    renderSide(start,end);renderMetrics();
+  }
+  function renderSide(start,end){const list=$('weekList');list.innerHTML='';let d=monday(start);while(d<=end){const key=iso(d),ws=weekSessions(key),planned=sum(ws,'load'),actual=sum(ws.filter(s=>s.status==='done'),'actualLoad'),target=targets[key]||0,box=document.createElement('div');box.className='week-box'+(key===selectedWeek?' active':'');box.innerHTML=`<div class="row"><h3>${fmtShort(d)} – ${fmtShort(addDays(d,6))}</h3><span class="badge">${planned}/${target||'—'}</span></div><p>Realizada: ${actual} · ${ws.length} sesiones</p>`;box.onclick=()=>{selectedWeek=key;render()};list.appendChild(box);d=addDays(d,7)} }
+  function renderMetrics(){const monthSessions=sessions.filter(s=>{const d=parse(s.date);return d.getFullYear()===viewDate.getFullYear()&&d.getMonth()===viewDate.getMonth()}),ws=weekSessions(selectedWeek),planned=sum(ws,'load'),actual=sum(ws.filter(s=>s.status==='done'),'actualLoad'),target=targets[selectedWeek]||0;$('monthPlanned').textContent=sum(monthSessions,'load');$('monthDone').textContent=sum(monthSessions.filter(s=>s.status==='done'),'actualLoad');$('selectedPlanned').textContent=planned;$('selectedTargetText').textContent=`Objetivo: ${target||'sin definir'}`;$('selectedCompliance').textContent=planned?`${Math.round(actual/planned*100)} %`:'—'}
+  function openNew(date){$('sessionForm').reset();$('sessionId').value='';$('sessionDate').value=date;$('sessionDuration').value=45;$('sessionLoad').value=35;$('sessionActualLoad').value=0;$('modalTitle').textContent='Nueva sesión';$('deleteSession').classList.add('hidden');$('modalBackdrop').classList.add('open')}
+  function openEdit(id){const s=sessions.find(x=>x.id===id);if(!s)return;$('sessionId').value=s.id;$('sessionDate').value=s.date;$('sessionType').value=s.type;$('sessionName').value=s.name;$('sessionDuration').value=s.duration;$('sessionLoad').value=s.load;$('sessionStatus').value=s.status;$('sessionActualLoad').value=s.actualLoad||0;$('sessionDescription').value=s.description||'';$('modalTitle').textContent='Editar sesión';$('deleteSession').classList.remove('hidden');$('modalBackdrop').classList.add('open')}
+  function closeModal(){$('modalBackdrop').classList.remove('open')}
+  $('sessionForm').onsubmit=e=>{e.preventDefault();const id=$('sessionId').value||`s${Date.now()}`,obj={id,date:$('sessionDate').value,type:$('sessionType').value,name:$('sessionName').value.trim(),duration:Number($('sessionDuration').value)||0,load:Number($('sessionLoad').value)||0,status:$('sessionStatus').value,actualLoad:Number($('sessionActualLoad').value)||0,description:$('sessionDescription').value.trim()};const ix=sessions.findIndex(s=>s.id===id);if(ix>=0)sessions[ix]=obj;else sessions.push(obj);selectedWeek=weekKey(parse(obj.date));save();closeModal();render();showNotice(ix>=0?'Sesión actualizada':'Sesión añadida')};
+  $('deleteSession').onclick=()=>{const id=$('sessionId').value;if(!id)return;sessions=sessions.filter(s=>s.id!==id);save();closeModal();render();showNotice('Sesión eliminada')};
+  $('closeModal').onclick=$('cancelModal').onclick=closeModal;$('modalBackdrop').onclick=e=>{if(e.target===$('modalBackdrop'))closeModal()};
+  $('prevMonth').onclick=()=>{viewDate=new Date(viewDate.getFullYear(),viewDate.getMonth()-1,1);render()};$('nextMonth').onclick=()=>{viewDate=new Date(viewDate.getFullYear(),viewDate.getMonth()+1,1);render()};$('todayBtn').onclick=()=>{viewDate=new Date(2026,7,1);selectedWeek='2026-08-03';render()};
+  render();
+})();
+</script>
+</body>
+</html>
