@@ -723,25 +723,102 @@ async function saveWeek(athleteId, body, publish = false) {
     prefer: 'resolution=merge-duplicates,return=representation',
   });
   const savedWeek = weekRows[0];
-  await prodRows('workouts', `training_week_id=eq.${encodeURIComponent(savedWeek.id)}`, { method: 'DELETE', prefer: 'return=minimal' });
-  if (week.workouts.length) {
-    await prodRows('workouts', '', {
-      method: 'POST',
-      body: week.workouts.map(item => ({
-        training_week_id: savedWeek.id,
-        athlete_id: athleteId,
-        workout_date: item.workout_date,
-        sport: item.sport,
-        title: item.title,
-        summary: item.summary,
-        structured_description: item.structured_description,
-        planned_load: item.planned_load,
-        blocks: item.blocks,
-        visible_to_athlete: week.status === 'published',
-      })),
-    });
+  // Mantener UUID estables: actualizar sesiones existentes,
+  // crear únicamente las nuevas y borrar únicamente las eliminadas.
+  const existingWorkouts = await prodRows(
+    'workouts',
+    `training_week_id=eq.${encodeURIComponent(savedWeek.id)}&select=id`
+  );
+
+  const existingIds = new Set(existingWorkouts.map(item => String(item.id)));
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  const incomingWorkouts = week.workouts.map(item => ({
+    ...item,
+    id: uuidPattern.test(String(item.id || ''))
+      ? String(item.id)
+      : crypto.randomUUID(),
+  }));
+
+  const incomingIds = new Set(incomingWorkouts.map(item => item.id));
+
+  // Evita reutilizar accidentalmente el UUID de una sesión de otra semana.
+  const newIds = incomingWorkouts
+    .filter(item => !existingIds.has(item.id))
+    .map(item => item.id);
+
+  if (newIds.length) {
+    const conflicts = await prodRows(
+      'workouts',
+      `id=in.(${newIds.join(',')})&select=id`
+    );
+
+    if (conflicts.length) {
+      throw Object.assign(
+        new Error('Una de las sesiones utiliza un identificador que ya pertenece a otra sesión.'),
+        { status: 409 }
+      );
+    }
   }
-  return { ...savedWeek, workouts: week.workouts };
+
+  // Primero actualizamos o creamos. No borramos nada hasta saber
+  // que las nuevas sesiones se han guardado correctamente.
+  await Promise.all(incomingWorkouts.map(item => {
+    const payload = {
+      training_week_id: savedWeek.id,
+      athlete_id: athleteId,
+      workout_date: item.workout_date,
+      sport: item.sport,
+      title: item.title,
+      summary: item.summary,
+      structured_description: item.structured_description,
+      planned_load: item.planned_load,
+      blocks: item.blocks,
+      visible_to_athlete: week.status === 'published',
+      updated_at: new Date().toISOString(),
+    };
+
+    if (existingIds.has(item.id)) {
+      return prodRows(
+        'workouts',
+        `id=eq.${encodeURIComponent(item.id)}&training_week_id=eq.${encodeURIComponent(savedWeek.id)}&athlete_id=eq.${encodeURIComponent(athleteId)}`,
+        {
+          method: 'PATCH',
+          body: payload,
+          prefer: 'return=minimal',
+        }
+      );
+    }
+
+    return prodRows('workouts', '', {
+      method: 'POST',
+      body: { id: item.id, ...payload },
+      prefer: 'return=minimal',
+    });
+  }));
+
+  // Ahora sí: borrar únicamente las sesiones que el coach ha eliminado.
+  const deletedIds = existingWorkouts
+    .map(item => String(item.id))
+    .filter(id => !incomingIds.has(id));
+
+  await Promise.all(deletedIds.map(id =>
+    prodRows(
+      'workouts',
+      `id=eq.${encodeURIComponent(id)}&training_week_id=eq.${encodeURIComponent(savedWeek.id)}`,
+      {
+        method: 'DELETE',
+        prefer: 'return=minimal',
+      }
+    )
+  ));
+
+  const savedWorkouts = await prodRows(
+    'workouts',
+    `training_week_id=eq.${encodeURIComponent(savedWeek.id)}&select=*&order=workout_date.asc`
+  );
+
+  return { ...savedWeek, workouts: savedWorkouts };
 }
 
 async function addGoal(athleteId, body) {
