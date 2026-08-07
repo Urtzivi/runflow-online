@@ -723,25 +723,228 @@ async function saveWeek(athleteId, body, publish = false) {
     prefer: 'resolution=merge-duplicates,return=representation',
   });
   const savedWeek = weekRows[0];
-  await prodRows('workouts', `training_week_id=eq.${encodeURIComponent(savedWeek.id)}`, { method: 'DELETE', prefer: 'return=minimal' });
-  if (week.workouts.length) {
-    await prodRows('workouts', '', {
-      method: 'POST',
-      body: week.workouts.map(item => ({
-        training_week_id: savedWeek.id,
-        athlete_id: athleteId,
-        workout_date: item.workout_date,
-        sport: item.sport,
-        title: item.title,
-        summary: item.summary,
-        structured_description: item.structured_description,
-        planned_load: item.planned_load,
-        blocks: item.blocks,
-        visible_to_athlete: week.status === 'published',
-      })),
-    });
+  // Mantener UUID estables: actualizar sesiones existentes,
+  // crear únicamente las nuevas y borrar únicamente las eliminadas.
+  const existingWorkouts = await prodRows(
+    'workouts',
+    `training_week_id=eq.${encodeURIComponent(savedWeek.id)}&select=id`
+  );
+
+  const existingIds = new Set(existingWorkouts.map(item => String(item.id)));
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  const incomingWorkouts = week.workouts.map(item => ({
+    ...item,
+    id: uuidPattern.test(String(item.id || ''))
+      ? String(item.id)
+      : crypto.randomUUID(),
+  }));
+
+  const incomingIds = new Set(incomingWorkouts.map(item => item.id));
+
+  // Evita reutilizar accidentalmente el UUID de una sesión de otra semana.
+  const newIds = incomingWorkouts
+    .filter(item => !existingIds.has(item.id))
+    .map(item => item.id);
+
+  if (newIds.length) {
+    const conflicts = await prodRows(
+      'workouts',
+      `id=in.(${newIds.join(',')})&select=id`
+    );
+
+    if (conflicts.length) {
+      throw Object.assign(
+        new Error('Una de las sesiones utiliza un identificador que ya pertenece a otra sesión.'),
+        { status: 409 }
+      );
+    }
   }
-  return { ...savedWeek, workouts: week.workouts };
+
+  // Primero actualizamos o creamos. No borramos nada hasta saber
+  // que las nuevas sesiones se han guardado correctamente.
+  await Promise.all(incomingWorkouts.map(item => {
+    const payload = {
+      training_week_id: savedWeek.id,
+      athlete_id: athleteId,
+      workout_date: item.workout_date,
+      sport: item.sport,
+      title: item.title,
+      summary: item.summary,
+      structured_description: item.structured_description,
+      planned_load: item.planned_load,
+      blocks: item.blocks,
+      visible_to_athlete: week.status === 'published',
+      updated_at: new Date().toISOString(),
+    };
+
+    if (existingIds.has(item.id)) {
+      return prodRows(
+        'workouts',
+        `id=eq.${encodeURIComponent(item.id)}&training_week_id=eq.${encodeURIComponent(savedWeek.id)}&athlete_id=eq.${encodeURIComponent(athleteId)}`,
+        {
+          method: 'PATCH',
+          body: payload,
+          prefer: 'return=minimal',
+        }
+      );
+    }
+
+    return prodRows('workouts', '', {
+      method: 'POST',
+      body: { id: item.id, ...payload },
+      prefer: 'return=minimal',
+    });
+  }));
+
+  // Ahora sí: borrar únicamente las sesiones que el coach ha eliminado.
+  const deletedIds = existingWorkouts
+    .map(item => String(item.id))
+    .filter(id => !incomingIds.has(id));
+
+  await Promise.all(deletedIds.map(id =>
+    prodRows(
+      'workouts',
+      `id=eq.${encodeURIComponent(id)}&training_week_id=eq.${encodeURIComponent(savedWeek.id)}`,
+      {
+        method: 'DELETE',
+        prefer: 'return=minimal',
+      }
+    )
+  ));
+
+  const savedWorkouts = await prodRows(
+    'workouts',
+    `training_week_id=eq.${encodeURIComponent(savedWeek.id)}&select=*&order=workout_date.asc`
+  );
+
+  return { ...savedWeek, workouts: savedWorkouts };
+}
+
+function normaliseSeason(body, athleteId) {
+  const startDate = validDate(body.start_date);
+  const endDate = validDate(body.end_date);
+
+  const season = {
+    athlete_id: athleteId,
+    name: sanitiseText(body.name, 200),
+    start_date: startDate,
+    end_date: endDate,
+    status: ['planned', 'active', 'completed'].includes(body.status)
+      ? body.status
+      : 'planned',
+    season_objective: sanitiseText(body.season_objective, 3000),
+    notes: sanitiseText(body.notes, 5000),
+    updated_at: new Date().toISOString(),
+  };
+
+  if (!season.name || !season.start_date || !season.end_date) {
+    throw Object.assign(
+      new Error('La temporada necesita nombre, fecha de inicio y fecha de fin.'),
+      { status: 400 }
+    );
+  }
+
+  if (season.end_date < season.start_date) {
+    throw Object.assign(
+      new Error('La fecha de fin de la temporada no puede ser anterior a la fecha de inicio.'),
+      { status: 400 }
+    );
+  }
+
+  return season;
+}
+
+async function listSeasons(athleteId) {
+  if (DEMO_MODE) {
+    const athlete = demo.athletes.find(item => item.id === athleteId);
+    if (!athlete) {
+      throw Object.assign(new Error('Deportista no encontrado.'), { status: 404 });
+    }
+
+    if (!Array.isArray(athlete.seasons)) athlete.seasons = [];
+
+    return athlete.seasons
+      .slice()
+      .sort((a, b) => String(b.start_date).localeCompare(String(a.start_date)));
+  }
+
+  return prodRows(
+    'seasons',
+    `athlete_id=eq.${encodeURIComponent(athleteId)}&select=*&order=start_date.desc`
+  );
+}
+
+async function addSeason(athleteId, body) {
+  const season = {
+    id: crypto.randomUUID(),
+    ...normaliseSeason(body, athleteId),
+  };
+
+  if (DEMO_MODE) {
+    const athlete = demo.athletes.find(item => item.id === athleteId);
+    if (!athlete) {
+      throw Object.assign(new Error('Deportista no encontrado.'), { status: 404 });
+    }
+
+    if (!Array.isArray(athlete.seasons)) athlete.seasons = [];
+
+    athlete.seasons.push(season);
+    saveDemo();
+
+    return season;
+  }
+
+  const rows = await prodRows('seasons', '', {
+    method: 'POST',
+    body: season,
+  });
+
+  return rows[0];
+}
+
+async function updateSeason(seasonId, athleteId, body) {
+  const season = normaliseSeason(body, athleteId);
+
+  if (DEMO_MODE) {
+    const athlete = demo.athletes.find(item => item.id === athleteId);
+    if (!athlete) {
+      throw Object.assign(new Error('Deportista no encontrado.'), { status: 404 });
+    }
+
+    if (!Array.isArray(athlete.seasons)) athlete.seasons = [];
+
+    const index = athlete.seasons.findIndex(item => item.id === seasonId);
+
+    if (index < 0) {
+      throw Object.assign(new Error('Temporada no encontrada.'), { status: 404 });
+    }
+
+    athlete.seasons[index] = {
+      ...athlete.seasons[index],
+      ...season,
+      id: seasonId,
+    };
+
+    saveDemo();
+
+    return athlete.seasons[index];
+  }
+
+  const rows = await prodRows(
+    'seasons',
+    `id=eq.${encodeURIComponent(seasonId)}&athlete_id=eq.${encodeURIComponent(athleteId)}`,
+    {
+      method: 'PATCH',
+      body: season,
+    }
+  );
+
+  if (!rows.length) {
+    throw Object.assign(new Error('Temporada no encontrada.'), { status: 404 });
+  }
+
+  return rows[0];
 }
 
 async function addGoal(athleteId, body) {
@@ -1323,6 +1526,45 @@ async function api(req, res, url) {
     return sendJson(res, 200, { week, intervals, already_published: alreadyPublished });
   }
 
+  const seasonsMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/seasons$/);
+
+  if (seasonsMatch && method === 'GET') {
+    const athleteId = seasonsMatch[1];
+    await ensureCoachAccess(session, athleteId);
+
+    return sendJson(res, 200, {
+      seasons: await listSeasons(athleteId),
+    });
+  }
+
+  if (seasonsMatch && method === 'POST') {
+    const athleteId = seasonsMatch[1];
+    await ensureCoachAccess(session, athleteId);
+
+    return sendJson(res, 201, {
+      season: await addSeason(athleteId, await readJson(req)),
+    });
+  }
+
+  const seasonMatch = pathname.match(
+    /^\/api\/coach\/athletes\/([^/]+)\/seasons\/([^/]+)$/
+  );
+
+  if (seasonMatch && method === 'PUT') {
+    const athleteId = seasonMatch[1];
+    const seasonId = seasonMatch[2];
+
+    await ensureCoachAccess(session, athleteId);
+
+    return sendJson(res, 200, {
+      season: await updateSeason(
+        seasonId,
+        athleteId,
+        await readJson(req)
+      ),
+    });
+  }
+  
   const goalsMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/goals$/);
   if (goalsMatch && method === 'POST') {
     const athleteId = goalsMatch[1];
