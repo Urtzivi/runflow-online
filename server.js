@@ -21,7 +21,7 @@ const APP_ENCRYPTION_KEY = String(process.env.APP_ENCRYPTION_KEY || '');
 const OPENAI_API_KEY = String(process.env.OPENAI_API_KEY || '');
 const OPENAI_MODEL = String(process.env.OPENAI_MODEL || 'gpt-5.6-terra');
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
-const APP_VERSION = 'Online Pilot 1.6';
+const APP_VERSION = 'Online Pilot 1.6.1';
 const INTERVALS_API_BASE = 'https://intervals.icu/api/v1';
 
 const RUNFLOW_PLAN_SCHEMA = 'runflow.plan.v1';
@@ -2878,15 +2878,15 @@ async function activityAnalysisPackage(session, athleteId, externalId) {
   const activity = detail.activity || {};
   const base = safeFilename(`${String(activity.activity_date || '').slice(0, 10)}_${activity.name || externalId}`);
   const manifest = {
-    schema: 'runflow.activity-package.v1',
+    schema: 'runflow.activity-package.v1.1',
     generated_at: new Date().toISOString(),
     intervals_activity_id: externalId,
     athlete_id: athleteId,
     files: ['activity.json', 'intervals_raw_detail.json', 'README.txt'],
-    note: 'Paquete de análisis. Incluye el contexto de RunFlow y, cuando Intervals lo permite, los archivos binarios original y procesado.',
+    note: 'Paquete de análisis. Incluye contexto RunFlow, recuperación sincronizada a la fecha de la actividad, streams temporales y, cuando Intervals lo permite, archivos binarios original y procesado.',
   };
   const context = {
-    schema: 'runflow.activity-context.v1',
+    schema: 'runflow.activity-context.v1.1',
     generated_at: manifest.generated_at,
     activity: { ...activity, raw_summary: undefined },
     planned: detail.planned || null,
@@ -2897,7 +2897,7 @@ async function activityAnalysisPackage(session, athleteId, externalId) {
     { name: 'manifest.json', data: JSON.stringify(manifest, null, 2) },
     { name: 'activity.json', data: JSON.stringify(context, null, 2) },
     { name: 'intervals_raw_detail.json', data: JSON.stringify(activity.raw_summary || {}, null, 2) },
-    { name: 'README.txt', data: 'RunFlow activity package v1\n\nSube este ZIP directamente a ChatGPT para analizar la sesión. El paquete contiene el detalle completo recibido de Intervals.icu, el contexto Plan vs Real, recuperación y, si están disponibles, los archivos de actividad.\n' },
+    { name: 'README.txt', data: 'RunFlow activity package v1.1\n\nSube este ZIP directamente a ChatGPT para analizar la sesión. Incluye el detalle recibido de Intervals.icu, contexto Plan vs Real, recuperación sincronizada hasta la fecha de la actividad, streams temporales en CSV/JSON cuando están disponibles y los archivos FIT originales/procesados.\n' },
   ];
   if (!DEMO_MODE) {
     const apiKey = await getIntervalsKey(athleteId);
@@ -2909,6 +2909,20 @@ async function activityAnalysisPackage(session, athleteId, externalId) {
         manifest.files.push(`original_activity.${fileType}.gz`);
       } catch (error) {
         manifest.original_file_error = error.message;
+      }
+      try {
+        const streamsCsv = await intervalsFetchBinary(apiKey, `/activity/${encodeURIComponent(externalId)}/streams.csv`);
+        entries.push({ name: 'streams.csv', data: streamsCsv.buffer });
+        manifest.files.push('streams.csv');
+      } catch (error) {
+        manifest.streams_csv_error = error.message;
+      }
+      try {
+        const streamsJson = await intervalsFetch(apiKey, `/activity/${encodeURIComponent(externalId)}/streams.json`);
+        entries.push({ name: 'streams.json', data: JSON.stringify(streamsJson, null, 2) });
+        manifest.files.push('streams.json');
+      } catch (error) {
+        manifest.streams_json_error = error.message;
       }
       try {
         const processed = await intervalsFetchBinary(apiKey, `/activity/${encodeURIComponent(externalId)}/fit-file`);
@@ -3292,7 +3306,7 @@ async function getActivityDetail(session, athleteId, externalId) {
             'workouts',
             `athlete_id=eq.${encodeURIComponent(athleteId)}&workout_date=eq.${date}&select=*&order=planned_load.desc&limit=1`
           ),
-      listRecoveryRows(athleteId, addDays(date, -21), date),
+      syncRecovery(athleteId, addDays(date, -21), date).catch(() => listRecoveryRows(athleteId, addDays(date, -21), date)),
     ]);
     planned = plannedRows[0] || null;
     recovery = recoveryRows;
