@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#126f60">
-  <title>RunFlow Coach · Calendario 1.2</title>
+  <title>RunFlow Coach · Planificación 2.0</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
-  <link rel="stylesheet" href="/css/app.css?v=1.2">
+  <link rel="stylesheet" href="/css/app.css?v=2.0">
 </head>
 <body>
   <header class="topbar">
@@ -27,6 +27,7 @@
 
     <nav class="tabs" aria-label="Secciones del coach">
       <button class="tab active" data-view="summary">Resumen</button>
+      <button class="tab" data-view="plan">Plan</button>
       <button class="tab" data-view="week">Calendario</button>
       <button class="tab" data-view="activities">Actividades</button>
       <button class="tab" data-view="recovery">Recuperación</button>
@@ -66,6 +67,82 @@
             </section>
           </aside>
         </div>
+      </div>
+    </section>
+
+
+    <section id="planView" class="view" style="margin-top:18px">
+      <div class="stack">
+        <section class="card plan-command">
+          <div class="card-body plan-command-inner">
+            <div>
+              <p class="eyebrow">Planificación deportiva</p>
+              <h2 style="font-size:1.45rem">Temporada → bloques → semanas → sesiones</h2>
+              <p class="muted" style="margin:0">Estructura la temporada, compara lo planificado con lo realizado y decide manualmente los ajustes.</p>
+            </div>
+            <div class="plan-season-actions">
+              <label>Temporada<select id="planSeasonSelect"><option value="">Sin temporada</option></select></label>
+              <button id="newSeason" class="btn primary" type="button">+ Temporada</button>
+              <button id="newPlanGoal" class="btn secondary" type="button">+ Objetivo</button>
+            </div>
+          </div>
+        </section>
+
+        <nav class="plan-tabs" aria-label="Niveles de planificación">
+          <button class="plan-tab active" data-plan-view="season" type="button">Temporada</button>
+          <button class="plan-tab" data-plan-view="blocks" type="button">Bloques</button>
+          <button class="plan-tab" data-plan-view="week" type="button">Semana</button>
+        </nav>
+
+        <div id="planLoading" class="empty-state hidden">Cargando planificación…</div>
+        <div id="planNoSeason" class="empty-state hidden">
+          <h3>Este deportista todavía no tiene una temporada</h3>
+          <p>Crea la temporada para empezar a ordenar objetivos, macrociclos, mesociclos y semanas.</p>
+          <button id="createFirstSeason" class="btn primary" type="button">Crear temporada</button>
+        </div>
+
+        <section id="planSeasonPanel" class="plan-panel active">
+          <div class="grid grid-4">
+            <article class="metric"><span>Temporada</span><strong id="planSeasonName" style="font-size:1.15rem">—</strong><small id="planSeasonDates">—</small></article>
+            <article class="metric"><span>Objetivos</span><strong id="planGoalCount">0</strong><small>A / B / C</small></article>
+            <article class="metric"><span>Macrociclos</span><strong id="planMacroCount">0</strong><small id="planMesoCount">0 mesociclos</small></article>
+            <article class="metric"><span>Semanas</span><strong id="planMicroCount">0</strong><small id="planSessionCount">0 sesiones</small></article>
+          </div>
+          <div class="layout" style="margin-top:16px">
+            <section class="card">
+              <div class="card-head"><div><h2>Objetivos de temporada</h2><p>La prioridad A marca los hitos que condicionan la planificación.</p></div><button id="newPlanGoalInline" class="btn secondary small" type="button">+ Objetivo</button></div>
+              <div class="card-body"><div id="planGoalList" class="plan-goal-grid"></div></div>
+            </section>
+            <aside class="card">
+              <div class="card-head"><div><h2>Dirección de la temporada</h2><p id="planSeasonStatusText">Sin temporada activa</p></div><button id="editSeason" class="btn soft small" type="button">Editar</button></div>
+              <div class="card-body"><p id="planSeasonObjective" class="plan-objective">—</p><div id="unassignedGoalBox" class="form-section hidden" style="margin-top:14px"></div></div>
+            </aside>
+          </div>
+        </section>
+
+        <section id="planBlocksPanel" class="plan-panel">
+          <section class="card">
+            <div class="card-head"><div><h2>Estructura de bloques</h2><p>Macrociclos, mesociclos y microciclos de la temporada seleccionada.</p></div><button id="newMacrocycle" class="btn primary" type="button">+ Macrociclo</button></div>
+            <div class="card-body"><div id="macrocycleList" class="plan-block-tree"></div></div>
+          </section>
+        </section>
+
+        <section id="planWeekPanel" class="plan-panel">
+          <div id="planWeekEmpty" class="empty-state">Selecciona una semana desde la estructura de bloques.</div>
+          <div id="planWeekDetail" class="hidden stack">
+            <section class="card">
+              <div class="card-head"><div><p class="eyebrow">Microciclo seleccionado</p><h2 id="planWeekTitle">—</h2><p id="planWeekDates">—</p></div><div class="actions"><button id="evaluateSelectedWeek" class="btn secondary small" type="button">Evaluar</button><button id="openSelectedWeekCalendar" class="btn primary small" type="button">Abrir en calendario</button></div></div>
+              <div class="card-body">
+                <div class="plan-compare-grid" id="planWeekCompare"></div>
+                <div class="form-section" style="margin-top:14px"><strong>Objetivo principal</strong><p id="planWeekObjective" class="muted" style="margin:6px 0 0">—</p></div>
+              </div>
+            </section>
+            <section class="card">
+              <div class="card-head"><div><h2>Sesiones</h2><p>Prioridad A/B/C y objetivo de cada estímulo.</p></div></div>
+              <div class="card-body"><div id="planWeekSessions" class="plan-session-list"></div></div>
+            </section>
+          </div>
+        </section>
       </div>
     </section>
 
@@ -342,12 +419,42 @@
     </div>
   </div>
 
+
+  <div id="planModal" class="modal-backdrop hidden">
+    <div class="modal plan-modal">
+      <div class="modal-head"><div><p class="eyebrow" id="planModalEyebrow">Planificación</p><h2 id="planModalTitle">Editar</h2></div><button id="closePlanModal" class="btn secondary" type="button">Cerrar</button></div>
+      <div class="modal-body">
+        <div id="planFormFields" class="stack"></div>
+        <div class="actions" style="margin-top:18px"><button id="savePlanEntity" class="btn primary" type="button">Guardar</button><span id="planFormStatus" class="muted small"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="evaluationModal" class="modal-backdrop hidden">
+    <div class="modal plan-modal">
+      <div class="modal-head"><div><p class="eyebrow">Evaluación manual</p><h2 id="evaluationTitle">Evaluar ciclo</h2></div><button id="closeEvaluationModal" class="btn secondary" type="button">Cerrar</button></div>
+      <div class="modal-body">
+        <div class="field-row"><label>Tipo<select id="evaluationType"><option value="interim">Intermedia</option><option value="final">Final</option></select></label><label>Estado<select id="evaluationStatus"><option value="draft">Borrador</option><option value="final">Final</option></select></label></div>
+        <div class="field-row-3" style="margin-top:12px"><label>Cumplimiento (%)<input id="evaluationCompletion" type="number" min="0" max="100" step="0.1"></label><label>Fatiga (0-10)<input id="evaluationFatigue" type="number" min="0" max="10" step="0.1"></label><label>Sensación (1-10)<input id="evaluationFeeling" type="number" min="1" max="10"></label></div>
+        <div class="field-row" style="margin-top:12px"><label>Cambio de aptitud<input id="evaluationFitnessChange" type="number" step="0.1"></label><label>Objetivo conseguido<select id="evaluationGoal"><option value="">Sin indicar</option><option value="yes">Sí</option><option value="partial">Parcial</option><option value="no">No</option></select></label></div>
+        <label style="margin-top:12px">Estado de lesiones / molestias<textarea id="evaluationInjury"></textarea></label>
+        <label style="margin-top:12px">Notas del entrenador<textarea id="evaluationNotes"></textarea></label>
+        <div class="field-row" style="margin-top:12px"><label>Decisión<select id="evaluationDecision"><option value="none">Sin ajuste</option><option value="advance">Avanzar</option><option value="prolong">Prolongar</option><option value="deload">Descargar</option><option value="modify">Modificar</option><option value="repeat">Repetir</option></select></label><label>Ajuste decidido<textarea id="evaluationAdjustment"></textarea></label></div>
+        <div class="actions" style="margin-top:18px"><button id="saveEvaluation" class="btn primary" type="button">Guardar evaluación</button><span id="evaluationStatusText" class="muted small"></span></div>
+      </div>
+    </div>
+  </div>
+
   <div id="sessionModal" class="modal-backdrop hidden">
     <div class="modal">
       <div class="modal-head"><div><p class="eyebrow">Constructor de sesión</p><h2 id="modalTitle">Editar entrenamiento</h2></div><button id="closeModal" class="btn secondary" type="button">Cerrar</button></div>
       <div class="modal-body">
-        <div class="field-row-3"><label>Fecha<input id="modalWorkoutDate" type="date"></label><label>Deporte<select id="modalSport"><option value="Run">Carrera</option><option value="Ride">Ciclismo</option><option value="Strength">Fuerza</option><option value="Rest">Descanso</option></select></label><label>Carga prevista<input id="modalLoad" type="number" min="0"></label></div>
+        <div class="field-row-3"><label>Fecha<input id="modalWorkoutDate" type="date"></label><label>Deporte<select id="modalSport"><option value="Run">Carrera</option><option value="Ride">Ciclismo</option><option value="Strength">Fuerza</option><option value="Rest">Descanso</option></select></label><label>Prioridad<select id="modalPriority"><option value="A">A · Clave</option><option value="B">B · Importante</option><option value="C">C · Complementaria</option></select></label></div>
+        <div class="field-row-3" style="margin-top:12px"><label>Carga prevista<input id="modalLoad" type="number" min="0"></label><label>Duración prevista (min)<input id="modalDuration" type="number" min="0" step="1"></label><label>Distancia prevista (km)<input id="modalDistance" type="number" min="0" step="0.1"></label></div>
+        <div class="field-row" style="margin-top:12px"><label>Desnivel previsto (m+)<input id="modalElevation" type="number" min="0" step="1"></label><label class="checkbox-label"><input id="modalIsStrength" type="checkbox"> Contabilizar como sesión de fuerza</label></div>
         <label style="margin-top:12px">Título<input id="modalWorkoutTitle"></label>
+        <label style="margin-top:12px">Objetivo de la sesión<input id="modalSessionObjective" placeholder="Qué adaptación queremos provocar"></label>
+        <div class="field-row" style="margin-top:12px"><label>Adaptación objetivo<input id="modalAdaptationTarget" placeholder="Ej.: LT2, base aeróbica, fuerza máxima"></label><label>Por qué está aquí<input id="modalPurpose" placeholder="Papel de esta sesión dentro del bloque"></label></div>
         <label style="margin-top:12px">Resumen visible para el deportista<textarea id="modalSummary"></textarea></label>
         <div class="form-section" style="margin-top:14px"><h3>Calentamiento</h3><div class="field-row"><label>Duración (min)<input id="warmupMinutes" type="number" min="0"></label><label>Objetivo<input id="warmupTarget" placeholder="Z2 Pace / Z2 HR"></label></div></div>
         <div class="form-section"><h3>Activación opcional</h3><div class="field-row-3"><label>Repeticiones<input id="activationReps" type="number" min="0"></label><label>Trabajo (s)<input id="activationWork" type="number" min="0"></label><label>Recuperación (s)<input id="activationRecovery" type="number" min="0"></label></div><div class="field-row" style="margin-top:10px"><label>Objetivo trabajo<input id="activationTarget" placeholder="Z4 Pace"></label><label>Objetivo recuperación<input id="activationRecoveryTarget" placeholder="Z1 Pace"></label></div></div>
@@ -359,6 +466,6 @@
     </div>
   </div>
 
-  <script src="/js/coach.js?v=1.2"></script>
-<script src="/js/register-sw.js?v=1.2"></script></body>
+  <script src="/js/coach.js?v=2.0"></script>
+<script src="/js/register-sw.js?v=2.0"></script></body>
 </html>
