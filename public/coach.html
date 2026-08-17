@@ -233,7 +233,7 @@
               </div>
               <div class="form-section" style="margin-top:14px">
                 <strong>Publicación segura</strong>
-                <p class="muted small" style="margin:6px 0 0">La primera publicación se envía a Intervals. Las modificaciones posteriores actualizan la app, pero no se reenvían automáticamente para evitar duplicados.</p>
+                <p class="muted small" style="margin:6px 0 0">Las semanas publicadas se sincronizan con Intervals. Las ediciones posteriores actualizan la misma sesión y las eliminaciones se retiran del calendario de Intervals.</p>
               </div>
             </div>
           </section>
@@ -527,11 +527,12 @@
         <div id="enduranceBlocksSection" class="form-section"><div class="card-head" style="padding:0 0 10px"><div><h3>Bloques centrales</h3></div><button id="addBlock" class="btn secondary small" type="button">+ Bloque</button></div><div id="centralBlocks" class="stack"></div></div>
         <div class="form-section"><h3>Vuelta a la calma</h3><div class="field-row"><label>Duración (min)<input id="cooldownMinutes" type="number" min="0"></label><label>Objetivo<input id="cooldownTarget" placeholder="Z1 Pace"></label></div></div>
         <label style="margin-top:14px">Texto estructurado para Intervals<textarea id="structuredDescription" style="min-height:170px"></textarea></label>
-        <div class="actions session-modal-actions" style="margin-top:16px"><button id="deleteSessionModal" class="btn danger hidden" type="button">Eliminar sesión</button><span class="actions-spacer"></span><button id="generateDescription" class="btn secondary" type="button">Generar texto</button><button id="saveSessionModal" class="btn primary" type="button">Guardar sesión</button></div>
+        <div id="intervalsPreviewBox" class="form-section hidden" style="margin-top:14px"><div class="card-head compact" style="padding:0 0 8px"><div><h3>Vista Intervals</h3><p id="intervalsPreviewMeta">Formato que recibirá Intervals.icu.</p></div></div><textarea id="intervalsPreviewText" readonly style="min-height:170px"></textarea></div>
+        <div class="actions session-modal-actions" style="margin-top:16px"><button id="deleteSessionModal" class="btn danger hidden" type="button">Eliminar sesión</button><span class="actions-spacer"></span><button id="generateDescription" class="btn secondary" type="button">Generar texto</button><button id="previewIntervals" class="btn soft" type="button">Vista Intervals</button><button id="saveSessionModal" class="btn primary" type="button">Guardar sesión</button></div>
       </div>
     </div>
   </div>
 
-  <script src="/js/coach.js?v=2.3"></script>
-<script src="/js/register-sw.js?v=2.3"></script></body>
+  <script src="/js/coach.js?v=2.3.2"></script>
+<script src="/js/register-sw.js?v=2.3.2"></script></body>
 </html>
