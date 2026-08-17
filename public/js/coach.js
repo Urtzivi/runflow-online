@@ -1,5 +1,5 @@
 const $ = id => document.getElementById(id);
-const state = { user: null, config: null, athletes: [], athlete: null, editingSession: null, modalBlocks: [], activities: [], recovery: [], currentActivityId: null, currentActivity: null, calendar: { month: new Date(new Date().getFullYear(), new Date().getMonth(), 1), weeks: new Map(), selectedWeekStart: isoMonday(), loading: false } };
+const state = { user: null, config: null, athletes: [], athlete: null, editingSession: null, modalBlocks: [], activities: [], recovery: [], currentActivityId: null, currentActivity: null, calendar: { month: new Date(new Date().getFullYear(), new Date().getMonth(), 1), weeks: new Map(), selectedWeekStart: isoMonday(), loading: false }, seasons: [], plan: null, planTab: 'season', selectedSeasonId: null, selectedMicrocycleId: null, planEditor: null, evaluationEditor: null };
 const dayNames = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
 async function api(url, options = {}) {
@@ -51,13 +51,14 @@ function escapeHtml(value) {
 }
 function newId() {
   return globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function'
-    ? globalThis.newId()
+    ? globalThis.crypto.randomUUID()
     : `rf-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 function switchView(name) {
   document.querySelectorAll('.tab').forEach(button => button.classList.toggle('active', button.dataset.view === name));
   document.querySelectorAll('.view').forEach(view => view.classList.toggle('active', view.id === `${name}View`));
+  if (name === 'plan' && state.athlete && !state.plan) loadPlan().catch(error => showMessage(error.message, 'error'));
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -173,6 +174,16 @@ function emptyCalendarWeek(weekStart) {
     target_load: 0,
     status: 'draft',
     published_at: null,
+    mesocycle_id: null,
+    end_date: addDays(weekStart, 6),
+    microcycle_type: null,
+    primary_objective: '',
+    planned_hours: 0,
+    planned_distance_km: 0,
+    planned_elevation_m: 0,
+    planned_strength_sessions: 0,
+    recovery_target: '',
+    lifecycle_status: 'planned',
     workouts: [],
   };
 }
@@ -244,7 +255,7 @@ function renderCalendar() {
       const dayLoad = workouts.reduce((sum, item) => sum + Number(item.planned_load || 0), 0);
       cells.push(`<article class="calendar-day ${dayDate.getMonth() !== month.getMonth() ? 'outside' : ''} ${date === today ? 'today' : ''} ${selected ? 'selected-week' : ''}" data-select-week="${weekStart}">
         <div class="calendar-day-head"><span class="calendar-day-number">${dayDate.getDate()}</span><button class="calendar-add" data-add-date="${date}" type="button" aria-label="Añadir sesión el ${date}">+</button></div>
-        <div class="calendar-sessions">${workouts.map(workout => `<button class="calendar-session ${workoutVisualClass(workout)}" data-session-id="${workout.id}" data-session-week="${weekStart}" type="button"><strong>${escapeHtml(workout.title)}</strong><small><span>${escapeHtml(workout.sport || 'Run')}</span><b>${Number(workout.planned_load || 0)}</b></small></button>`).join('')}</div>
+        <div class="calendar-sessions">${workouts.map(workout => `<button class="calendar-session ${workoutVisualClass(workout)} priority-${String(workout.priority || 'B').toLowerCase()}" data-session-id="${workout.id}" data-session-week="${weekStart}" type="button"><strong><i class="priority-chip">${escapeHtml(workout.priority || 'B')}</i>${escapeHtml(workout.title)}</strong><small><span>${escapeHtml(workout.sport || 'Run')}</span><b>${Number(workout.planned_load || 0)}</b></small></button>`).join('')}</div>
         <div class="calendar-day-load"><span>${workouts.length} sesión${workouts.length === 1 ? '' : 'es'}</span><b>Carga ${dayLoad}</b></div>
       </article>`);
     }
@@ -396,7 +407,8 @@ async function loadAthlete(id) {
   state.calendar.selectedWeekStart = localStorage.getItem(`runflow_calendar_week_${id}`) || isoMonday();
   renderAll();
   resetActivityViews();
-  await Promise.allSettled([loadCalendarMonth(), loadActivities(false), loadRecovery(false)]);
+  state.plan = null; state.seasons = []; state.selectedSeasonId = null; state.selectedMicrocycleId = null;
+  await Promise.allSettled([loadCalendarMonth(), loadActivities(false), loadRecovery(false), loadPlan()]);
 }
 
 function weekPayload(status, weekStart = state.calendar.selectedWeekStart) {
@@ -409,6 +421,16 @@ function weekPayload(status, weekStart = state.calendar.selectedWeekStart) {
     coach_comment: week.coach_comment || '',
     target_load: Number(week.target_load || 0),
     status,
+    mesocycle_id: week.mesocycle_id || null,
+    end_date: week.end_date || addDays(week.week_start, 6),
+    microcycle_type: week.microcycle_type || null,
+    primary_objective: week.primary_objective || '',
+    planned_hours: Number(week.planned_hours || 0),
+    planned_distance_km: Number(week.planned_distance_km || 0),
+    planned_elevation_m: Number(week.planned_elevation_m || 0),
+    planned_strength_sessions: Number(week.planned_strength_sessions || 0),
+    recovery_target: week.recovery_target || '',
+    lifecycle_status: week.lifecycle_status || 'planned',
     workouts: week.workouts || [],
   };
 }
@@ -454,7 +476,15 @@ function openSessionModal(workoutId = null, date = null) {
   $('modalTitle').textContent = existing ? `Editar · ${dateLabel(workout.workout_date)}` : `Nueva sesión · ${dateLabel(workout.workout_date)}`;
   $('modalWorkoutDate').value = workout.workout_date;
   $('modalSport').value = workout.sport || 'Run';
+  $('modalPriority').value = workout.priority || 'B';
   $('modalLoad').value = workout.planned_load || 0;
+  $('modalDuration').value = workout.planned_duration_min ?? '';
+  $('modalDistance').value = workout.planned_distance_km ?? '';
+  $('modalElevation').value = workout.planned_elevation_m ?? '';
+  $('modalIsStrength').checked = Boolean(workout.is_strength || workout.sport === 'Strength');
+  $('modalSessionObjective').value = workout.session_objective || '';
+  $('modalAdaptationTarget').value = workout.adaptation_target || '';
+  $('modalPurpose').value = workout.purpose || '';
   $('modalWorkoutTitle').value = workout.title || '';
   $('modalSummary').value = workout.summary || '';
   $('structuredDescription').value = workout.structured_description || '';
@@ -715,7 +745,15 @@ $('saveSessionModal').addEventListener('click', async () => {
     id: state.editingSession.draft.id || newId(),
     workout_date: workoutDate,
     sport: $('modalSport').value,
+    priority: $('modalPriority').value,
     planned_load: Number($('modalLoad').value || 0),
+    planned_duration_min: $('modalDuration').value === '' ? null : Number($('modalDuration').value),
+    planned_distance_km: $('modalDistance').value === '' ? null : Number($('modalDistance').value),
+    planned_elevation_m: $('modalElevation').value === '' ? null : Number($('modalElevation').value),
+    is_strength: $('modalIsStrength').checked || $('modalSport').value === 'Strength',
+    session_objective: $('modalSessionObjective').value.trim(),
+    adaptation_target: $('modalAdaptationTarget').value.trim(),
+    purpose: $('modalPurpose').value.trim(),
     title: $('modalWorkoutTitle').value.trim() || 'Sesión',
     summary: $('modalSummary').value.trim(),
     blocks: buildBlocks(),
@@ -758,6 +796,367 @@ $('deleteSessionModal').addEventListener('click', async () => {
   }
 });
 
+
+
+function planStatusLabel(status) {
+  return ({ planned: 'Planificado', active: 'Activo', completed: 'Completado', draft: 'Borrador', published: 'Publicado' })[status] || status || '—';
+}
+
+function priorityLabel(code) {
+  return ({ A: 'A · Principal', B: 'B · Secundario', C: 'C · Apoyo' })[code] || code || 'B';
+}
+
+function metricValue(value, suffix = '') {
+  const n = Number(value);
+  return Number.isFinite(n) ? `${Math.round(n * 10) / 10}${suffix}` : `—${suffix}`;
+}
+
+function planCompareItem(label, planned, actual, suffix = '') {
+  return `<div class="plan-compare-item"><span>${escapeHtml(label)}</span><div><b>${metricValue(planned, suffix)}</b><small>plan</small></div><div><b>${metricValue(actual, suffix)}</b><small>real</small></div></div>`;
+}
+
+function allPlanMesocycles() {
+  return (state.plan?.macrocycles || []).flatMap(macro => macro.mesocycles || []);
+}
+
+function allPlanMicrocycles() {
+  return allPlanMesocycles().flatMap(meso => meso.microcycles || []);
+}
+
+function findMacrocycle(id) {
+  return (state.plan?.macrocycles || []).find(item => String(item.id) === String(id)) || null;
+}
+
+function findMesocycle(id) {
+  return allPlanMesocycles().find(item => String(item.id) === String(id)) || null;
+}
+
+function findMicrocycle(id) {
+  return allPlanMicrocycles().find(item => String(item.id) === String(id)) || null;
+}
+
+function findPlanGoal(id) {
+  return [...(state.plan?.goals || []), ...(state.plan?.unassigned?.goals || [])].find(item => String(item.id) === String(id)) || null;
+}
+
+function setPlanTab(name) {
+  state.planTab = name;
+  document.querySelectorAll('.plan-tab').forEach(button => button.classList.toggle('active', button.dataset.planView === name));
+  document.querySelectorAll('.plan-panel').forEach(panel => panel.classList.toggle('active', panel.id === `plan${name.charAt(0).toUpperCase()}${name.slice(1)}Panel`));
+}
+
+async function loadPlan(seasonId = state.selectedSeasonId) {
+  if (!state.athlete) return;
+  $('planLoading')?.classList.remove('hidden');
+  try {
+    const seasonsData = await api(`/api/coach/athletes/${state.athlete.id}/seasons`);
+    state.seasons = seasonsData.seasons || [];
+    const requested = seasonId && state.seasons.some(item => String(item.id) === String(seasonId)) ? seasonId : null;
+    const query = requested ? `?season_id=${encodeURIComponent(requested)}` : '';
+    state.plan = await api(`/api/coach/athletes/${state.athlete.id}/plan${query}`);
+    state.selectedSeasonId = state.plan.season?.id || null;
+    if (state.selectedMicrocycleId && !findMicrocycle(state.selectedMicrocycleId)) state.selectedMicrocycleId = null;
+    renderPlan();
+  } finally {
+    $('planLoading')?.classList.add('hidden');
+  }
+}
+
+function renderPlan() {
+  if (!$('planSeasonSelect')) return;
+  $('planSeasonSelect').innerHTML = state.seasons.length
+    ? state.seasons.map(season => `<option value="${season.id}" ${String(season.id) === String(state.selectedSeasonId) ? 'selected' : ''}>${escapeHtml(season.name)} · ${dateLabel(season.start_date)}–${dateLabel(season.end_date)}</option>`).join('')
+    : '<option value="">Sin temporada</option>';
+
+  const season = state.plan?.season || null;
+  $('planNoSeason').classList.toggle('hidden', Boolean(season));
+  $('planSeasonPanel').classList.toggle('hidden', !season);
+  $('planBlocksPanel').classList.toggle('hidden', !season);
+  $('planWeekPanel').classList.toggle('hidden', !season);
+  $('newPlanGoal').disabled = !season;
+  $('newPlanGoalInline').disabled = !season;
+  $('newMacrocycle').disabled = !season;
+  $('editSeason').disabled = !season;
+  if (!season) return;
+
+  const macros = state.plan.macrocycles || [];
+  const mesos = macros.flatMap(item => item.mesocycles || []);
+  const micros = mesos.flatMap(item => item.microcycles || []);
+  const sessions = micros.flatMap(item => item.workouts || []);
+  $('planSeasonName').textContent = season.name || 'Temporada';
+  $('planSeasonDates').textContent = `${dateLabel(season.start_date)} – ${dateLabel(season.end_date)}`;
+  $('planGoalCount').textContent = (state.plan.goals || []).length;
+  $('planMacroCount').textContent = macros.length;
+  $('planMesoCount').textContent = `${mesos.length} mesociclo${mesos.length === 1 ? '' : 's'}`;
+  $('planMicroCount').textContent = micros.length;
+  $('planSessionCount').textContent = `${sessions.length} sesiones`;
+  $('planSeasonStatusText').textContent = `${planStatusLabel(season.status)} · ${dateLabel(season.start_date)} – ${dateLabel(season.end_date)}`;
+  $('planSeasonObjective').textContent = season.season_objective || 'Todavía no se ha definido la dirección principal de esta temporada.';
+
+  const goals = state.plan.goals || [];
+  $('planGoalList').innerHTML = goals.length ? goals.map(goal => `
+    <article class="plan-goal priority-${String(goal.priority_code || 'B').toLowerCase()}">
+      <div class="plan-goal-main"><span class="priority-pill ${String(goal.priority_code || 'B').toLowerCase()}">${escapeHtml(goal.priority_code || 'B')}</span><div><h3>${escapeHtml(goal.name)}</h3><p>${dateLabel(goal.goal_date)}${goal.sport ? ` · ${escapeHtml(goal.sport)}` : ''}${goal.event_type ? ` · ${escapeHtml(goal.event_type)}` : ''}</p></div></div>
+      <div class="plan-goal-target">${escapeHtml(goal.performance_target || (goal.target_time_sec ? `Tiempo objetivo ${Math.round(goal.target_time_sec / 60)} min` : 'Sin marca objetivo'))}</div>
+      <button class="btn soft small" data-plan-action="edit-goal" data-id="${goal.id}" type="button">Editar</button>
+    </article>`).join('') : '<div class="empty-state compact-empty">Todavía no hay objetivos asignados a esta temporada.</div>';
+
+  const unassigned = state.plan.unassigned?.goals || [];
+  $('unassignedGoalBox').classList.toggle('hidden', !unassigned.length);
+  if (unassigned.length) $('unassignedGoalBox').innerHTML = `<strong>${unassigned.length} objetivo${unassigned.length === 1 ? '' : 's'} sin temporada</strong><p class="muted small" style="margin:5px 0 0">Edítalos para asignarlos a la temporada seleccionada.</p>`;
+
+  renderPlanBlocks();
+  renderSelectedPlanWeek();
+  setPlanTab(state.planTab || 'season');
+}
+
+function evaluationBadge(evaluation) {
+  if (!evaluation) return '<span class="badge pending">Sin evaluar</span>';
+  const decision = evaluation.adjustment_decision && evaluation.adjustment_decision !== 'none' ? ` · ${evaluation.adjustment_decision}` : '';
+  return `<span class="badge">${evaluation.evaluation_type === 'final' ? 'Evaluación final' : 'Evaluación'}${escapeHtml(decision)}</span>`;
+}
+
+function workoutPlanChip(workout) {
+  return `<div class="plan-workout-row"><span class="priority-pill ${String(workout.priority || 'B').toLowerCase()}">${escapeHtml(workout.priority || 'B')}</span><div><strong>${escapeHtml(workout.title || 'Sesión')}</strong><small>${dateLabel(workout.workout_date)} · ${escapeHtml(workout.sport || 'Run')} · carga ${Number(workout.planned_load || 0)}</small>${workout.session_objective ? `<p>${escapeHtml(workout.session_objective)}</p>` : ''}</div></div>`;
+}
+
+function renderPlanBlocks() {
+  const macros = state.plan?.macrocycles || [];
+  $('macrocycleList').innerHTML = macros.length ? macros.map(macro => {
+    const goal = (state.plan.goals || []).find(item => String(item.id) === String(macro.goal_id));
+    return `<article class="macro-card">
+      <div class="macro-head"><div><div class="plan-title-line"><span class="cycle-kicker">MACRO</span><h3>${escapeHtml(macro.name)}</h3><span class="badge ${macro.status === 'active' ? '' : 'pending'}">${planStatusLabel(macro.status)}</span></div><p>${dateLabel(macro.start_date)} – ${dateLabel(macro.end_date)}${goal ? ` · objetivo ${escapeHtml(goal.name)}` : ''}</p><strong class="cycle-objective">${escapeHtml(macro.primary_objective || 'Sin objetivo principal definido')}</strong></div><div class="actions"><button class="btn soft small" data-plan-action="evaluate" data-cycle="macrocycle" data-id="${macro.id}" type="button">Evaluar</button><button class="btn soft small" data-plan-action="edit-macro" data-id="${macro.id}" type="button">Editar</button><button class="btn primary small" data-plan-action="new-meso" data-id="${macro.id}" type="button">+ Mesociclo</button></div></div>
+      <div class="cycle-eval">${evaluationBadge(macro.evaluation)}</div>
+      <div class="meso-list">${(macro.mesocycles || []).length ? macro.mesocycles.map(meso => `
+        <article class="meso-card">
+          <div class="meso-head"><div><div class="plan-title-line"><span class="cycle-kicker meso">MESO</span><h3>${escapeHtml(meso.name)}</h3><span class="badge ${meso.status === 'active' ? '' : 'pending'}">${planStatusLabel(meso.status)}</span></div><p>${dateLabel(meso.start_date)} – ${dateLabel(meso.end_date)} · ${escapeHtml(meso.primary_adaptation || '')}</p></div><div class="actions"><button class="btn soft small" data-plan-action="evaluate" data-cycle="mesocycle" data-id="${meso.id}" type="button">Evaluar</button><button class="btn soft small" data-plan-action="edit-meso" data-id="${meso.id}" type="button">Editar</button><button class="btn secondary small" data-plan-action="new-micro" data-id="${meso.id}" type="button">+ Semana</button></div></div>
+          <div class="plan-compare-grid compact">${planCompareItem('Horas', meso.planned?.hours, meso.actual?.hours, ' h')}${planCompareItem('Carga', meso.planned?.load, meso.actual?.load)}${planCompareItem('Distancia', meso.planned?.distance_km, meso.actual?.distance_km, ' km')}${planCompareItem('Desnivel', meso.planned?.elevation_m, meso.actual?.elevation_m, ' m')}</div>
+          <div class="cycle-eval">${evaluationBadge(meso.evaluation)}</div>
+          <div class="micro-list">${(meso.microcycles || []).length ? meso.microcycles.map(micro => `
+            <article class="micro-card ${String(state.selectedMicrocycleId) === String(micro.id) ? 'selected' : ''}">
+              <div class="micro-main"><div class="plan-title-line"><span class="cycle-kicker micro">SEM</span><strong>${escapeHtml(micro.name || 'Semana')}</strong><span class="badge pending">${escapeHtml(micro.type || micro.week_type || 'microciclo')}</span></div><small>${dateLabel(micro.start_date)} – ${dateLabel(micro.end_date)} · carga ${Number(micro.planned?.load || 0)} / ${Number(micro.actual?.load || 0)} · ${Number(micro.actual?.completion_rate || 0)}% completado</small><p>${escapeHtml(micro.primary_objective || '')}</p></div>
+              <div class="micro-priority-summary">${(micro.workouts || []).filter(w => w.priority === 'A').length} A · ${(micro.workouts || []).filter(w => w.priority === 'B' || !w.priority).length} B · ${(micro.workouts || []).filter(w => w.priority === 'C').length} C</div>
+              <div class="actions"><button class="btn soft small" data-plan-action="select-micro" data-id="${micro.id}" type="button">Ver</button><button class="btn soft small" data-plan-action="evaluate" data-cycle="microcycle" data-id="${micro.id}" type="button">Evaluar</button><button class="btn soft small" data-plan-action="edit-micro" data-id="${micro.id}" type="button">Editar</button></div>
+            </article>`).join('') : '<div class="empty-state compact-empty">Este mesociclo todavía no tiene semanas.</div>'}</div>
+        </article>`).join('') : '<div class="empty-state compact-empty">Este macrociclo todavía no tiene mesociclos.</div>'}</div>
+    </article>`;
+  }).join('') : '<div class="empty-state">Todavía no hay macrociclos en esta temporada.</div>';
+}
+
+function renderSelectedPlanWeek() {
+  const micro = findMicrocycle(state.selectedMicrocycleId);
+  $('planWeekEmpty').classList.toggle('hidden', Boolean(micro));
+  $('planWeekDetail').classList.toggle('hidden', !micro);
+  if (!micro) return;
+  $('planWeekTitle').textContent = micro.name || 'Semana';
+  $('planWeekDates').textContent = `${dateLabel(micro.start_date)} – ${dateLabel(micro.end_date)} · ${planStatusLabel(micro.lifecycle_status)} · ${planStatusLabel(micro.publication_status)}`;
+  $('planWeekObjective').textContent = micro.primary_objective || 'Sin objetivo principal definido.';
+  $('planWeekCompare').innerHTML = `${planCompareItem('Horas', micro.planned?.hours, micro.actual?.hours, ' h')}${planCompareItem('Carga', micro.planned?.load, micro.actual?.load)}${planCompareItem('Distancia', micro.planned?.distance_km, micro.actual?.distance_km, ' km')}${planCompareItem('Desnivel', micro.planned?.elevation_m, micro.actual?.elevation_m, ' m')}${planCompareItem('Fuerza', micro.planned?.strength_sessions, micro.actual?.strength_sessions)}`;
+  $('planWeekSessions').innerHTML = (micro.workouts || []).length ? micro.workouts.map(workoutPlanChip).join('') : '<div class="empty-state compact-empty">No hay sesiones dentro de esta semana.</div>';
+}
+
+function textList(value) {
+  return Array.isArray(value) ? value.join(', ') : '';
+}
+
+function fieldValue(id) {
+  const el = $(id);
+  return el ? el.value : '';
+}
+
+function numberField(id) {
+  const value = fieldValue(id);
+  return value === '' ? null : Number(value);
+}
+
+function openPlanForm(type, id = null, parentId = null) {
+  if (!state.athlete) return;
+  const season = state.plan?.season;
+  let item = null;
+  if (type === 'season') item = id ? state.seasons.find(row => String(row.id) === String(id)) : null;
+  if (type === 'goal') item = id ? findPlanGoal(id) : null;
+  if (type === 'macrocycle') item = id ? findMacrocycle(id) : null;
+  if (type === 'mesocycle') item = id ? findMesocycle(id) : null;
+  if (type === 'microcycle') item = id ? findMicrocycle(id) : null;
+  state.planEditor = { type, id, parentId, item };
+  $('planFormStatus').textContent = '';
+  $('planModalEyebrow').textContent = ({ season: 'Temporada', goal: 'Objetivo', macrocycle: 'Macrociclo', mesocycle: 'Mesociclo', microcycle: 'Microciclo' })[type];
+  $('planModalTitle').textContent = `${id ? 'Editar' : 'Crear'} ${({ season: 'temporada', goal: 'objetivo', macrocycle: 'macrociclo', mesocycle: 'mesociclo', microcycle: 'semana' })[type]}`;
+
+  if (type === 'season') $('planFormFields').innerHTML = `
+    <div class="field-row"><label>Nombre<input id="pfName" value="${escapeHtml(item?.name || '')}" placeholder="Temporada 2026/27"></label><label>Estado<select id="pfStatus"><option value="planned">Planificada</option><option value="active">Activa</option><option value="completed">Completada</option></select></label></div>
+    <div class="field-row"><label>Inicio<input id="pfStart" type="date" value="${item?.start_date || ''}"></label><label>Fin<input id="pfEnd" type="date" value="${item?.end_date || ''}"></label></div>
+    <label>Objetivo global<textarea id="pfObjective">${escapeHtml(item?.season_objective || '')}</textarea></label><label>Notas<textarea id="pfNotes">${escapeHtml(item?.notes || '')}</textarea></label>`;
+
+  if (type === 'goal') $('planFormFields').innerHTML = `
+    <div class="field-row"><label>Nombre<input id="pfName" value="${escapeHtml(item?.name || '')}"></label><label>Prioridad<select id="pfPriority"><option value="A">A · Principal</option><option value="B">B · Secundario</option><option value="C">C · Apoyo</option></select></label></div>
+    <div class="field-row-3"><label>Fecha<input id="pfDate" type="date" value="${item?.goal_date || ''}"></label><label>Deporte<input id="pfSport" value="${escapeHtml(item?.sport || '')}" placeholder="Run / Trail / Ride"></label><label>Tipo de evento<input id="pfEventType" value="${escapeHtml(item?.event_type || '')}" placeholder="10K, trail, test…"></label></div>
+    <div class="field-row-3"><label>Distancia km<input id="pfDistance" type="number" step="0.1" value="${item?.distance_km ?? ''}"></label><label>Desnivel m+<input id="pfElevation" type="number" value="${item?.elevation_m ?? ''}"></label><label>Tipo de objetivo<select id="pfGoalType"><option value="competition">Competición</option><option value="performance">Rendimiento</option><option value="volume">Volumen</option><option value="recovery">Recuperación</option><option value="physiological_development">Desarrollo fisiológico</option><option value="other">Otro</option></select></label></div>
+    <label>Objetivo de rendimiento<input id="pfPerformance" value="${escapeHtml(item?.performance_target || '')}"></label><label>Notas<textarea id="pfNotes">${escapeHtml(item?.notes || '')}</textarea></label>`;
+
+  if (type === 'macrocycle') {
+    const goalOptions = (state.plan?.goals || []).map(goal => `<option value="${goal.id}">${escapeHtml(goal.priority_code || 'B')} · ${escapeHtml(goal.name)}</option>`).join('');
+    $('planFormFields').innerHTML = `
+      <div class="field-row"><label>Nombre<input id="pfName" value="${escapeHtml(item?.name || '')}" placeholder="Preparación específica"></label><label>Estado<select id="pfStatus"><option value="planned">Planificado</option><option value="active">Activo</option><option value="completed">Completado</option></select></label></div>
+      <div class="field-row"><label>Inicio<input id="pfStart" type="date" value="${item?.start_date || season?.start_date || ''}"></label><label>Fin<input id="pfEnd" type="date" value="${item?.end_date || season?.end_date || ''}"></label></div>
+      <label>Objetivo principal asociado<select id="pfGoal"><option value="">Sin objetivo específico</option>${goalOptions}</select></label>
+      <label>Objetivo del macrociclo<textarea id="pfObjective">${escapeHtml(item?.primary_objective || '')}</textarea></label>
+      <label>Restricciones<textarea id="pfConstraints">${escapeHtml(item?.constraints || '')}</textarea></label><label>Notas<textarea id="pfNotes">${escapeHtml(item?.notes || '')}</textarea></label>`;
+  }
+
+  if (type === 'mesocycle') $('planFormFields').innerHTML = `
+    <div class="field-row"><label>Nombre<input id="pfName" value="${escapeHtml(item?.name || '')}" placeholder="Base II"></label><label>Estado<select id="pfStatus"><option value="planned">Planificado</option><option value="active">Activo</option><option value="completed">Completado</option></select></label></div>
+    <div class="field-row"><label>Inicio<input id="pfStart" type="date" value="${item?.start_date || ''}"></label><label>Fin<input id="pfEnd" type="date" value="${item?.end_date || ''}"></label></div>
+    <label>Adaptación principal<input id="pfAdaptation" value="${escapeHtml(item?.primary_adaptation || '')}" placeholder="Base aeróbica / LT2 / potencia…"></label>
+    <label>Adaptaciones secundarias<input id="pfSecondary" value="${escapeHtml(textList(item?.secondary_adaptations))}" placeholder="Fuerza resistencia, técnica trail"></label>
+    <div class="field-row-3"><label>Horas plan<input id="pfHours" type="number" step="0.1" value="${item?.planned?.hours ?? item?.planned_hours ?? ''}"></label><label>Distancia km<input id="pfDistance" type="number" step="0.1" value="${item?.planned?.distance_km ?? item?.planned_distance_km ?? ''}"></label><label>Desnivel m+<input id="pfElevation" type="number" value="${item?.planned?.elevation_m ?? item?.planned_elevation_m ?? ''}"></label></div>
+    <div class="field-row"><label>Carga plan<input id="pfLoad" type="number" value="${item?.planned?.load ?? item?.planned_load ?? ''}"></label><label>Sesiones fuerza<input id="pfStrength" type="number" value="${item?.planned?.strength_sessions ?? item?.planned_strength_sessions ?? ''}"></label></div>
+    <label>Criterio de éxito<textarea id="pfSuccess">${escapeHtml(item?.success_criteria || '')}</textarea></label><label>Patrón de progresión<input id="pfProgression" value="${escapeHtml(textList(item?.progression_pattern))}" placeholder="load, load, overload, deload"></label><label>Notas<textarea id="pfNotes">${escapeHtml(item?.notes || '')}</textarea></label>`;
+
+  if (type === 'microcycle') $('planFormFields').innerHTML = `
+    <div class="field-row"><label>Nombre<input id="pfName" value="${escapeHtml(item?.name || '')}" placeholder="Carga 1"></label><label>Tipo<select id="pfType"><option value="adaptation">Adaptación</option><option value="load">Carga</option><option value="development">Desarrollo</option><option value="overload">Sobrecarga</option><option value="deload">Descarga</option><option value="taper">Afinamiento</option><option value="recovery">Recuperación</option><option value="competition">Competición</option></select></label></div>
+    <div class="field-row"><label>Inicio<input id="pfStart" type="date" value="${item?.start_date || ''}"></label><label>Fin<input id="pfEnd" type="date" value="${item?.end_date || ''}"></label></div>
+    <label>Objetivo principal<textarea id="pfObjective">${escapeHtml(item?.primary_objective || '')}</textarea></label>
+    <div class="field-row-3"><label>Horas plan<input id="pfHours" type="number" step="0.1" value="${item?.planned?.hours ?? ''}"></label><label>Distancia km<input id="pfDistance" type="number" step="0.1" value="${item?.planned?.distance_km ?? ''}"></label><label>Desnivel m+<input id="pfElevation" type="number" value="${item?.planned?.elevation_m ?? ''}"></label></div>
+    <div class="field-row"><label>Carga plan<input id="pfLoad" type="number" value="${item?.planned?.load ?? ''}"></label><label>Sesiones fuerza<input id="pfStrength" type="number" value="${item?.planned?.strength_sessions ?? ''}"></label></div>
+    <div class="field-row"><label>Estado deportivo<select id="pfLifecycle"><option value="planned">Planificado</option><option value="active">Activo</option><option value="completed">Completado</option></select></label><label>Publicación<select id="pfPublication"><option value="draft">Borrador</option><option value="published">Publicado</option></select></label></div>
+    <label>Objetivo de recuperación<textarea id="pfRecovery">${escapeHtml(item?.recovery_target || '')}</textarea></label><label>Notas<textarea id="pfNotes">${escapeHtml(item?.notes || '')}</textarea></label>`;
+
+  if ($('pfStatus')) $('pfStatus').value = item?.status || (type === 'season' ? 'planned' : 'planned');
+  if ($('pfPriority')) $('pfPriority').value = item?.priority_code || 'B';
+  if ($('pfGoalType')) $('pfGoalType').value = item?.goal_type || 'competition';
+  if ($('pfGoal')) $('pfGoal').value = item?.goal_id || '';
+  if ($('pfType')) $('pfType').value = item?.type || 'load';
+  if ($('pfLifecycle')) $('pfLifecycle').value = item?.lifecycle_status || 'planned';
+  if ($('pfPublication')) $('pfPublication').value = item?.publication_status || 'draft';
+  $('planModal').classList.remove('hidden');
+}
+
+async function savePlanEntity() {
+  const editor = state.planEditor;
+  if (!editor) return;
+  const { type, id, parentId } = editor;
+  let payload = {};
+  let url = '';
+  let method = id ? 'PUT' : 'POST';
+  const athleteBase = `/api/coach/athletes/${state.athlete.id}`;
+
+  if (type === 'season') {
+    payload = { name: fieldValue('pfName'), start_date: fieldValue('pfStart'), end_date: fieldValue('pfEnd'), status: fieldValue('pfStatus'), season_objective: fieldValue('pfObjective'), notes: fieldValue('pfNotes') };
+    url = id ? `${athleteBase}/seasons/${id}` : `${athleteBase}/seasons`;
+  }
+  if (type === 'goal') {
+    payload = { name: fieldValue('pfName'), goal_date: fieldValue('pfDate'), priority_code: fieldValue('pfPriority'), season_id: state.plan?.season?.id || null, sport: fieldValue('pfSport'), event_type: fieldValue('pfEventType'), goal_type: fieldValue('pfGoalType'), distance_km: numberField('pfDistance'), elevation_m: numberField('pfElevation'), performance_target: fieldValue('pfPerformance'), notes: fieldValue('pfNotes') };
+    url = id ? `${athleteBase}/goals/${id}` : `${athleteBase}/goals`;
+  }
+  if (type === 'macrocycle') {
+    payload = { name: fieldValue('pfName'), start_date: fieldValue('pfStart'), end_date: fieldValue('pfEnd'), status: fieldValue('pfStatus'), goal_id: fieldValue('pfGoal') || null, primary_objective: fieldValue('pfObjective'), constraints: fieldValue('pfConstraints'), notes: fieldValue('pfNotes') };
+    url = id ? `${athleteBase}/macrocycles/${id}` : `${athleteBase}/seasons/${state.plan.season.id}/macrocycles`;
+  }
+  if (type === 'mesocycle') {
+    payload = { name: fieldValue('pfName'), start_date: fieldValue('pfStart'), end_date: fieldValue('pfEnd'), status: fieldValue('pfStatus'), primary_adaptation: fieldValue('pfAdaptation'), secondary_adaptations: fieldValue('pfSecondary').split(',').map(v => v.trim()).filter(Boolean), planned_hours: numberField('pfHours'), planned_distance_km: numberField('pfDistance'), planned_elevation_m: numberField('pfElevation'), planned_load: numberField('pfLoad'), planned_strength_sessions: numberField('pfStrength'), success_criteria: fieldValue('pfSuccess'), progression_pattern: fieldValue('pfProgression').split(',').map(v => v.trim()).filter(Boolean), notes: fieldValue('pfNotes') };
+    url = id ? `${athleteBase}/mesocycles/${id}` : `${athleteBase}/macrocycles/${parentId}/mesocycles`;
+  }
+  if (type === 'microcycle') {
+    payload = { name: fieldValue('pfName'), start_date: fieldValue('pfStart'), end_date: fieldValue('pfEnd'), type: fieldValue('pfType'), primary_objective: fieldValue('pfObjective'), planned: { hours: numberField('pfHours') || 0, distance_km: numberField('pfDistance') || 0, elevation_m: numberField('pfElevation') || 0, load: numberField('pfLoad') || 0, strength_sessions: numberField('pfStrength') || 0 }, lifecycle_status: fieldValue('pfLifecycle'), publication_status: fieldValue('pfPublication'), recovery_target: fieldValue('pfRecovery'), notes: fieldValue('pfNotes') };
+    url = id ? `${athleteBase}/microcycles/${id}` : `${athleteBase}/mesocycles/${parentId}/microcycles`;
+  }
+
+  try {
+    $('savePlanEntity').disabled = true;
+    $('planFormStatus').textContent = 'Guardando…';
+    await api(url, { method, body: JSON.stringify(payload) });
+    $('planModal').classList.add('hidden');
+    state.planEditor = null;
+    await loadPlan(type === 'season' && !id ? null : state.selectedSeasonId);
+    showMessage('Planificación actualizada.', 'success');
+  } catch (error) {
+    $('planFormStatus').textContent = error.message;
+  } finally {
+    $('savePlanEntity').disabled = false;
+  }
+}
+
+function cycleInfo(type, id) {
+  if (type === 'macrocycle') return findMacrocycle(id);
+  if (type === 'mesocycle') return findMesocycle(id);
+  if (type === 'microcycle') return findMicrocycle(id);
+  return null;
+}
+
+function openEvaluation(type, id) {
+  const cycle = cycleInfo(type, id);
+  if (!cycle) return;
+  const evaluation = cycle.evaluation || null;
+  state.evaluationEditor = { type, id, evaluation };
+  $('evaluationTitle').textContent = `${evaluation ? 'Editar evaluación' : 'Evaluar'} · ${cycle.name || cycle.title || 'ciclo'}`;
+  $('evaluationType').value = evaluation?.evaluation_type || 'final';
+  $('evaluationStatus').value = evaluation?.evaluation_status || 'draft';
+  $('evaluationCompletion').value = evaluation?.completion_rate ?? cycle.actual?.completion_rate ?? '';
+  $('evaluationFatigue').value = evaluation?.fatigue ?? '';
+  $('evaluationFeeling').value = evaluation?.subjective_feeling ?? '';
+  $('evaluationFitnessChange').value = evaluation?.fitness_change ?? '';
+  $('evaluationGoal').value = evaluation?.goal_achieved || '';
+  $('evaluationInjury').value = evaluation?.injury_status || '';
+  $('evaluationNotes').value = evaluation?.coach_notes || '';
+  $('evaluationDecision').value = evaluation?.adjustment_decision || 'none';
+  $('evaluationAdjustment').value = evaluation?.adjustment_notes || '';
+  $('evaluationStatusText').textContent = '';
+  $('evaluationModal').classList.remove('hidden');
+}
+
+async function saveEvaluation() {
+  const editor = state.evaluationEditor;
+  if (!editor) return;
+  const idField = `${editor.type}_id`;
+  const payload = {
+    macrocycle_id: null, mesocycle_id: null, microcycle_id: null,
+    [idField]: editor.id,
+    evaluation_type: fieldValue('evaluationType'),
+    evaluation_status: fieldValue('evaluationStatus'),
+    completion_rate: numberField('evaluationCompletion'),
+    fatigue: numberField('evaluationFatigue'),
+    fitness_change: numberField('evaluationFitnessChange'),
+    subjective_feeling: numberField('evaluationFeeling'),
+    injury_status: fieldValue('evaluationInjury'),
+    goal_achieved: fieldValue('evaluationGoal') || null,
+    coach_notes: fieldValue('evaluationNotes'),
+    adjustment_decision: fieldValue('evaluationDecision'),
+    adjustment_notes: fieldValue('evaluationAdjustment'),
+  };
+  const base = `/api/coach/athletes/${state.athlete.id}/evaluations`;
+  try {
+    $('saveEvaluation').disabled = true;
+    $('evaluationStatusText').textContent = 'Guardando…';
+    await api(editor.evaluation?.id ? `${base}/${editor.evaluation.id}` : base, { method: editor.evaluation?.id ? 'PUT' : 'POST', body: JSON.stringify(payload) });
+    $('evaluationModal').classList.add('hidden');
+    state.evaluationEditor = null;
+    await loadPlan(state.selectedSeasonId);
+    showMessage('Evaluación guardada. El plan no se modifica automáticamente.', 'success');
+  } catch (error) {
+    $('evaluationStatusText').textContent = error.message;
+  } finally {
+    $('saveEvaluation').disabled = false;
+  }
+}
+
+function handlePlanAction(button) {
+  const action = button.dataset.planAction;
+  const id = button.dataset.id;
+  if (action === 'edit-goal') openPlanForm('goal', id);
+  if (action === 'edit-macro') openPlanForm('macrocycle', id);
+  if (action === 'edit-meso') openPlanForm('mesocycle', id);
+  if (action === 'edit-micro') openPlanForm('microcycle', id);
+  if (action === 'new-meso') openPlanForm('mesocycle', null, id);
+  if (action === 'new-micro') openPlanForm('microcycle', null, id);
+  if (action === 'evaluate') openEvaluation(button.dataset.cycle, id);
+  if (action === 'select-micro') {
+    state.selectedMicrocycleId = id;
+    renderPlanBlocks();
+    renderSelectedPlanWeek();
+    setPlanTab('week');
+  }
+}
 
 
 function renderDataConnectionState() {
@@ -1005,6 +1404,33 @@ async function loadRecovery(sync = false) {
     renderRecovery();
   }
 }
+
+
+document.querySelectorAll('.plan-tab').forEach(button => button.addEventListener('click', () => setPlanTab(button.dataset.planView)));
+$('planSeasonSelect').addEventListener('change', () => loadPlan($('planSeasonSelect').value).catch(error => showMessage(error.message, 'error')));
+$('newSeason').addEventListener('click', () => openPlanForm('season'));
+$('createFirstSeason').addEventListener('click', () => openPlanForm('season'));
+$('editSeason').addEventListener('click', () => state.plan?.season && openPlanForm('season', state.plan.season.id));
+$('newPlanGoal').addEventListener('click', () => openPlanForm('goal'));
+$('newPlanGoalInline').addEventListener('click', () => openPlanForm('goal'));
+$('newMacrocycle').addEventListener('click', () => openPlanForm('macrocycle'));
+$('macrocycleList').addEventListener('click', event => { const button = event.target.closest('[data-plan-action]'); if (button) handlePlanAction(button); });
+$('planGoalList').addEventListener('click', event => { const button = event.target.closest('[data-plan-action]'); if (button) handlePlanAction(button); });
+$('closePlanModal').addEventListener('click', () => $('planModal').classList.add('hidden'));
+$('planModal').addEventListener('click', event => { if (event.target === $('planModal')) $('planModal').classList.add('hidden'); });
+$('savePlanEntity').addEventListener('click', savePlanEntity);
+$('closeEvaluationModal').addEventListener('click', () => $('evaluationModal').classList.add('hidden'));
+$('evaluationModal').addEventListener('click', event => { if (event.target === $('evaluationModal')) $('evaluationModal').classList.add('hidden'); });
+$('saveEvaluation').addEventListener('click', saveEvaluation);
+$('openSelectedWeekCalendar').addEventListener('click', async () => {
+  const micro = findMicrocycle(state.selectedMicrocycleId);
+  if (!micro) return;
+  state.calendar.month = new Date(parseLocalDate(micro.start_date).getFullYear(), parseLocalDate(micro.start_date).getMonth(), 1);
+  await loadCalendarMonth();
+  selectCalendarWeek(micro.start_date);
+  switchView('week');
+});
+$('evaluateSelectedWeek').addEventListener('click', () => state.selectedMicrocycleId && openEvaluation('microcycle', state.selectedMicrocycleId));
 
 $('syncActivities').addEventListener('click', () => loadActivities(true));
 $('syncRecovery').addEventListener('click', () => loadRecovery(true));
