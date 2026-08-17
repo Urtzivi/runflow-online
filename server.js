@@ -21,7 +21,7 @@ const APP_ENCRYPTION_KEY = String(process.env.APP_ENCRYPTION_KEY || '');
 const OPENAI_API_KEY = String(process.env.OPENAI_API_KEY || '');
 const OPENAI_MODEL = String(process.env.OPENAI_MODEL || 'gpt-5.6-terra');
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
-const APP_VERSION = 'Online Pilot 1.2';
+const APP_VERSION = 'Online Pilot 1.3';
 const INTERVALS_API_BASE = 'https://intervals.icu/api/v1';
 
 function validateRuntimeConfig() {
@@ -280,6 +280,7 @@ let demo = loadDemo();
 if (!Array.isArray(demo.activities)) demo.activities = [];
 if (!Array.isArray(demo.daily_metrics)) demo.daily_metrics = [];
 if (!Array.isArray(demo.activity_reviews)) demo.activity_reviews = [];
+if (!Array.isArray(demo.cycle_evaluations)) demo.cycle_evaluations = [];
 function saveDemo() {
   fs.writeFileSync(DEMO_FILE, JSON.stringify(demo, null, 2), 'utf8');
 }
@@ -446,28 +447,96 @@ function normaliseZones(body) {
   return { hr, pace };
 }
 
-function normaliseWeek(body, athleteId) {
-  const weekStart = validDate(body.week_start) || startOfWeek();
-  const workouts = Array.isArray(body.workouts) ? body.workouts.slice(0, 14).map((item, index) => ({
-    id: item.id || crypto.randomUUID(),
+function hasOwn(object, key) {
+  return Boolean(object && Object.prototype.hasOwnProperty.call(object, key));
+}
+
+function safeObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function safeStringArray(value, maxItems = 30, maxLength = 120) {
+  return Array.isArray(value)
+    ? value.slice(0, maxItems).map(item => sanitiseText(item, maxLength)).filter(Boolean)
+    : [];
+}
+
+function normaliseWorkout(item, athleteId, weekStart, index) {
+  const source = item && typeof item === 'object' ? item : {};
+  const sport = sanitiseText(source.sport || 'Run', 40);
+  const workout = {
+    id: source.id || crypto.randomUUID(),
     athlete_id: athleteId,
-    workout_date: validDate(item.workout_date) || addDays(weekStart, Math.min(index, 6)),
-    sport: sanitiseText(item.sport || 'Run', 40),
-    title: sanitiseText(item.title || 'Sesión', 160),
-    summary: sanitiseText(item.summary, 3000),
-    structured_description: sanitiseText(item.structured_description || item.summary, 10000),
-    planned_load: numberOrNull(item.planned_load, 0, 1000) || 0,
-    blocks: Array.isArray(item.blocks) ? item.blocks.slice(0, 30) : [],
-  })) : [];
-  return {
+    workout_date: validDate(source.workout_date) || addDays(weekStart, Math.min(index, 6)),
+    sport,
+    title: sanitiseText(source.title || 'Sesión', 160),
+    summary: sanitiseText(source.summary, 3000),
+    structured_description: sanitiseText(source.structured_description || source.summary, 10000),
+    planned_load: numberOrNull(source.planned_load, 0, 1000) || 0,
+    blocks: Array.isArray(source.blocks) ? source.blocks.slice(0, 30) : [],
+  };
+
+  if (['A', 'B', 'C'].includes(source.priority)) workout.priority = source.priority;
+  if (hasOwn(source, 'session_objective')) workout.session_objective = sanitiseText(source.session_objective, 3000);
+  if (hasOwn(source, 'adaptation_target')) workout.adaptation_target = sanitiseText(source.adaptation_target, 1000);
+  if (hasOwn(source, 'purpose')) workout.purpose = sanitiseText(source.purpose, 3000);
+  if (hasOwn(source, 'planned_duration_min')) workout.planned_duration_min = numberOrNull(source.planned_duration_min, 0, 2000);
+  if (hasOwn(source, 'planned_distance_km')) workout.planned_distance_km = numberOrNull(source.planned_distance_km, 0, 2000);
+  if (hasOwn(source, 'planned_elevation_m')) workout.planned_elevation_m = numberOrNull(source.planned_elevation_m, 0, 100000);
+  if (typeof source.is_strength === 'boolean') workout.is_strength = source.is_strength;
+
+  return workout;
+}
+
+function normaliseWeek(body, athleteId) {
+  const source = body && typeof body === 'object' ? body : {};
+  const weekStart = validDate(source.week_start || source.start_date) || startOfWeek();
+  const workouts = Array.isArray(source.workouts)
+    ? source.workouts.slice(0, 30).map((item, index) => normaliseWorkout(item, athleteId, weekStart, index))
+    : [];
+
+  const explicitLoad = hasOwn(source, 'target_load') ? source.target_load : source.planned_load;
+  const week = {
     week_start: weekStart,
-    week_type: sanitiseText(body.week_type || 'Carga controlada', 80),
-    title: sanitiseText(body.title, 250),
-    coach_comment: sanitiseText(body.coach_comment, 4000),
-    target_load: numberOrNull(body.target_load, 0, 5000) || workouts.reduce((sum, item) => sum + Number(item.planned_load || 0), 0),
-    status: body.status === 'published' ? 'published' : 'draft',
+    week_type: sanitiseText(source.week_type || source.microcycle_type || 'Carga controlada', 80),
+    title: sanitiseText(source.title || source.name, 250),
+    coach_comment: sanitiseText(source.coach_comment || source.notes, 4000),
+    target_load: numberOrNull(explicitLoad, 0, 5000) ?? workouts.reduce((sum, item) => sum + Number(item.planned_load || 0), 0),
+    status: source.status === 'published' || source.publication_status === 'published' ? 'published' : 'draft',
     workouts,
   };
+
+  if (hasOwn(source, 'mesocycle_id')) week.mesocycle_id = sanitiseText(source.mesocycle_id, 80) || null;
+  if (hasOwn(source, 'end_date')) week.end_date = validDate(source.end_date);
+  if (hasOwn(source, 'microcycle_type') || hasOwn(source, 'type')) {
+    const type = source.microcycle_type || source.type;
+    week.microcycle_type = ['adaptation', 'load', 'development', 'overload', 'deload', 'taper', 'recovery', 'competition'].includes(type)
+      ? type
+      : null;
+  }
+  if (hasOwn(source, 'primary_objective')) week.primary_objective = sanitiseText(source.primary_objective, 3000);
+  if (hasOwn(source, 'planned_hours')) week.planned_hours = numberOrNull(source.planned_hours, 0, 10000) ?? 0;
+  if (hasOwn(source, 'planned_distance_km') || hasOwn(source, 'planned_distance')) {
+    week.planned_distance_km = numberOrNull(source.planned_distance_km ?? source.planned_distance, 0, 100000) ?? 0;
+  }
+  if (hasOwn(source, 'planned_elevation_m') || hasOwn(source, 'planned_elevation')) {
+    week.planned_elevation_m = numberOrNull(source.planned_elevation_m ?? source.planned_elevation, 0, 1000000) ?? 0;
+  }
+  if (hasOwn(source, 'planned_strength_sessions')) {
+    week.planned_strength_sessions = Math.round(numberOrNull(source.planned_strength_sessions, 0, 1000) ?? 0);
+  }
+  if (hasOwn(source, 'recovery_target')) week.recovery_target = sanitiseText(source.recovery_target, 3000);
+  if (hasOwn(source, 'lifecycle_status')) {
+    week.lifecycle_status = ['planned', 'active', 'completed'].includes(source.lifecycle_status)
+      ? source.lifecycle_status
+      : 'planned';
+  }
+
+  if (week.end_date && week.end_date < week.week_start) {
+    throw Object.assign(new Error('La fecha de fin del microciclo no puede ser anterior a la fecha de inicio.'), { status: 400 });
+  }
+
+  return week;
 }
 
 
@@ -633,7 +702,7 @@ async function createCoachAthlete(session, body) {
       },
       zones: { hr: [], pace: [] }, goals: [],
       metrics: { fitness: 0, fatigue: 0, form: 0, week_load: 0, planned_load: 0, readiness_score: 50, readiness_label: 'Sin datos suficientes' },
-      week: { id: `w-${crypto.randomUUID()}`, week_start: startOfWeek(), week_type: 'Planificación inicial', title: '', coach_comment: '', target_load: 0, status: 'draft', workouts: [] },
+      week: { id: `w-${crypto.randomUUID()}`, week_start: startOfWeek(), end_date: addDays(startOfWeek(), 6), week_type: 'Planificación inicial', title: '', coach_comment: '', target_load: 0, status: 'draft', lifecycle_status: 'planned', workouts: [] },
     };
     demo.athletes.push(athlete);
     demo.coach_athletes.push({ coach_user_id: session.user.id, athlete_id: athleteId });
@@ -649,7 +718,7 @@ async function createCoachAthlete(session, body) {
     prodRows('coach_athletes', 'on_conflict=coach_user_id,athlete_id', { method: 'POST', body: { coach_user_id: session.user.id, athlete_id: athlete.id }, prefer: 'resolution=ignore-duplicates,return=minimal' }),
     prodRows('athlete_profiles', 'on_conflict=athlete_id', { method: 'POST', body: { athlete_id: athlete.id, phone: sanitiseText(body.phone, 50), watch_brand: sanitiseText(body.watch_brand, 80), watch_model: sanitiseText(body.watch_model, 120), objective: sanitiseText(body.objective, 2000), availability: {}, custom_fields: [], updated_at: new Date().toISOString() }, prefer: 'resolution=merge-duplicates,return=representation' }),
     prodRows('daily_metrics', 'on_conflict=athlete_id,metric_date', { method: 'POST', body: { athlete_id: athlete.id, metric_date: new Date().toISOString().slice(0, 10), fitness: 0, fatigue: 0, form: 0, week_load: 0, planned_load: 0, readiness_score: 50, readiness_label: 'Sin datos suficientes', source: 'runflow' }, prefer: 'resolution=merge-duplicates,return=representation' }),
-    prodRows('training_weeks', 'on_conflict=athlete_id,week_start', { method: 'POST', body: { athlete_id: athlete.id, week_start: startOfWeek(), week_type: 'Planificación inicial', title: '', coach_comment: '', target_load: 0, status: 'draft', updated_at: new Date().toISOString() }, prefer: 'resolution=merge-duplicates,return=representation' }),
+    prodRows('training_weeks', 'on_conflict=athlete_id,week_start', { method: 'POST', body: { athlete_id: athlete.id, week_start: startOfWeek(), end_date: addDays(startOfWeek(), 6), week_type: 'Planificación inicial', title: '', coach_comment: '', target_load: 0, status: 'draft', lifecycle_status: 'planned', updated_at: new Date().toISOString() }, prefer: 'resolution=merge-duplicates,return=representation' }),
   ]);
   if (body.invite) await inviteAthleteUser(session, athlete.id);
   return prodAthleteBundle(athlete.id, startOfWeek());
@@ -694,37 +763,7 @@ async function saveZones(athleteId, body) {
   return zones;
 }
 
-async function saveWeek(athleteId, body, publish = false) {
-  const week = normaliseWeek(body, athleteId);
-  if (publish) {
-    week.status = 'published';
-    week.published_at = new Date().toISOString();
-  }
-  if (DEMO_MODE) {
-    const athlete = demo.athletes.find(item => item.id === athleteId);
-    athlete.week = { ...(athlete.week || {}), ...week, id: athlete.week && athlete.week.id ? athlete.week.id : crypto.randomUUID() };
-    athlete.metrics.planned_load = week.target_load;
-    saveDemo();
-    return athlete.week;
-  }
-  const weekRows = await prodRows('training_weeks', 'on_conflict=athlete_id,week_start', {
-    method: 'POST',
-    body: {
-      athlete_id: athleteId,
-      week_start: week.week_start,
-      week_type: week.week_type,
-      title: week.title,
-      coach_comment: week.coach_comment,
-      target_load: week.target_load,
-      status: week.status,
-      published_at: week.published_at || null,
-      updated_at: new Date().toISOString(),
-    },
-    prefer: 'resolution=merge-duplicates,return=representation',
-  });
-  const savedWeek = weekRows[0];
-  // Mantener UUID estables: actualizar sesiones existentes,
-  // crear únicamente las nuevas y borrar únicamente las eliminadas.
+async function persistWeekWorkouts(savedWeek, athleteId, workouts, publicationStatus) {
   const existingWorkouts = await prodRows(
     'workouts',
     `training_week_id=eq.${encodeURIComponent(savedWeek.id)}&select=id`
@@ -733,26 +772,18 @@ async function saveWeek(athleteId, body, publish = false) {
   const existingIds = new Set(existingWorkouts.map(item => String(item.id)));
   const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-  const incomingWorkouts = week.workouts.map(item => ({
+  const incomingWorkouts = workouts.map(item => ({
     ...item,
-    id: uuidPattern.test(String(item.id || ''))
-      ? String(item.id)
-      : crypto.randomUUID(),
+    id: uuidPattern.test(String(item.id || '')) ? String(item.id) : crypto.randomUUID(),
   }));
-
   const incomingIds = new Set(incomingWorkouts.map(item => item.id));
 
-  // Evita reutilizar accidentalmente el UUID de una sesión de otra semana.
   const newIds = incomingWorkouts
     .filter(item => !existingIds.has(item.id))
     .map(item => item.id);
 
   if (newIds.length) {
-    const conflicts = await prodRows(
-      'workouts',
-      `id=in.(${newIds.join(',')})&select=id`
-    );
-
+    const conflicts = await prodRows('workouts', `id=in.(${newIds.join(',')})&select=id`);
     if (conflicts.length) {
       throw Object.assign(
         new Error('Una de las sesiones utiliza un identificador que ya pertenece a otra sesión.'),
@@ -761,9 +792,8 @@ async function saveWeek(athleteId, body, publish = false) {
     }
   }
 
-  // Primero actualizamos o creamos. No borramos nada hasta saber
-  // que las nuevas sesiones se han guardado correctamente.
   await Promise.all(incomingWorkouts.map(item => {
+    const isExisting = existingIds.has(item.id);
     const payload = {
       training_week_id: savedWeek.id,
       athlete_id: athleteId,
@@ -774,19 +804,27 @@ async function saveWeek(athleteId, body, publish = false) {
       structured_description: item.structured_description,
       planned_load: item.planned_load,
       blocks: item.blocks,
-      visible_to_athlete: week.status === 'published',
+      visible_to_athlete: publicationStatus === 'published',
       updated_at: new Date().toISOString(),
     };
 
-    if (existingIds.has(item.id)) {
+    if (item.priority) payload.priority = item.priority;
+    else if (!isExisting) payload.priority = 'B';
+
+    if (hasOwn(item, 'session_objective')) payload.session_objective = item.session_objective;
+    if (hasOwn(item, 'adaptation_target')) payload.adaptation_target = item.adaptation_target;
+    if (hasOwn(item, 'purpose')) payload.purpose = item.purpose;
+    if (hasOwn(item, 'planned_duration_min')) payload.planned_duration_min = item.planned_duration_min;
+    if (hasOwn(item, 'planned_distance_km')) payload.planned_distance_km = item.planned_distance_km;
+    if (hasOwn(item, 'planned_elevation_m')) payload.planned_elevation_m = item.planned_elevation_m;
+    if (hasOwn(item, 'is_strength')) payload.is_strength = item.is_strength;
+    else if (!isExisting) payload.is_strength = String(item.sport || '').toLowerCase() === 'strength';
+
+    if (isExisting) {
       return prodRows(
         'workouts',
         `id=eq.${encodeURIComponent(item.id)}&training_week_id=eq.${encodeURIComponent(savedWeek.id)}&athlete_id=eq.${encodeURIComponent(athleteId)}`,
-        {
-          method: 'PATCH',
-          body: payload,
-          prefer: 'return=minimal',
-        }
+        { method: 'PATCH', body: payload, prefer: 'return=minimal' }
       );
     }
 
@@ -797,7 +835,6 @@ async function saveWeek(athleteId, body, publish = false) {
     });
   }));
 
-  // Ahora sí: borrar únicamente las sesiones que el coach ha eliminado.
   const deletedIds = existingWorkouts
     .map(item => String(item.id))
     .filter(id => !incomingIds.has(id));
@@ -806,171 +843,1283 @@ async function saveWeek(athleteId, body, publish = false) {
     prodRows(
       'workouts',
       `id=eq.${encodeURIComponent(id)}&training_week_id=eq.${encodeURIComponent(savedWeek.id)}`,
-      {
-        method: 'DELETE',
-        prefer: 'return=minimal',
-      }
+      { method: 'DELETE', prefer: 'return=minimal' }
     )
   ));
 
-  const savedWorkouts = await prodRows(
+  return prodRows(
     'workouts',
     `training_week_id=eq.${encodeURIComponent(savedWeek.id)}&select=*&order=workout_date.asc`
   );
+}
 
+async function saveWeek(athleteId, body, publish = false) {
+  const week = normaliseWeek(body, athleteId);
+  if (publish) {
+    week.status = 'published';
+    week.published_at = new Date().toISOString();
+  }
+
+  if (DEMO_MODE) {
+    const athlete = demo.athletes.find(item => item.id === athleteId);
+    if (!athlete) throw Object.assign(new Error('Deportista no encontrado.'), { status: 404 });
+
+    const previous = athlete.week || {};
+    const previousWorkouts = new Map((previous.workouts || []).map(item => [String(item.id), item]));
+    const mergedWorkouts = week.workouts.map(item => ({
+      ...(previousWorkouts.get(String(item.id)) || {}),
+      ...item,
+    }));
+    athlete.week = {
+      ...previous,
+      ...week,
+      id: previous.id || crypto.randomUUID(),
+      end_date: week.end_date || previous.end_date || addDays(week.week_start, 6),
+      workouts: mergedWorkouts,
+    };
+    if (athlete.metrics) athlete.metrics.planned_load = week.target_load;
+    saveDemo();
+    return athlete.week;
+  }
+
+  const existingRows = await prodRows(
+    'training_weeks',
+    `athlete_id=eq.${encodeURIComponent(athleteId)}&week_start=eq.${week.week_start}&select=id,end_date&limit=1`
+  );
+  const isNewWeek = !existingRows.length;
+
+  const weekPayload = {
+    athlete_id: athleteId,
+    week_start: week.week_start,
+    week_type: week.week_type,
+    title: week.title,
+    coach_comment: week.coach_comment,
+    target_load: week.target_load,
+    status: week.status,
+    published_at: week.published_at || null,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (hasOwn(week, 'mesocycle_id')) weekPayload.mesocycle_id = week.mesocycle_id;
+  if (hasOwn(week, 'end_date')) weekPayload.end_date = week.end_date;
+  else if (isNewWeek) weekPayload.end_date = addDays(week.week_start, 6);
+  if (hasOwn(week, 'microcycle_type')) weekPayload.microcycle_type = week.microcycle_type;
+  if (hasOwn(week, 'primary_objective')) weekPayload.primary_objective = week.primary_objective;
+  if (hasOwn(week, 'planned_hours')) weekPayload.planned_hours = week.planned_hours;
+  if (hasOwn(week, 'planned_distance_km')) weekPayload.planned_distance_km = week.planned_distance_km;
+  if (hasOwn(week, 'planned_elevation_m')) weekPayload.planned_elevation_m = week.planned_elevation_m;
+  if (hasOwn(week, 'planned_strength_sessions')) weekPayload.planned_strength_sessions = week.planned_strength_sessions;
+  if (hasOwn(week, 'recovery_target')) weekPayload.recovery_target = week.recovery_target;
+  if (hasOwn(week, 'lifecycle_status')) weekPayload.lifecycle_status = week.lifecycle_status;
+
+  const weekRows = await prodRows('training_weeks', 'on_conflict=athlete_id,week_start', {
+    method: 'POST',
+    body: weekPayload,
+    prefer: 'resolution=merge-duplicates,return=representation',
+  });
+
+  const savedWeek = weekRows[0];
+  const savedWorkouts = await persistWeekWorkouts(savedWeek, athleteId, week.workouts, week.status);
   return { ...savedWeek, workouts: savedWorkouts };
 }
 
-function normaliseSeason(body, athleteId) {
-  const startDate = validDate(body.start_date);
-  const endDate = validDate(body.end_date);
+function normaliseSeason(body, athleteId, existing = {}) {
+  const source = { ...existing, ...(body || {}) };
+  const startDate = validDate(source.start_date);
+  const endDate = validDate(source.end_date);
 
   const season = {
     athlete_id: athleteId,
-    name: sanitiseText(body.name, 200),
+    name: sanitiseText(source.name, 200),
     start_date: startDate,
     end_date: endDate,
-    status: ['planned', 'active', 'completed'].includes(body.status)
-      ? body.status
-      : 'planned',
-    season_objective: sanitiseText(body.season_objective, 3000),
-    notes: sanitiseText(body.notes, 5000),
+    status: ['planned', 'active', 'completed'].includes(source.status) ? source.status : 'planned',
+    season_objective: sanitiseText(source.season_objective, 3000),
+    notes: sanitiseText(source.notes, 5000),
     updated_at: new Date().toISOString(),
   };
 
   if (!season.name || !season.start_date || !season.end_date) {
-    throw Object.assign(
-      new Error('La temporada necesita nombre, fecha de inicio y fecha de fin.'),
-      { status: 400 }
-    );
+    throw Object.assign(new Error('La temporada necesita nombre, fecha de inicio y fecha de fin.'), { status: 400 });
   }
-
   if (season.end_date < season.start_date) {
-    throw Object.assign(
-      new Error('La fecha de fin de la temporada no puede ser anterior a la fecha de inicio.'),
-      { status: 400 }
-    );
+    throw Object.assign(new Error('La fecha de fin de la temporada no puede ser anterior a la fecha de inicio.'), { status: 400 });
   }
-
   return season;
 }
 
 async function listSeasons(athleteId) {
   if (DEMO_MODE) {
     const athlete = demo.athletes.find(item => item.id === athleteId);
-    if (!athlete) {
-      throw Object.assign(new Error('Deportista no encontrado.'), { status: 404 });
-    }
-
+    if (!athlete) throw Object.assign(new Error('Deportista no encontrado.'), { status: 404 });
     if (!Array.isArray(athlete.seasons)) athlete.seasons = [];
-
-    return athlete.seasons
-      .slice()
-      .sort((a, b) => String(b.start_date).localeCompare(String(a.start_date)));
+    return athlete.seasons.slice().sort((a, b) => String(b.start_date).localeCompare(String(a.start_date)));
   }
+  return prodRows('seasons', `athlete_id=eq.${encodeURIComponent(athleteId)}&select=*&order=start_date.desc`);
+}
 
-  return prodRows(
+async function getSeasonForAthlete(athleteId, seasonId) {
+  if (DEMO_MODE) {
+    const athlete = demo.athletes.find(item => item.id === athleteId);
+    if (!athlete) throw Object.assign(new Error('Deportista no encontrado.'), { status: 404 });
+    if (!Array.isArray(athlete.seasons)) athlete.seasons = [];
+    const season = athlete.seasons.find(item => item.id === seasonId);
+    if (!season) throw Object.assign(new Error('Temporada no encontrada.'), { status: 404 });
+    return season;
+  }
+  const rows = await prodRows(
     'seasons',
-    `athlete_id=eq.${encodeURIComponent(athleteId)}&select=*&order=start_date.desc`
+    `id=eq.${encodeURIComponent(seasonId)}&athlete_id=eq.${encodeURIComponent(athleteId)}&select=*&limit=1`
   );
+  if (!rows.length) throw Object.assign(new Error('Temporada no encontrada.'), { status: 404 });
+  return rows[0];
+}
+
+async function validateSeasonChildrenInside(athleteId, seasonId, season) {
+  if (DEMO_MODE) {
+    const athlete = demo.athletes.find(item => item.id === athleteId);
+    const macros = Array.isArray(athlete && athlete.macrocycles) ? athlete.macrocycles.filter(item => item.season_id === seasonId) : [];
+    if (macros.some(item => item.start_date < season.start_date || item.end_date > season.end_date)) {
+      throw Object.assign(new Error('No puedes acortar la temporada dejando macrociclos fuera de sus fechas.'), { status: 409 });
+    }
+    return;
+  }
+  const macros = await prodRows(
+    'macrocycles',
+    `athlete_id=eq.${encodeURIComponent(athleteId)}&season_id=eq.${encodeURIComponent(seasonId)}&select=id,start_date,end_date`
+  );
+  if (macros.some(item => item.start_date < season.start_date || item.end_date > season.end_date)) {
+    throw Object.assign(new Error('No puedes acortar la temporada dejando macrociclos fuera de sus fechas.'), { status: 409 });
+  }
 }
 
 async function addSeason(athleteId, body) {
-  const season = {
-    id: crypto.randomUUID(),
-    ...normaliseSeason(body, athleteId),
-  };
-
+  const season = { id: crypto.randomUUID(), ...normaliseSeason(body, athleteId) };
   if (DEMO_MODE) {
     const athlete = demo.athletes.find(item => item.id === athleteId);
-    if (!athlete) {
-      throw Object.assign(new Error('Deportista no encontrado.'), { status: 404 });
-    }
-
+    if (!athlete) throw Object.assign(new Error('Deportista no encontrado.'), { status: 404 });
     if (!Array.isArray(athlete.seasons)) athlete.seasons = [];
-
     athlete.seasons.push(season);
     saveDemo();
-
     return season;
   }
-
-  const rows = await prodRows('seasons', '', {
-    method: 'POST',
-    body: season,
-  });
-
+  const rows = await prodRows('seasons', '', { method: 'POST', body: season });
   return rows[0];
 }
 
 async function updateSeason(seasonId, athleteId, body) {
-  const season = normaliseSeason(body, athleteId);
+  const existing = await getSeasonForAthlete(athleteId, seasonId);
+  const season = normaliseSeason(body, athleteId, existing);
+  await validateSeasonChildrenInside(athleteId, seasonId, season);
 
   if (DEMO_MODE) {
     const athlete = demo.athletes.find(item => item.id === athleteId);
-    if (!athlete) {
-      throw Object.assign(new Error('Deportista no encontrado.'), { status: 404 });
-    }
-
-    if (!Array.isArray(athlete.seasons)) athlete.seasons = [];
-
     const index = athlete.seasons.findIndex(item => item.id === seasonId);
-
-    if (index < 0) {
-      throw Object.assign(new Error('Temporada no encontrada.'), { status: 404 });
-    }
-
-    athlete.seasons[index] = {
-      ...athlete.seasons[index],
-      ...season,
-      id: seasonId,
-    };
-
+    athlete.seasons[index] = { ...existing, ...season, id: seasonId };
     saveDemo();
-
     return athlete.seasons[index];
   }
 
   const rows = await prodRows(
     'seasons',
     `id=eq.${encodeURIComponent(seasonId)}&athlete_id=eq.${encodeURIComponent(athleteId)}`,
-    {
-      method: 'PATCH',
-      body: season,
-    }
+    { method: 'PATCH', body: season }
   );
-
-  if (!rows.length) {
-    throw Object.assign(new Error('Temporada no encontrada.'), { status: 404 });
-  }
-
+  if (!rows.length) throw Object.assign(new Error('Temporada no encontrada.'), { status: 404 });
   return rows[0];
 }
 
-async function addGoal(athleteId, body) {
+function normaliseGoal(body, athleteId, existing = {}) {
+  const source = { ...existing, ...(body || {}) };
+  const priorityCode = ['A', 'B', 'C'].includes(source.priority_code)
+    ? source.priority_code
+    : source.priority === 'Principal' ? 'A' : source.priority === 'Secundario' ? 'B' : 'B';
+  const legacyPriority = ['Principal', 'Secundario'].includes(source.priority)
+    ? source.priority
+    : priorityCode === 'A' ? 'Principal' : 'Secundario';
+  const goalType = ['competition', 'performance', 'volume', 'recovery', 'physiological_development', 'other'].includes(source.goal_type)
+    ? source.goal_type
+    : null;
+
   const goal = {
-    id: crypto.randomUUID(), athlete_id: athleteId,
-    name: sanitiseText(body.name, 200),
-    goal_date: validDate(body.goal_date),
-    priority: ['Principal', 'Secundario'].includes(body.priority) ? body.priority : 'Secundario',
-    distance_km: numberOrNull(body.distance_km, 0, 1000), elevation_m: numberOrNull(body.elevation_m, 0, 50000),
-    performance_target: sanitiseText(body.performance_target, 500), notes: sanitiseText(body.notes, 2000), status: 'active',
+    athlete_id: athleteId,
+    season_id: sanitiseText(source.season_id, 80) || null,
+    associated_macrocycle_id: sanitiseText(source.associated_macrocycle_id, 80) || null,
+    name: sanitiseText(source.name, 200),
+    goal_date: validDate(source.goal_date || source.date),
+    sport: sanitiseText(source.sport, 60) || null,
+    event_type: sanitiseText(source.event_type, 100) || null,
+    goal_type: goalType,
+    priority: legacyPriority,
+    priority_code: priorityCode,
+    distance_km: numberOrNull(source.distance_km ?? source.distance, 0, 5000),
+    elevation_m: numberOrNull(source.elevation_m ?? source.elevation_gain, 0, 100000),
+    target_time_sec: numberOrNull(source.target_time_sec, 0, 1_000_000),
+    target_position: numberOrNull(source.target_position, 1, 1_000_000),
+    target_metric: safeObject(source.target_metric),
+    performance_target: sanitiseText(source.performance_target, 1000),
+    notes: sanitiseText(source.notes, 4000),
+    status: ['active', 'completed', 'cancelled'].includes(source.status) ? source.status : 'active',
   };
-  if (!goal.name || !goal.goal_date) throw Object.assign(new Error('El objetivo necesita nombre y fecha.'), { status: 400 });
+
+  if (!goal.name || !goal.goal_date) {
+    throw Object.assign(new Error('El objetivo necesita nombre y fecha.'), { status: 400 });
+  }
+  return goal;
+}
+
+async function listGoals(athleteId) {
   if (DEMO_MODE) {
     const athlete = demo.athletes.find(item => item.id === athleteId);
-    athlete.goals.push(goal); saveDemo(); return goal;
+    if (!athlete) throw Object.assign(new Error('Deportista no encontrado.'), { status: 404 });
+    return (athlete.goals || []).slice().sort((a, b) => String(a.goal_date).localeCompare(String(b.goal_date)));
+  }
+  return prodRows('goals', `athlete_id=eq.${encodeURIComponent(athleteId)}&select=*&order=goal_date.asc`);
+}
+
+async function getGoalForAthlete(athleteId, goalId) {
+  if (!goalId) return null;
+  if (DEMO_MODE) {
+    const athlete = demo.athletes.find(item => item.id === athleteId);
+    const goal = athlete && Array.isArray(athlete.goals) ? athlete.goals.find(item => item.id === goalId) : null;
+    if (!goal) throw Object.assign(new Error('Objetivo no encontrado.'), { status: 404 });
+    return goal;
+  }
+  const rows = await prodRows(
+    'goals',
+    `id=eq.${encodeURIComponent(goalId)}&athlete_id=eq.${encodeURIComponent(athleteId)}&select=*&limit=1`
+  );
+  if (!rows.length) throw Object.assign(new Error('Objetivo no encontrado.'), { status: 404 });
+  return rows[0];
+}
+
+async function ensureGoalRelations(athleteId, goal, currentGoalId = null) {
+  if (goal.season_id) await getSeasonForAthlete(athleteId, goal.season_id);
+  if (goal.associated_macrocycle_id) {
+    const macro = await getMacrocycleForAthlete(athleteId, goal.associated_macrocycle_id);
+    if (goal.season_id && macro.season_id !== goal.season_id) {
+      throw Object.assign(new Error('El macrociclo asociado no pertenece a la temporada del objetivo.'), { status: 400 });
+    }
+    if (currentGoalId && macro.goal_id && macro.goal_id !== currentGoalId) {
+      throw Object.assign(new Error('Ese macrociclo ya está asociado como objetivo principal a otro objetivo.'), { status: 409 });
+    }
+  }
+}
+
+async function addGoal(athleteId, body) {
+  const goal = { id: crypto.randomUUID(), ...normaliseGoal(body, athleteId) };
+  await ensureGoalRelations(athleteId, goal);
+
+  if (DEMO_MODE) {
+    const athlete = demo.athletes.find(item => item.id === athleteId);
+    athlete.goals.push(goal);
+    saveDemo();
+    return goal;
   }
   const rows = await prodRows('goals', '', { method: 'POST', body: goal });
+  return rows[0];
+}
+
+async function updateGoal(goalId, athleteId, body) {
+  const existing = await getGoalForAthlete(athleteId, goalId);
+  const goal = normaliseGoal(body, athleteId, existing);
+  await ensureGoalRelations(athleteId, goal, goalId);
+
+  if (DEMO_MODE) {
+    const athlete = demo.athletes.find(item => item.id === athleteId);
+    const index = athlete.goals.findIndex(item => item.id === goalId);
+    athlete.goals[index] = { ...existing, ...goal, id: goalId };
+    saveDemo();
+    return athlete.goals[index];
+  }
+
+  const rows = await prodRows(
+    'goals',
+    `id=eq.${encodeURIComponent(goalId)}&athlete_id=eq.${encodeURIComponent(athleteId)}`,
+    { method: 'PATCH', body: goal }
+  );
+  if (!rows.length) throw Object.assign(new Error('Objetivo no encontrado.'), { status: 404 });
   return rows[0];
 }
 
 async function deleteGoal(goalId, athleteId) {
   if (DEMO_MODE) {
     const athlete = demo.athletes.find(item => item.id === athleteId);
-    athlete.goals = athlete.goals.filter(item => item.id !== goalId); saveDemo(); return;
+    athlete.goals = athlete.goals.filter(item => item.id !== goalId);
+    if (Array.isArray(athlete.macrocycles)) {
+      athlete.macrocycles = athlete.macrocycles.map(item => item.goal_id === goalId ? { ...item, goal_id: null } : item);
+    }
+    saveDemo();
+    return;
   }
-  await prodRows('goals', `id=eq.${encodeURIComponent(goalId)}&athlete_id=eq.${encodeURIComponent(athleteId)}`, { method: 'DELETE', prefer: 'return=minimal' });
+  await prodRows(
+    'goals',
+    `id=eq.${encodeURIComponent(goalId)}&athlete_id=eq.${encodeURIComponent(athleteId)}`,
+    { method: 'DELETE', prefer: 'return=minimal' }
+  );
+}
+
+function normaliseMacrocycle(body, existing = {}) {
+  const source = { ...existing, ...(body || {}) };
+  const macrocycle = {
+    goal_id: sanitiseText(source.goal_id, 80) || null,
+    name: sanitiseText(source.name, 200),
+    start_date: validDate(source.start_date),
+    end_date: validDate(source.end_date),
+    primary_objective: sanitiseText(source.primary_objective, 3000),
+    initial_state: safeObject(source.initial_state),
+    target_state: safeObject(source.target_state),
+    constraints: sanitiseText(source.constraints, 5000),
+    status: ['planned', 'active', 'completed'].includes(source.status) ? source.status : 'planned',
+    notes: sanitiseText(source.notes, 5000),
+    updated_at: new Date().toISOString(),
+  };
+  if (!macrocycle.name || !macrocycle.start_date || !macrocycle.end_date) {
+    throw Object.assign(new Error('El macrociclo necesita nombre, fecha de inicio y fecha de fin.'), { status: 400 });
+  }
+  if (macrocycle.end_date < macrocycle.start_date) {
+    throw Object.assign(new Error('La fecha de fin del macrociclo no puede ser anterior a la fecha de inicio.'), { status: 400 });
+  }
+  return macrocycle;
+}
+
+async function getMacrocycleForAthlete(athleteId, macrocycleId) {
+  if (DEMO_MODE) {
+    const athlete = demo.athletes.find(item => item.id === athleteId);
+    if (!athlete) throw Object.assign(new Error('Deportista no encontrado.'), { status: 404 });
+    if (!Array.isArray(athlete.macrocycles)) athlete.macrocycles = [];
+    const macrocycle = athlete.macrocycles.find(item => item.id === macrocycleId);
+    if (!macrocycle) throw Object.assign(new Error('Macrociclo no encontrado.'), { status: 404 });
+    return macrocycle;
+  }
+  const rows = await prodRows(
+    'macrocycles',
+    `id=eq.${encodeURIComponent(macrocycleId)}&athlete_id=eq.${encodeURIComponent(athleteId)}&select=*&limit=1`
+  );
+  if (!rows.length) throw Object.assign(new Error('Macrociclo no encontrado.'), { status: 404 });
+  return rows[0];
+}
+
+async function listMacrocycles(athleteId, seasonId) {
+  await getSeasonForAthlete(athleteId, seasonId);
+  if (DEMO_MODE) {
+    const athlete = demo.athletes.find(item => item.id === athleteId);
+    if (!Array.isArray(athlete.macrocycles)) athlete.macrocycles = [];
+    return athlete.macrocycles.filter(item => item.season_id === seasonId).sort((a, b) => String(a.start_date).localeCompare(String(b.start_date)));
+  }
+  return prodRows(
+    'macrocycles',
+    `athlete_id=eq.${encodeURIComponent(athleteId)}&season_id=eq.${encodeURIComponent(seasonId)}&select=*&order=start_date.asc`
+  );
+}
+
+function validateMacrocycleInsideSeason(macrocycle, season) {
+  if (macrocycle.start_date < season.start_date || macrocycle.end_date > season.end_date) {
+    throw Object.assign(new Error('Las fechas del macrociclo deben estar dentro de la temporada.'), { status: 400 });
+  }
+}
+
+async function validateMacrocycleGoal(athleteId, macrocycle, seasonId) {
+  if (!macrocycle.goal_id) return null;
+  const goal = await getGoalForAthlete(athleteId, macrocycle.goal_id);
+  if (goal.season_id && goal.season_id !== seasonId) {
+    throw Object.assign(new Error('El objetivo principal del macrociclo pertenece a otra temporada.'), { status: 400 });
+  }
+  return goal;
+}
+
+async function validateMacrocycleChildrenInside(athleteId, macrocycleId, macrocycle) {
+  if (DEMO_MODE) {
+    const athlete = demo.athletes.find(item => item.id === athleteId);
+    const mesos = Array.isArray(athlete && athlete.mesocycles) ? athlete.mesocycles.filter(item => item.macrocycle_id === macrocycleId) : [];
+    if (mesos.some(item => item.start_date < macrocycle.start_date || item.end_date > macrocycle.end_date)) {
+      throw Object.assign(new Error('No puedes acortar el macrociclo dejando mesociclos fuera de sus fechas.'), { status: 409 });
+    }
+    return;
+  }
+  const mesos = await prodRows(
+    'mesocycles',
+    `athlete_id=eq.${encodeURIComponent(athleteId)}&macrocycle_id=eq.${encodeURIComponent(macrocycleId)}&select=id,start_date,end_date`
+  );
+  if (mesos.some(item => item.start_date < macrocycle.start_date || item.end_date > macrocycle.end_date)) {
+    throw Object.assign(new Error('No puedes acortar el macrociclo dejando mesociclos fuera de sus fechas.'), { status: 409 });
+  }
+}
+
+async function addMacrocycle(athleteId, seasonId, body) {
+  const season = await getSeasonForAthlete(athleteId, seasonId);
+  const data = normaliseMacrocycle(body);
+  validateMacrocycleInsideSeason(data, season);
+  const goal = await validateMacrocycleGoal(athleteId, data, seasonId);
+
+  const macrocycle = {
+    id: crypto.randomUUID(),
+    athlete_id: athleteId,
+    season_id: seasonId,
+    ...data,
+  };
+
+  if (DEMO_MODE) {
+    const athlete = demo.athletes.find(item => item.id === athleteId);
+    if (!Array.isArray(athlete.macrocycles)) athlete.macrocycles = [];
+    athlete.macrocycles.push(macrocycle);
+    if (goal) {
+      const goalIndex = athlete.goals.findIndex(item => item.id === goal.id);
+      if (goalIndex >= 0) athlete.goals[goalIndex] = { ...athlete.goals[goalIndex], season_id: goal.season_id || seasonId, associated_macrocycle_id: macrocycle.id };
+    }
+    saveDemo();
+    return macrocycle;
+  }
+
+  const rows = await prodRows('macrocycles', '', { method: 'POST', body: macrocycle });
+  if (goal) {
+    await prodRows(
+      'goals',
+      `id=eq.${encodeURIComponent(goal.id)}&athlete_id=eq.${encodeURIComponent(athleteId)}`,
+      { method: 'PATCH', body: { season_id: goal.season_id || seasonId, associated_macrocycle_id: macrocycle.id } }
+    );
+  }
+  return rows[0];
+}
+
+async function updateMacrocycle(macrocycleId, athleteId, body) {
+  const existing = await getMacrocycleForAthlete(athleteId, macrocycleId);
+  const season = await getSeasonForAthlete(athleteId, existing.season_id);
+  const data = normaliseMacrocycle(body, existing);
+  validateMacrocycleInsideSeason(data, season);
+  const newGoal = await validateMacrocycleGoal(athleteId, data, existing.season_id);
+  await validateMacrocycleChildrenInside(athleteId, macrocycleId, data);
+
+  if (DEMO_MODE) {
+    const athlete = demo.athletes.find(item => item.id === athleteId);
+    const index = athlete.macrocycles.findIndex(item => item.id === macrocycleId);
+    athlete.macrocycles[index] = { ...existing, ...data, id: macrocycleId, athlete_id: athleteId, season_id: existing.season_id };
+
+    if (existing.goal_id && existing.goal_id !== data.goal_id) {
+      const oldIndex = athlete.goals.findIndex(item => item.id === existing.goal_id);
+      if (oldIndex >= 0 && athlete.goals[oldIndex].associated_macrocycle_id === macrocycleId) {
+        athlete.goals[oldIndex] = { ...athlete.goals[oldIndex], associated_macrocycle_id: null };
+      }
+    }
+    if (newGoal) {
+      const newIndex = athlete.goals.findIndex(item => item.id === newGoal.id);
+      if (newIndex >= 0) {
+        athlete.goals[newIndex] = {
+          ...athlete.goals[newIndex],
+          season_id: athlete.goals[newIndex].season_id || existing.season_id,
+          associated_macrocycle_id: macrocycleId,
+        };
+      }
+    }
+
+    saveDemo();
+    return athlete.macrocycles[index];
+  }
+
+  const rows = await prodRows(
+    'macrocycles',
+    `id=eq.${encodeURIComponent(macrocycleId)}&athlete_id=eq.${encodeURIComponent(athleteId)}`,
+    { method: 'PATCH', body: data }
+  );
+  if (!rows.length) throw Object.assign(new Error('Macrociclo no encontrado.'), { status: 404 });
+
+  if (existing.goal_id && existing.goal_id !== data.goal_id) {
+    await prodRows(
+      'goals',
+      `id=eq.${encodeURIComponent(existing.goal_id)}&athlete_id=eq.${encodeURIComponent(athleteId)}&associated_macrocycle_id=eq.${encodeURIComponent(macrocycleId)}`,
+      { method: 'PATCH', body: { associated_macrocycle_id: null } }
+    );
+  }
+  if (newGoal) {
+    await prodRows(
+      'goals',
+      `id=eq.${encodeURIComponent(newGoal.id)}&athlete_id=eq.${encodeURIComponent(athleteId)}`,
+      { method: 'PATCH', body: { season_id: newGoal.season_id || existing.season_id, associated_macrocycle_id: macrocycleId } }
+    );
+  }
+
+  return rows[0];
+}
+
+function inclusiveDays(startDate, endDate) {
+  const start = new Date(`${startDate}T12:00:00Z`);
+  const end = new Date(`${endDate}T12:00:00Z`);
+  return Math.max(1, Math.round((end - start) / 86400000) + 1);
+}
+
+function normaliseMesocycle(body, existing = {}) {
+  const source = { ...existing, ...(body || {}) };
+  const startDate = validDate(source.start_date);
+  const endDate = validDate(source.end_date);
+  const durationWeeks = startDate && endDate
+    ? Math.max(1, Math.ceil(inclusiveDays(startDate, endDate) / 7))
+    : numberOrNull(source.duration_weeks, 1, 200);
+
+  const mesocycle = {
+    name: sanitiseText(source.name, 200),
+    start_date: startDate,
+    end_date: endDate,
+    duration_weeks: Math.round(numberOrNull(source.duration_weeks, 1, 200) ?? durationWeeks ?? 1),
+    primary_adaptation: sanitiseText(source.primary_adaptation, 200),
+    secondary_adaptations: safeStringArray(source.secondary_adaptations, 30, 200),
+    planned_hours: numberOrNull(source.planned_hours, 0, 10000) ?? 0,
+    planned_distance_km: numberOrNull(source.planned_distance_km ?? source.planned_distance, 0, 100000) ?? 0,
+    planned_elevation_m: numberOrNull(source.planned_elevation_m ?? source.planned_elevation, 0, 1000000) ?? 0,
+    planned_load: numberOrNull(source.planned_load, 0, 1_000_000) ?? 0,
+    planned_strength_sessions: Math.round(numberOrNull(source.planned_strength_sessions, 0, 10000) ?? 0),
+    planned_intensity_distribution: safeObject(source.planned_intensity_distribution || source.intensity_distribution),
+    progression_pattern: safeStringArray(source.progression_pattern, 30, 100),
+    success_criteria: sanitiseText(source.success_criteria, 5000),
+    success_criteria_rules: Array.isArray(source.success_criteria_rules) ? source.success_criteria_rules.slice(0, 50) : [],
+    status: ['planned', 'active', 'completed'].includes(source.status) ? source.status : 'planned',
+    notes: sanitiseText(source.notes, 5000),
+    updated_at: new Date().toISOString(),
+  };
+
+  if (!mesocycle.name || !mesocycle.start_date || !mesocycle.end_date || !mesocycle.primary_adaptation) {
+    throw Object.assign(new Error('El mesociclo necesita nombre, fechas y adaptación principal.'), { status: 400 });
+  }
+  if (mesocycle.end_date < mesocycle.start_date) {
+    throw Object.assign(new Error('La fecha de fin del mesociclo no puede ser anterior a la fecha de inicio.'), { status: 400 });
+  }
+  return mesocycle;
+}
+
+async function getMesocycleForAthlete(athleteId, mesocycleId) {
+  if (DEMO_MODE) {
+    const athlete = demo.athletes.find(item => item.id === athleteId);
+    if (!athlete) throw Object.assign(new Error('Deportista no encontrado.'), { status: 404 });
+    if (!Array.isArray(athlete.mesocycles)) athlete.mesocycles = [];
+    const mesocycle = athlete.mesocycles.find(item => item.id === mesocycleId);
+    if (!mesocycle) throw Object.assign(new Error('Mesociclo no encontrado.'), { status: 404 });
+    return mesocycle;
+  }
+  const rows = await prodRows(
+    'mesocycles',
+    `id=eq.${encodeURIComponent(mesocycleId)}&athlete_id=eq.${encodeURIComponent(athleteId)}&select=*&limit=1`
+  );
+  if (!rows.length) throw Object.assign(new Error('Mesociclo no encontrado.'), { status: 404 });
+  return rows[0];
+}
+
+async function listMesocycles(athleteId, macrocycleId) {
+  await getMacrocycleForAthlete(athleteId, macrocycleId);
+  if (DEMO_MODE) {
+    const athlete = demo.athletes.find(item => item.id === athleteId);
+    if (!Array.isArray(athlete.mesocycles)) athlete.mesocycles = [];
+    return athlete.mesocycles.filter(item => item.macrocycle_id === macrocycleId).sort((a, b) => String(a.start_date).localeCompare(String(b.start_date)));
+  }
+  return prodRows(
+    'mesocycles',
+    `athlete_id=eq.${encodeURIComponent(athleteId)}&macrocycle_id=eq.${encodeURIComponent(macrocycleId)}&select=*&order=start_date.asc`
+  );
+}
+
+function validateMesocycleInsideMacrocycle(mesocycle, macrocycle) {
+  if (mesocycle.start_date < macrocycle.start_date || mesocycle.end_date > macrocycle.end_date) {
+    throw Object.assign(new Error('Las fechas del mesociclo deben estar dentro del macrociclo.'), { status: 400 });
+  }
+}
+
+async function validateMesocycleChildrenInside(athleteId, mesocycleId, mesocycle) {
+  if (DEMO_MODE) {
+    const athlete = demo.athletes.find(item => item.id === athleteId);
+    const micros = [];
+    if (athlete && athlete.week && athlete.week.mesocycle_id === mesocycleId) micros.push(athlete.week);
+    if (Array.isArray(athlete && athlete.microcycles)) micros.push(...athlete.microcycles.filter(item => item.mesocycle_id === mesocycleId));
+    if (micros.some(item => (item.week_start || item.start_date) < mesocycle.start_date || (item.end_date || addDays(item.week_start, 6)) > mesocycle.end_date)) {
+      throw Object.assign(new Error('No puedes acortar el mesociclo dejando microciclos fuera de sus fechas.'), { status: 409 });
+    }
+    return;
+  }
+  const micros = await prodRows(
+    'training_weeks',
+    `athlete_id=eq.${encodeURIComponent(athleteId)}&mesocycle_id=eq.${encodeURIComponent(mesocycleId)}&select=id,week_start,end_date`
+  );
+  if (micros.some(item => item.week_start < mesocycle.start_date || (item.end_date || addDays(item.week_start, 6)) > mesocycle.end_date)) {
+    throw Object.assign(new Error('No puedes acortar el mesociclo dejando microciclos fuera de sus fechas.'), { status: 409 });
+  }
+}
+
+async function addMesocycle(athleteId, macrocycleId, body) {
+  const macrocycle = await getMacrocycleForAthlete(athleteId, macrocycleId);
+  const data = normaliseMesocycle(body);
+  validateMesocycleInsideMacrocycle(data, macrocycle);
+
+  const mesocycle = {
+    id: crypto.randomUUID(),
+    athlete_id: athleteId,
+    macrocycle_id: macrocycleId,
+    ...data,
+  };
+
+  if (DEMO_MODE) {
+    const athlete = demo.athletes.find(item => item.id === athleteId);
+    if (!Array.isArray(athlete.mesocycles)) athlete.mesocycles = [];
+    athlete.mesocycles.push(mesocycle);
+    saveDemo();
+    return mesocycle;
+  }
+
+  const rows = await prodRows('mesocycles', '', { method: 'POST', body: mesocycle });
+  return rows[0];
+}
+
+async function updateMesocycle(mesocycleId, athleteId, body) {
+  const existing = await getMesocycleForAthlete(athleteId, mesocycleId);
+  const macrocycle = await getMacrocycleForAthlete(athleteId, existing.macrocycle_id);
+  const data = normaliseMesocycle(body, existing);
+  validateMesocycleInsideMacrocycle(data, macrocycle);
+  await validateMesocycleChildrenInside(athleteId, mesocycleId, data);
+
+  if (DEMO_MODE) {
+    const athlete = demo.athletes.find(item => item.id === athleteId);
+    const index = athlete.mesocycles.findIndex(item => item.id === mesocycleId);
+    athlete.mesocycles[index] = { ...existing, ...data, id: mesocycleId, athlete_id: athleteId, macrocycle_id: existing.macrocycle_id };
+    saveDemo();
+    return athlete.mesocycles[index];
+  }
+
+  const rows = await prodRows(
+    'mesocycles',
+    `id=eq.${encodeURIComponent(mesocycleId)}&athlete_id=eq.${encodeURIComponent(athleteId)}`,
+    { method: 'PATCH', body: data }
+  );
+  if (!rows.length) throw Object.assign(new Error('Mesociclo no encontrado.'), { status: 404 });
+  return rows[0];
+}
+
+function microcycleFromRow(row, workouts = [], actual = null) {
+  const actualMetrics = actual || {
+    hours: Number(row.actual_hours || 0),
+    distance_km: Number(row.actual_distance_km || 0),
+    elevation_m: Number(row.actual_elevation_m || 0),
+    load: Number(row.actual_load || 0),
+    strength_sessions: Number(row.actual_strength_sessions || 0),
+    completion_rate: null,
+    a_sessions_completion_pct: null,
+  };
+  return {
+    id: row.id,
+    mesocycle_id: row.mesocycle_id || null,
+    name: row.title || '',
+    start_date: row.week_start,
+    end_date: row.end_date || addDays(row.week_start, 6),
+    type: row.microcycle_type || null,
+    primary_objective: row.primary_objective || '',
+    planned: {
+      hours: Number(row.planned_hours || 0),
+      distance_km: Number(row.planned_distance_km || 0),
+      elevation_m: Number(row.planned_elevation_m || 0),
+      load: Number(row.target_load || 0),
+      strength_sessions: Number(row.planned_strength_sessions || 0),
+    },
+    actual: actualMetrics,
+    recovery_target: row.recovery_target || '',
+    lifecycle_status: row.lifecycle_status || 'planned',
+    publication_status: row.status || 'draft',
+    notes: row.coach_comment || '',
+    week_type: row.week_type || '',
+    published_at: row.published_at || null,
+    workouts,
+  };
+}
+
+async function getMicrocycleForAthlete(athleteId, microcycleId) {
+  if (DEMO_MODE) {
+    const athlete = demo.athletes.find(item => item.id === athleteId);
+    if (!athlete) throw Object.assign(new Error('Deportista no encontrado.'), { status: 404 });
+    const candidates = [];
+    if (athlete.week) candidates.push(athlete.week);
+    if (Array.isArray(athlete.microcycles)) candidates.push(...athlete.microcycles);
+    const row = candidates.find(item => item.id === microcycleId);
+    if (!row) throw Object.assign(new Error('Microciclo no encontrado.'), { status: 404 });
+    return row;
+  }
+  const rows = await prodRows(
+    'training_weeks',
+    `id=eq.${encodeURIComponent(microcycleId)}&athlete_id=eq.${encodeURIComponent(athleteId)}&select=*&limit=1`
+  );
+  if (!rows.length) throw Object.assign(new Error('Microciclo no encontrado.'), { status: 404 });
+  return rows[0];
+}
+
+async function listMicrocycles(athleteId, mesocycleId) {
+  const mesocycle = await getMesocycleForAthlete(athleteId, mesocycleId);
+  if (DEMO_MODE) {
+    const athlete = demo.athletes.find(item => item.id === athleteId);
+    const rows = [];
+    if (athlete.week && athlete.week.mesocycle_id === mesocycleId) rows.push(athlete.week);
+    if (Array.isArray(athlete.microcycles)) rows.push(...athlete.microcycles.filter(item => item.mesocycle_id === mesocycleId));
+    return rows.sort((a, b) => String(a.week_start).localeCompare(String(b.week_start))).map(row => microcycleFromRow(row, row.workouts || []));
+  }
+  const rows = await prodRows(
+    'training_weeks',
+    `athlete_id=eq.${encodeURIComponent(athleteId)}&mesocycle_id=eq.${encodeURIComponent(mesocycleId)}&select=*&order=week_start.asc`
+  );
+  if (!rows.length) return [];
+  const ids = rows.map(item => item.id);
+  const workouts = await prodRows('workouts', `training_week_id=in.(${ids.join(',')})&select=*&order=workout_date.asc`);
+  const grouped = new Map();
+  workouts.forEach(item => {
+    if (!grouped.has(item.training_week_id)) grouped.set(item.training_week_id, []);
+    grouped.get(item.training_week_id).push(item);
+  });
+  return rows.map(row => microcycleFromRow(row, grouped.get(row.id) || []));
+}
+
+function normaliseMicrocycle(body, existing = {}) {
+  const source = { ...existing, ...(body || {}) };
+  const startDate = validDate(source.start_date || source.week_start);
+  const endDate = validDate(source.end_date) || (startDate ? addDays(startDate, 6) : null);
+  const type = source.type || source.microcycle_type;
+  const publicationStatus = source.publication_status || source.status;
+  const plannedLoad = source.planned && typeof source.planned === 'object' ? source.planned.load : (source.planned_load ?? source.target_load);
+  const plannedHours = source.planned && typeof source.planned === 'object' ? source.planned.hours : source.planned_hours;
+  const plannedDistance = source.planned && typeof source.planned === 'object' ? source.planned.distance_km : (source.planned_distance_km ?? source.planned_distance);
+  const plannedElevation = source.planned && typeof source.planned === 'object' ? source.planned.elevation_m : (source.planned_elevation_m ?? source.planned_elevation);
+  const plannedStrength = source.planned && typeof source.planned === 'object' ? source.planned.strength_sessions : source.planned_strength_sessions;
+
+  const microcycle = {
+    title: sanitiseText(source.name || source.title, 250),
+    week_start: startDate,
+    end_date: endDate,
+    microcycle_type: ['adaptation', 'load', 'development', 'overload', 'deload', 'taper', 'recovery', 'competition'].includes(type) ? type : null,
+    primary_objective: sanitiseText(source.primary_objective, 3000),
+    week_type: sanitiseText(source.week_type || source.name || 'Planificación', 80),
+    coach_comment: sanitiseText(source.notes || source.coach_comment, 4000),
+    target_load: numberOrNull(plannedLoad, 0, 1_000_000) ?? 0,
+    planned_hours: numberOrNull(plannedHours, 0, 10000) ?? 0,
+    planned_distance_km: numberOrNull(plannedDistance, 0, 100000) ?? 0,
+    planned_elevation_m: numberOrNull(plannedElevation, 0, 1000000) ?? 0,
+    planned_strength_sessions: Math.round(numberOrNull(plannedStrength, 0, 10000) ?? 0),
+    recovery_target: sanitiseText(source.recovery_target, 3000),
+    lifecycle_status: ['planned', 'active', 'completed'].includes(source.lifecycle_status) ? source.lifecycle_status : 'planned',
+    status: publicationStatus === 'published' ? 'published' : 'draft',
+    updated_at: new Date().toISOString(),
+  };
+
+  if (!microcycle.title || !microcycle.week_start || !microcycle.end_date) {
+    throw Object.assign(new Error('El microciclo necesita nombre, fecha de inicio y fecha de fin.'), { status: 400 });
+  }
+  if (microcycle.end_date < microcycle.week_start) {
+    throw Object.assign(new Error('La fecha de fin del microciclo no puede ser anterior a la fecha de inicio.'), { status: 400 });
+  }
+  return microcycle;
+}
+
+function validateMicrocycleInsideMesocycle(microcycle, mesocycle) {
+  if (microcycle.week_start < mesocycle.start_date || microcycle.end_date > mesocycle.end_date) {
+    throw Object.assign(new Error('Las fechas del microciclo deben estar dentro del mesociclo.'), { status: 400 });
+  }
+}
+
+async function ensureMicrocycleStartAvailable(athleteId, weekStart, excludeId = null) {
+  if (DEMO_MODE) {
+    const athlete = demo.athletes.find(item => item.id === athleteId);
+    const candidates = [];
+    if (athlete && athlete.week) candidates.push(athlete.week);
+    if (Array.isArray(athlete && athlete.microcycles)) candidates.push(...athlete.microcycles);
+    if (candidates.some(item => item.week_start === weekStart && item.id !== excludeId)) {
+      throw Object.assign(new Error('Ya existe un microciclo con esa fecha de inicio.'), { status: 409 });
+    }
+    return;
+  }
+  const rows = await prodRows(
+    'training_weeks',
+    `athlete_id=eq.${encodeURIComponent(athleteId)}&week_start=eq.${weekStart}&select=id`
+  );
+  if (rows.some(item => item.id !== excludeId)) {
+    throw Object.assign(new Error('Ya existe un microciclo con esa fecha de inicio.'), { status: 409 });
+  }
+}
+
+async function addMicrocycle(athleteId, mesocycleId, body) {
+  const mesocycle = await getMesocycleForAthlete(athleteId, mesocycleId);
+  const data = normaliseMicrocycle(body);
+  validateMicrocycleInsideMesocycle(data, mesocycle);
+  await ensureMicrocycleStartAvailable(athleteId, data.week_start);
+
+  const row = {
+    id: crypto.randomUUID(),
+    athlete_id: athleteId,
+    mesocycle_id: mesocycleId,
+    ...data,
+    published_at: data.status === 'published' ? new Date().toISOString() : null,
+  };
+  const sourceWorkouts = Array.isArray(body && body.workouts) ? body.workouts : [];
+  const workouts = sourceWorkouts.map((item, index) => normaliseWorkout(item, athleteId, data.week_start, index));
+
+  if (DEMO_MODE) {
+    const athlete = demo.athletes.find(item => item.id === athleteId);
+    if (!Array.isArray(athlete.microcycles)) athlete.microcycles = [];
+    row.workouts = workouts;
+    athlete.microcycles.push(row);
+    saveDemo();
+    return microcycleFromRow(row, workouts);
+  }
+
+  const rows = await prodRows('training_weeks', '', { method: 'POST', body: row });
+  const saved = rows[0];
+  const savedWorkouts = workouts.length ? await persistWeekWorkouts(saved, athleteId, workouts, saved.status) : [];
+  return microcycleFromRow(saved, savedWorkouts);
+}
+
+async function updateMicrocycle(microcycleId, athleteId, body) {
+  const existing = await getMicrocycleForAthlete(athleteId, microcycleId);
+  const mesocycleId = sanitiseText(body && body.mesocycle_id, 80) || existing.mesocycle_id;
+  if (!mesocycleId) throw Object.assign(new Error('El microciclo debe pertenecer a un mesociclo.'), { status: 400 });
+  const mesocycle = await getMesocycleForAthlete(athleteId, mesocycleId);
+  const existingShape = {
+    ...existing,
+    start_date: existing.week_start,
+    name: existing.title,
+    type: existing.microcycle_type,
+    notes: existing.coach_comment,
+    planned_load: existing.target_load,
+    publication_status: existing.status,
+  };
+  const data = normaliseMicrocycle(body, existingShape);
+  validateMicrocycleInsideMesocycle(data, mesocycle);
+  await ensureMicrocycleStartAvailable(athleteId, data.week_start, microcycleId);
+
+  if (DEMO_MODE) {
+    const athlete = demo.athletes.find(item => item.id === athleteId);
+    const candidates = [];
+    if (athlete.week) candidates.push({ kind: 'week', item: athlete.week });
+    if (Array.isArray(athlete.microcycles)) athlete.microcycles.forEach(item => candidates.push({ kind: 'array', item }));
+    const found = candidates.find(entry => entry.item.id === microcycleId);
+    const currentWorkouts = found.item.workouts || [];
+    const workouts = Array.isArray(body && body.workouts)
+      ? body.workouts.map((item, index) => normaliseWorkout(item, athleteId, data.week_start, index))
+      : currentWorkouts;
+    const updated = { ...found.item, ...data, mesocycle_id: mesocycleId, workouts };
+    if (found.kind === 'week') athlete.week = updated;
+    else {
+      const index = athlete.microcycles.findIndex(item => item.id === microcycleId);
+      athlete.microcycles[index] = updated;
+    }
+    saveDemo();
+    return microcycleFromRow(updated, workouts);
+  }
+
+  const payload = { ...data, mesocycle_id: mesocycleId };
+  if (data.status === 'published' && !existing.published_at) payload.published_at = new Date().toISOString();
+  const rows = await prodRows(
+    'training_weeks',
+    `id=eq.${encodeURIComponent(microcycleId)}&athlete_id=eq.${encodeURIComponent(athleteId)}`,
+    { method: 'PATCH', body: payload }
+  );
+  if (!rows.length) throw Object.assign(new Error('Microciclo no encontrado.'), { status: 404 });
+  const saved = rows[0];
+
+  let workouts;
+  if (Array.isArray(body && body.workouts)) {
+    const normalised = body.workouts.map((item, index) => normaliseWorkout(item, athleteId, data.week_start, index));
+    workouts = await persistWeekWorkouts(saved, athleteId, normalised, saved.status);
+  } else {
+    workouts = await prodRows('workouts', `training_week_id=eq.${encodeURIComponent(saved.id)}&select=*&order=workout_date.asc`);
+  }
+  return microcycleFromRow(saved, workouts);
+}
+
+function sportKey(value) {
+  const sport = String(value || '').toLowerCase();
+  if (sport.includes('strength') || sport.includes('fuerza')) return 'strength';
+  if (sport.includes('ride') || sport.includes('cycle') || sport.includes('bike') || sport.includes('cicl')) return 'ride';
+  if (sport.includes('run') || sport.includes('trail') || sport.includes('correr')) return 'run';
+  return sport;
+}
+
+function calculateExecutionMetrics(workouts, activities, manualLogs) {
+  const workoutIds = new Set(workouts.map(item => String(item.id)));
+  const logsByWorkout = new Map();
+  for (const log of manualLogs || []) {
+    if (!log.workout_id || !workoutIds.has(String(log.workout_id))) continue;
+    if (!logsByWorkout.has(String(log.workout_id))) logsByWorkout.set(String(log.workout_id), []);
+    logsByWorkout.get(String(log.workout_id)).push(log);
+  }
+
+  const linkedActivities = new Map();
+  for (const activity of activities || []) {
+    if (activity.workout_id && workoutIds.has(String(activity.workout_id))) {
+      if (!linkedActivities.has(String(activity.workout_id))) linkedActivities.set(String(activity.workout_id), []);
+      linkedActivities.get(String(activity.workout_id)).push(activity);
+    }
+  }
+
+  const workoutsByDateSport = new Map();
+  for (const workout of workouts) {
+    const key = `${workout.workout_date}|${sportKey(workout.sport)}`;
+    if (!workoutsByDateSport.has(key)) workoutsByDateSport.set(key, []);
+    workoutsByDateSport.get(key).push(workout);
+  }
+
+  const fallbackActivityIds = new Set();
+  const completedWorkoutIds = new Set();
+  for (const workout of workouts) {
+    const id = String(workout.id);
+    const logs = logsByWorkout.get(id) || [];
+    const explicitActivity = linkedActivities.get(id) || [];
+    if (explicitActivity.length || logs.some(log => ['completed', 'partial'].includes(log.status))) {
+      completedWorkoutIds.add(id);
+      continue;
+    }
+
+    const key = `${workout.workout_date}|${sportKey(workout.sport)}`;
+    const candidates = workoutsByDateSport.get(key) || [];
+    if (candidates.length !== 1) continue;
+    const activity = (activities || []).find(item =>
+      !item.workout_id &&
+      String(item.activity_date || '').slice(0, 10) === workout.workout_date &&
+      sportKey(item.sport) === sportKey(workout.sport)
+    );
+    if (activity) {
+      completedWorkoutIds.add(id);
+      fallbackActivityIds.add(String(activity.id || activity.intervals_activity_id));
+    }
+  }
+
+  const relevantActivities = (activities || []).filter(item => {
+    if (item.workout_id) return workoutIds.has(String(item.workout_id));
+    return fallbackActivityIds.has(String(item.id || item.intervals_activity_id));
+  });
+
+  const activityDurationSec = relevantActivities.reduce((sum, item) => sum + Number(item.duration_sec || 0), 0);
+  const linkedActivityWorkoutIds = new Set(relevantActivities.filter(item => item.workout_id).map(item => String(item.workout_id)));
+  let manualDurationMin = 0;
+  for (const [workoutId, logs] of logsByWorkout.entries()) {
+    if (linkedActivityWorkoutIds.has(workoutId)) continue;
+    const completed = logs.find(log => ['completed', 'partial'].includes(log.status));
+    if (completed) manualDurationMin += Number(completed.actual_duration_min || 0);
+  }
+
+  const strengthWorkoutIds = new Set(
+    workouts.filter(item => item.is_strength || sportKey(item.sport) === 'strength').map(item => String(item.id))
+  );
+  const completedStrength = [...completedWorkoutIds].filter(id => strengthWorkoutIds.has(id)).length;
+  const aWorkouts = workouts.filter(item => item.priority === 'A');
+  const completedA = aWorkouts.filter(item => completedWorkoutIds.has(String(item.id))).length;
+
+  return {
+    hours: roundOrNull((activityDurationSec / 3600) + (manualDurationMin / 60), 2) || 0,
+    distance_km: roundOrNull(relevantActivities.reduce((sum, item) => sum + Number(item.distance_m || 0), 0) / 1000, 2) || 0,
+    elevation_m: roundOrNull(relevantActivities.reduce((sum, item) => sum + Number(item.elevation_gain_m || 0), 0), 1) || 0,
+    load: roundOrNull(relevantActivities.reduce((sum, item) => sum + Number(item.load || 0), 0), 2) || 0,
+    strength_sessions: completedStrength,
+    completion_rate: workouts.length ? roundOrNull((completedWorkoutIds.size / workouts.length) * 100, 1) : 0,
+    a_sessions_completion_pct: aWorkouts.length ? roundOrNull((completedA / aWorkouts.length) * 100, 1) : null,
+  };
+}
+
+async function loadExecutionForRange(athleteId, oldest, newest, workouts) {
+  if (DEMO_MODE) {
+    const activities = (demo.activities || []).filter(item => item.athlete_id === athleteId && String(item.activity_date).slice(0, 10) >= oldest && String(item.activity_date).slice(0, 10) <= newest);
+    const manualLogs = (demo.manual_logs || []).filter(item => item.athlete_id === athleteId);
+    return calculateExecutionMetrics(workouts, activities, manualLogs);
+  }
+
+  const workoutIds = workouts.map(item => item.id);
+  const [activities, manualLogs] = await Promise.all([
+    prodRows(
+      'activities',
+      `athlete_id=eq.${encodeURIComponent(athleteId)}&activity_date=gte.${oldest}T00:00:00&activity_date=lte.${newest}T23:59:59&select=id,workout_id,activity_date,sport,duration_sec,distance_m,elevation_gain_m,load`
+    ),
+    workoutIds.length
+      ? prodRows('manual_session_logs', `athlete_id=eq.${encodeURIComponent(athleteId)}&workout_id=in.(${workoutIds.join(',')})&select=*`)
+      : Promise.resolve([]),
+  ]);
+  return calculateExecutionMetrics(workouts, activities, manualLogs);
+}
+
+function mesocycleApi(row, microcycles, actual) {
+  return {
+    id: row.id,
+    macrocycle_id: row.macrocycle_id,
+    name: row.name,
+    start_date: row.start_date,
+    end_date: row.end_date,
+    duration_weeks: row.duration_weeks,
+    primary_adaptation: row.primary_adaptation,
+    secondary_adaptations: Array.isArray(row.secondary_adaptations) ? row.secondary_adaptations : [],
+    planned: {
+      hours: Number(row.planned_hours || 0),
+      distance_km: Number(row.planned_distance_km || 0),
+      elevation_m: Number(row.planned_elevation_m || 0),
+      load: Number(row.planned_load || 0),
+      strength_sessions: Number(row.planned_strength_sessions || 0),
+      intensity_distribution: safeObject(row.planned_intensity_distribution),
+    },
+    actual: {
+      ...(actual || {
+        hours: Number(row.actual_hours || 0),
+        distance_km: Number(row.actual_distance_km || 0),
+        elevation_m: Number(row.actual_elevation_m || 0),
+        load: Number(row.actual_load || 0),
+        strength_sessions: Number(row.actual_strength_sessions || 0),
+      }),
+      intensity_distribution: safeObject(row.actual_intensity_distribution),
+    },
+    progression_pattern: Array.isArray(row.progression_pattern) ? row.progression_pattern : [],
+    success_criteria: row.success_criteria || '',
+    success_criteria_rules: Array.isArray(row.success_criteria_rules) ? row.success_criteria_rules : [],
+    status: row.status,
+    notes: row.notes || '',
+    metrics_updated_at: row.metrics_updated_at || null,
+    microcycles,
+  };
+}
+
+async function getCycleEvaluations(athleteId, filters = {}) {
+  if (DEMO_MODE) {
+    if (!Array.isArray(demo.cycle_evaluations)) demo.cycle_evaluations = [];
+    return demo.cycle_evaluations
+      .filter(item => item.athlete_id === athleteId)
+      .filter(item => !filters.macrocycle_id || item.macrocycle_id === filters.macrocycle_id)
+      .filter(item => !filters.mesocycle_id || item.mesocycle_id === filters.mesocycle_id)
+      .filter(item => !filters.microcycle_id || item.microcycle_id === filters.microcycle_id)
+      .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+  }
+
+  const query = [`athlete_id=eq.${encodeURIComponent(athleteId)}`];
+  if (filters.macrocycle_id) query.push(`macrocycle_id=eq.${encodeURIComponent(filters.macrocycle_id)}`);
+  if (filters.mesocycle_id) query.push(`mesocycle_id=eq.${encodeURIComponent(filters.mesocycle_id)}`);
+  if (filters.microcycle_id) query.push(`microcycle_id=eq.${encodeURIComponent(filters.microcycle_id)}`);
+  query.push('select=*', 'order=created_at.desc');
+  return prodRows('cycle_evaluations', query.join('&'));
+}
+
+async function validateEvaluationCycle(athleteId, body) {
+  const ids = ['macrocycle_id', 'mesocycle_id', 'microcycle_id']
+    .map(key => sanitiseText(body && body[key], 80) || null);
+  if (ids.filter(Boolean).length !== 1) {
+    throw Object.assign(new Error('La evaluación debe pertenecer exactamente a un macrociclo, mesociclo o microciclo.'), { status: 400 });
+  }
+  if (ids[0]) await getMacrocycleForAthlete(athleteId, ids[0]);
+  if (ids[1]) await getMesocycleForAthlete(athleteId, ids[1]);
+  if (ids[2]) await getMicrocycleForAthlete(athleteId, ids[2]);
+  return { macrocycle_id: ids[0], mesocycle_id: ids[1], microcycle_id: ids[2] };
+}
+
+function normaliseEvaluation(body, existing = {}) {
+  const source = { ...existing, ...(body || {}) };
+  return {
+    evaluation_type: ['interim', 'final'].includes(source.evaluation_type) ? source.evaluation_type : 'final',
+    evaluation_status: ['draft', 'final'].includes(source.evaluation_status) ? source.evaluation_status : 'draft',
+    completion_rate: numberOrNull(source.completion_rate, 0, 100),
+    fatigue: numberOrNull(source.fatigue, 0, 10),
+    fitness_change: numberOrNull(source.fitness_change, -100000, 100000),
+    subjective_feeling: numberOrNull(source.subjective_feeling, 1, 10),
+    injury_status: sanitiseText(source.injury_status, 3000),
+    goal_achieved: ['yes', 'partial', 'no'].includes(source.goal_achieved) ? source.goal_achieved : null,
+    coach_notes: sanitiseText(source.coach_notes, 5000),
+    adjustment_decision: ['advance', 'prolong', 'deload', 'modify', 'repeat', 'none'].includes(source.adjustment_decision)
+      ? source.adjustment_decision
+      : null,
+    adjustment_notes: sanitiseText(source.adjustment_notes, 5000),
+    metrics_snapshot: safeObject(source.metrics_snapshot),
+    updated_at: new Date().toISOString(),
+  };
+}
+
+async function addCycleEvaluation(session, athleteId, body) {
+  const cycle = await validateEvaluationCycle(athleteId, body);
+  const evaluation = {
+    id: crypto.randomUUID(),
+    athlete_id: athleteId,
+    coach_user_id: session.user.id,
+    ...cycle,
+    ...normaliseEvaluation(body),
+    created_at: new Date().toISOString(),
+  };
+
+  if (DEMO_MODE) {
+    if (!Array.isArray(demo.cycle_evaluations)) demo.cycle_evaluations = [];
+    if (evaluation.evaluation_type === 'final') {
+      const duplicate = demo.cycle_evaluations.find(item =>
+        item.athlete_id === athleteId &&
+        item.evaluation_type === 'final' &&
+        ((evaluation.macrocycle_id && item.macrocycle_id === evaluation.macrocycle_id) ||
+         (evaluation.mesocycle_id && item.mesocycle_id === evaluation.mesocycle_id) ||
+         (evaluation.microcycle_id && item.microcycle_id === evaluation.microcycle_id))
+      );
+      if (duplicate) throw Object.assign(new Error('Ya existe una evaluación final para este ciclo.'), { status: 409 });
+    }
+    demo.cycle_evaluations.push(evaluation);
+    saveDemo();
+    return evaluation;
+  }
+
+  const rows = await prodRows('cycle_evaluations', '', { method: 'POST', body: evaluation });
+  return rows[0];
+}
+
+async function getEvaluationForAthlete(athleteId, evaluationId) {
+  if (DEMO_MODE) {
+    if (!Array.isArray(demo.cycle_evaluations)) demo.cycle_evaluations = [];
+    const evaluation = demo.cycle_evaluations.find(item => item.id === evaluationId && item.athlete_id === athleteId);
+    if (!evaluation) throw Object.assign(new Error('Evaluación no encontrada.'), { status: 404 });
+    return evaluation;
+  }
+  const rows = await prodRows(
+    'cycle_evaluations',
+    `id=eq.${encodeURIComponent(evaluationId)}&athlete_id=eq.${encodeURIComponent(athleteId)}&select=*&limit=1`
+  );
+  if (!rows.length) throw Object.assign(new Error('Evaluación no encontrada.'), { status: 404 });
+  return rows[0];
+}
+
+async function updateCycleEvaluation(session, evaluationId, athleteId, body) {
+  const existing = await getEvaluationForAthlete(athleteId, evaluationId);
+  const cycleInput = {
+    macrocycle_id: hasOwn(body, 'macrocycle_id') ? body.macrocycle_id : existing.macrocycle_id,
+    mesocycle_id: hasOwn(body, 'mesocycle_id') ? body.mesocycle_id : existing.mesocycle_id,
+    microcycle_id: hasOwn(body, 'microcycle_id') ? body.microcycle_id : existing.microcycle_id,
+  };
+  const cycle = await validateEvaluationCycle(athleteId, cycleInput);
+  const data = {
+    ...cycle,
+    ...normaliseEvaluation(body, existing),
+    coach_user_id: session.user.id,
+  };
+
+  if (DEMO_MODE) {
+    const index = demo.cycle_evaluations.findIndex(item => item.id === evaluationId && item.athlete_id === athleteId);
+    demo.cycle_evaluations[index] = { ...existing, ...data, id: evaluationId };
+    saveDemo();
+    return demo.cycle_evaluations[index];
+  }
+
+  const rows = await prodRows(
+    'cycle_evaluations',
+    `id=eq.${encodeURIComponent(evaluationId)}&athlete_id=eq.${encodeURIComponent(athleteId)}`,
+    { method: 'PATCH', body: data }
+  );
+  if (!rows.length) throw Object.assign(new Error('Evaluación no encontrada.'), { status: 404 });
+  return rows[0];
+}
+
+async function getPlan(athleteId, requestedSeasonId = null) {
+  const seasons = await listSeasons(athleteId);
+  const season = requestedSeasonId
+    ? await getSeasonForAthlete(athleteId, requestedSeasonId)
+    : seasons.find(item => item.status === 'active') || seasons[0] || null;
+
+  const allGoals = await listGoals(athleteId);
+  if (!season) {
+    return {
+      season: null,
+      goals: [],
+      macrocycles: [],
+      unassigned: {
+        goals: allGoals,
+        microcycles: [],
+      },
+    };
+  }
+
+  let macroRows;
+  let mesoRows;
+  let microRows;
+  let workoutRows;
+
+  if (DEMO_MODE) {
+    const athlete = demo.athletes.find(item => item.id === athleteId);
+    macroRows = (athlete.macrocycles || []).filter(item => item.season_id === season.id).sort((a, b) => String(a.start_date).localeCompare(String(b.start_date)));
+    const macroIds = new Set(macroRows.map(item => item.id));
+    mesoRows = (athlete.mesocycles || []).filter(item => macroIds.has(item.macrocycle_id)).sort((a, b) => String(a.start_date).localeCompare(String(b.start_date)));
+    const mesoIds = new Set(mesoRows.map(item => item.id));
+    microRows = [];
+    if (athlete.week && mesoIds.has(athlete.week.mesocycle_id)) microRows.push(athlete.week);
+    if (Array.isArray(athlete.microcycles)) microRows.push(...athlete.microcycles.filter(item => mesoIds.has(item.mesocycle_id)));
+    workoutRows = microRows.flatMap(item => (item.workouts || []).map(workout => ({ ...workout, training_week_id: item.id })));
+  } else {
+    macroRows = await prodRows(
+      'macrocycles',
+      `athlete_id=eq.${encodeURIComponent(athleteId)}&season_id=eq.${encodeURIComponent(season.id)}&select=*&order=start_date.asc`
+    );
+    const macroIds = macroRows.map(item => item.id);
+    mesoRows = macroIds.length
+      ? await prodRows('mesocycles', `athlete_id=eq.${encodeURIComponent(athleteId)}&macrocycle_id=in.(${macroIds.join(',')})&select=*&order=start_date.asc`)
+      : [];
+    const mesoIds = mesoRows.map(item => item.id);
+    microRows = mesoIds.length
+      ? await prodRows('training_weeks', `athlete_id=eq.${encodeURIComponent(athleteId)}&mesocycle_id=in.(${mesoIds.join(',')})&select=*&order=week_start.asc`)
+      : [];
+    const microIds = microRows.map(item => item.id);
+    workoutRows = microIds.length
+      ? await prodRows('workouts', `training_week_id=in.(${microIds.join(',')})&select=*&order=workout_date.asc`)
+      : [];
+  }
+
+  const workoutsByMicro = new Map();
+  workoutRows.forEach(workout => {
+    if (!workoutsByMicro.has(workout.training_week_id)) workoutsByMicro.set(workout.training_week_id, []);
+    workoutsByMicro.get(workout.training_week_id).push(workout);
+  });
+
+  const microApiByMeso = new Map();
+  for (const row of microRows) {
+    const workouts = workoutsByMicro.get(row.id) || row.workouts || [];
+    const actual = await loadExecutionForRange(athleteId, row.week_start, row.end_date || addDays(row.week_start, 6), workouts);
+    const shaped = microcycleFromRow(row, workouts, actual);
+    if (!microApiByMeso.has(row.mesocycle_id)) microApiByMeso.set(row.mesocycle_id, []);
+    microApiByMeso.get(row.mesocycle_id).push(shaped);
+  }
+
+  const mesoApiByMacro = new Map();
+  for (const row of mesoRows) {
+    const microcycles = microApiByMeso.get(row.id) || [];
+    const workouts = microcycles.flatMap(item => item.workouts || []);
+    const actual = await loadExecutionForRange(athleteId, row.start_date, row.end_date, workouts);
+    const shaped = mesocycleApi(row, microcycles, actual);
+    if (!mesoApiByMacro.has(row.macrocycle_id)) mesoApiByMacro.set(row.macrocycle_id, []);
+    mesoApiByMacro.get(row.macrocycle_id).push(shaped);
+  }
+
+  const evaluations = await getCycleEvaluations(athleteId);
+  const latestEvaluation = cycleId => evaluations.find(item =>
+    item.macrocycle_id === cycleId || item.mesocycle_id === cycleId || item.microcycle_id === cycleId
+  ) || null;
+
+  const macrocycles = macroRows.map(row => ({
+    ...row,
+    mesocycles: (mesoApiByMacro.get(row.id) || []).map(meso => ({
+      ...meso,
+      evaluation: latestEvaluation(meso.id),
+      microcycles: (meso.microcycles || []).map(micro => ({ ...micro, evaluation: latestEvaluation(micro.id) })),
+    })),
+    evaluation: latestEvaluation(row.id),
+  }));
+
+  const goals = allGoals.filter(goal => goal.season_id === season.id);
+  let unassignedMicrocycles = [];
+  if (!DEMO_MODE) {
+    const rows = await prodRows(
+      'training_weeks',
+      `athlete_id=eq.${encodeURIComponent(athleteId)}&mesocycle_id=is.null&week_start=gte.${season.start_date}&week_start=lte.${season.end_date}&select=*&order=week_start.asc`
+    );
+    if (rows.length) {
+      const ids = rows.map(item => item.id);
+      const workouts = await prodRows('workouts', `training_week_id=in.(${ids.join(',')})&select=*&order=workout_date.asc`);
+      const grouped = new Map();
+      workouts.forEach(item => {
+        if (!grouped.has(item.training_week_id)) grouped.set(item.training_week_id, []);
+        grouped.get(item.training_week_id).push(item);
+      });
+      unassignedMicrocycles = rows.map(row => microcycleFromRow(row, grouped.get(row.id) || []));
+    }
+  }
+
+  return {
+    season,
+    goals,
+    macrocycles,
+    unassigned: {
+      goals: allGoals.filter(goal => !goal.season_id),
+      microcycles: unassignedMicrocycles,
+    },
+  };
 }
 
 function encryptionKey() {
@@ -1136,6 +2285,7 @@ function normaliseActivityRow(athleteId, item) {
     name: sanitiseText(item && item.name || item && item.type || 'Actividad', 240),
     duration_sec: roundOrNull(firstFinite(item || {}, ['moving_time', 'elapsed_time']), 0),
     distance_m: roundOrNull(item && item.distance, 2),
+    elevation_gain_m: roundOrNull(firstFinite(item || {}, ['total_elevation_gain', 'elevation_gain', 'icu_elevation_gain']), 1),
     load: roundOrNull(firstFinite(item || {}, ['icu_training_load', 'training_load', 'load']), 1),
     avg_hr: roundOrNull(item && item.average_heartrate, 0),
     max_hr: roundOrNull(item && item.max_heartrate, 0),
@@ -1166,7 +2316,7 @@ function demoActivitiesFor(athleteId, oldest, newest) {
 
 async function listStoredActivities(athleteId, oldest, newest) {
   if (DEMO_MODE) return demoActivitiesFor(athleteId, oldest, newest);
-  return prodRows('activities', `athlete_id=eq.${encodeURIComponent(athleteId)}&activity_date=gte.${oldest}T00:00:00&activity_date=lte.${newest}T23:59:59&select=id,athlete_id,intervals_activity_id,activity_date,sport,name,duration_sec,distance_m,load,avg_hr,max_hr,avg_pace_sec_per_km&order=activity_date.desc`);
+  return prodRows('activities', `athlete_id=eq.${encodeURIComponent(athleteId)}&activity_date=gte.${oldest}T00:00:00&activity_date=lte.${newest}T23:59:59&select=id,athlete_id,workout_id,intervals_activity_id,activity_date,sport,name,duration_sec,distance_m,elevation_gain_m,load,avg_hr,max_hr,avg_pace_sec_per_km&order=activity_date.desc`);
 }
 
 async function syncActivities(athleteId, oldest, newest) {
@@ -1268,42 +2418,118 @@ async function activityRowByExternalId(athleteId, externalId) {
   return rows[0] || null;
 }
 
+async function linkActivityToWorkout(athleteId, externalId, workoutId) {
+  const targetWorkoutId = sanitiseText(workoutId, 80) || null;
+
+  if (DEMO_MODE) {
+    const activity = demo.activities.find(item => item.athlete_id === athleteId && item.intervals_activity_id === externalId);
+    if (!activity) throw Object.assign(new Error('Actividad no encontrada.'), { status: 404 });
+
+    if (targetWorkoutId) {
+      const athlete = demo.athletes.find(item => item.id === athleteId);
+      const workouts = [];
+      if (athlete && athlete.week) workouts.push(...(athlete.week.workouts || []));
+      if (athlete && Array.isArray(athlete.microcycles)) athlete.microcycles.forEach(item => workouts.push(...(item.workouts || [])));
+      if (!workouts.some(item => item.id === targetWorkoutId)) {
+        throw Object.assign(new Error('La sesión no pertenece a este deportista.'), { status: 400 });
+      }
+    }
+
+    activity.workout_id = targetWorkoutId;
+    saveDemo();
+    return publicActivitySummary(activity);
+  }
+
+  const activity = await activityRowByExternalId(athleteId, externalId);
+  if (!activity) throw Object.assign(new Error('Actividad no encontrada.'), { status: 404 });
+
+  if (targetWorkoutId) {
+    const workouts = await prodRows(
+      'workouts',
+      `id=eq.${encodeURIComponent(targetWorkoutId)}&athlete_id=eq.${encodeURIComponent(athleteId)}&select=id&limit=1`
+    );
+    if (!workouts.length) throw Object.assign(new Error('La sesión no pertenece a este deportista.'), { status: 400 });
+  }
+
+  const rows = await prodRows(
+    'activities',
+    `id=eq.${encodeURIComponent(activity.id)}&athlete_id=eq.${encodeURIComponent(athleteId)}`,
+    { method: 'PATCH', body: { workout_id: targetWorkoutId } }
+  );
+  return publicActivitySummary(rows[0]);
+}
+
 async function activityReview(session, athleteId, activityId) {
-  if (DEMO_MODE) return demo.activity_reviews.find(item => item.athlete_id === athleteId && item.activity_id === activityId && item.coach_user_id === session.user.id) || null;
-  const rows = await prodRows('activity_reviews', `athlete_id=eq.${encodeURIComponent(athleteId)}&activity_id=eq.${encodeURIComponent(activityId)}&coach_user_id=eq.${encodeURIComponent(session.user.id)}&select=*&limit=1`);
+  if (DEMO_MODE) {
+    return demo.activity_reviews.find(
+      item => item.athlete_id === athleteId && item.activity_id === activityId && item.coach_user_id === session.user.id
+    ) || null;
+  }
+  const rows = await prodRows(
+    'activity_reviews',
+    `athlete_id=eq.${encodeURIComponent(athleteId)}&activity_id=eq.${encodeURIComponent(activityId)}&coach_user_id=eq.${encodeURIComponent(session.user.id)}&select=*&limit=1`
+  );
   return rows[0] || null;
 }
 
 async function getActivityDetail(session, athleteId, externalId) {
   let stored = await activityRowByExternalId(athleteId, externalId);
   let raw = stored && stored.raw_summary ? stored.raw_summary : {};
+
   if (!DEMO_MODE) {
     const apiKey = await getIntervalsKey(athleteId);
     if (apiKey) {
       const response = await intervalsFetch(apiKey, `/activity/${encodeURIComponent(externalId)}?intervals=true`);
       raw = unwrapIntervalsObject(response);
       const normalised = normaliseActivityRow(athleteId, raw);
-      await prodRows('activities', 'on_conflict=athlete_id,intervals_activity_id', { method: 'POST', body: normalised, prefer: 'resolution=merge-duplicates,return=minimal' });
+      await prodRows('activities', 'on_conflict=athlete_id,intervals_activity_id', {
+        method: 'POST',
+        body: normalised,
+        prefer: 'resolution=merge-duplicates,return=minimal',
+      });
       stored = await activityRowByExternalId(athleteId, externalId);
     }
   }
+
   if (!stored) throw Object.assign(new Error('Actividad no encontrada.'), { status: 404 });
   const date = String(stored.activity_date).slice(0, 10);
   let planned = null;
   let recovery = [];
+
   if (DEMO_MODE) {
     const athlete = demo.athletes.find(item => item.id === athleteId);
-    planned = athlete && athlete.week && athlete.week.workouts.find(item => item.workout_date === date) || null;
+    const allWorkouts = [];
+    if (athlete && athlete.week) allWorkouts.push(...(athlete.week.workouts || []));
+    if (athlete && Array.isArray(athlete.microcycles)) {
+      athlete.microcycles.forEach(item => allWorkouts.push(...(item.workouts || [])));
+    }
+    planned = stored.workout_id
+      ? allWorkouts.find(item => item.id === stored.workout_id) || null
+      : allWorkouts.find(item => item.workout_date === date) || null;
     recovery = await listRecoveryRows(athleteId, addDays(date, -21), date);
   } else {
     const [plannedRows, recoveryRows] = await Promise.all([
-      prodRows('workouts', `athlete_id=eq.${encodeURIComponent(athleteId)}&workout_date=eq.${date}&select=*&limit=1`),
+      stored.workout_id
+        ? prodRows(
+            'workouts',
+            `id=eq.${encodeURIComponent(stored.workout_id)}&athlete_id=eq.${encodeURIComponent(athleteId)}&select=*&limit=1`
+          )
+        : prodRows(
+            'workouts',
+            `athlete_id=eq.${encodeURIComponent(athleteId)}&workout_date=eq.${date}&select=*&order=planned_load.desc&limit=1`
+          ),
       listRecoveryRows(athleteId, addDays(date, -21), date),
     ]);
     planned = plannedRows[0] || null;
     recovery = recoveryRows;
   }
-  return { activity: { ...stored, raw_summary: raw, intervals: summariseIntervals(raw) }, planned, recovery, review: await activityReview(session, athleteId, stored.id) };
+
+  return {
+    activity: { ...stored, raw_summary: raw, intervals: summariseIntervals(raw) },
+    planned,
+    recovery,
+    review: await activityReview(session, athleteId, stored.id),
+  };
 }
 
 function ruleBasedAnalysis(detail) {
@@ -1526,58 +2752,150 @@ async function api(req, res, url) {
     return sendJson(res, 200, { week, intervals, already_published: alreadyPublished });
   }
 
-  const seasonsMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/seasons$/);
+  const planMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/plan$/);
+  if (planMatch && method === 'GET') {
+    const athleteId = planMatch[1];
+    await ensureCoachAccess(session, athleteId);
+    return sendJson(res, 200, await getPlan(athleteId, url.searchParams.get('season_id')));
+  }
 
+  const seasonsMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/seasons$/);
   if (seasonsMatch && method === 'GET') {
     const athleteId = seasonsMatch[1];
     await ensureCoachAccess(session, athleteId);
-
-    return sendJson(res, 200, {
-      seasons: await listSeasons(athleteId),
-    });
+    return sendJson(res, 200, { seasons: await listSeasons(athleteId) });
   }
-
   if (seasonsMatch && method === 'POST') {
     const athleteId = seasonsMatch[1];
     await ensureCoachAccess(session, athleteId);
-
-    return sendJson(res, 201, {
-      season: await addSeason(athleteId, await readJson(req)),
-    });
+    return sendJson(res, 201, { season: await addSeason(athleteId, await readJson(req)) });
   }
 
-  const seasonMatch = pathname.match(
-    /^\/api\/coach\/athletes\/([^/]+)\/seasons\/([^/]+)$/
-  );
-
+  const seasonMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/seasons\/([^/]+)$/);
   if (seasonMatch && method === 'PUT') {
     const athleteId = seasonMatch[1];
     const seasonId = seasonMatch[2];
-
     await ensureCoachAccess(session, athleteId);
-
-    return sendJson(res, 200, {
-      season: await updateSeason(
-        seasonId,
-        athleteId,
-        await readJson(req)
-      ),
-    });
+    return sendJson(res, 200, { season: await updateSeason(seasonId, athleteId, await readJson(req)) });
   }
-  
+
+  const seasonMacrocyclesMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/seasons\/([^/]+)\/macrocycles$/);
+  if (seasonMacrocyclesMatch && method === 'GET') {
+    const athleteId = seasonMacrocyclesMatch[1];
+    const seasonId = seasonMacrocyclesMatch[2];
+    await ensureCoachAccess(session, athleteId);
+    return sendJson(res, 200, { macrocycles: await listMacrocycles(athleteId, seasonId) });
+  }
+  if (seasonMacrocyclesMatch && method === 'POST') {
+    const athleteId = seasonMacrocyclesMatch[1];
+    const seasonId = seasonMacrocyclesMatch[2];
+    await ensureCoachAccess(session, athleteId);
+    return sendJson(res, 201, { macrocycle: await addMacrocycle(athleteId, seasonId, await readJson(req)) });
+  }
+
+  const macrocycleMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/macrocycles\/([^/]+)$/);
+  if (macrocycleMatch && method === 'PUT') {
+    const athleteId = macrocycleMatch[1];
+    const macrocycleId = macrocycleMatch[2];
+    await ensureCoachAccess(session, athleteId);
+    return sendJson(res, 200, { macrocycle: await updateMacrocycle(macrocycleId, athleteId, await readJson(req)) });
+  }
+
+  const macroMesocyclesMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/macrocycles\/([^/]+)\/mesocycles$/);
+  if (macroMesocyclesMatch && method === 'GET') {
+    const athleteId = macroMesocyclesMatch[1];
+    const macrocycleId = macroMesocyclesMatch[2];
+    await ensureCoachAccess(session, athleteId);
+    return sendJson(res, 200, { mesocycles: await listMesocycles(athleteId, macrocycleId) });
+  }
+  if (macroMesocyclesMatch && method === 'POST') {
+    const athleteId = macroMesocyclesMatch[1];
+    const macrocycleId = macroMesocyclesMatch[2];
+    await ensureCoachAccess(session, athleteId);
+    return sendJson(res, 201, { mesocycle: await addMesocycle(athleteId, macrocycleId, await readJson(req)) });
+  }
+
+  const mesocycleMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/mesocycles\/([^/]+)$/);
+  if (mesocycleMatch && method === 'PUT') {
+    const athleteId = mesocycleMatch[1];
+    const mesocycleId = mesocycleMatch[2];
+    await ensureCoachAccess(session, athleteId);
+    return sendJson(res, 200, { mesocycle: await updateMesocycle(mesocycleId, athleteId, await readJson(req)) });
+  }
+
+  const mesoMicrocyclesMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/mesocycles\/([^/]+)\/microcycles$/);
+  if (mesoMicrocyclesMatch && method === 'GET') {
+    const athleteId = mesoMicrocyclesMatch[1];
+    const mesocycleId = mesoMicrocyclesMatch[2];
+    await ensureCoachAccess(session, athleteId);
+    return sendJson(res, 200, { microcycles: await listMicrocycles(athleteId, mesocycleId) });
+  }
+  if (mesoMicrocyclesMatch && method === 'POST') {
+    const athleteId = mesoMicrocyclesMatch[1];
+    const mesocycleId = mesoMicrocyclesMatch[2];
+    await ensureCoachAccess(session, athleteId);
+    return sendJson(res, 201, { microcycle: await addMicrocycle(athleteId, mesocycleId, await readJson(req)) });
+  }
+
+  const microcycleMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/microcycles\/([^/]+)$/);
+  if (microcycleMatch && method === 'PUT') {
+    const athleteId = microcycleMatch[1];
+    const microcycleId = microcycleMatch[2];
+    await ensureCoachAccess(session, athleteId);
+    return sendJson(res, 200, { microcycle: await updateMicrocycle(microcycleId, athleteId, await readJson(req)) });
+  }
+
   const goalsMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/goals$/);
+  if (goalsMatch && method === 'GET') {
+    const athleteId = goalsMatch[1];
+    await ensureCoachAccess(session, athleteId);
+    return sendJson(res, 200, { goals: await listGoals(athleteId) });
+  }
   if (goalsMatch && method === 'POST') {
     const athleteId = goalsMatch[1];
     await ensureCoachAccess(session, athleteId);
     return sendJson(res, 201, { goal: await addGoal(athleteId, await readJson(req)) });
   }
 
-  const goalDeleteMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/goals\/([^/]+)$/);
-  if (goalDeleteMatch && method === 'DELETE') {
-    const athleteId = goalDeleteMatch[1];
+  const goalMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/goals\/([^/]+)$/);
+  if (goalMatch && method === 'PUT') {
+    const athleteId = goalMatch[1];
     await ensureCoachAccess(session, athleteId);
-    await deleteGoal(goalDeleteMatch[2], athleteId);
+    return sendJson(res, 200, { goal: await updateGoal(goalMatch[2], athleteId, await readJson(req)) });
+  }
+  if (goalMatch && method === 'DELETE') {
+    const athleteId = goalMatch[1];
+    await ensureCoachAccess(session, athleteId);
+    await deleteGoal(goalMatch[2], athleteId);
     return sendJson(res, 200, { ok: true });
+  }
+
+  const evaluationsMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/evaluations$/);
+  if (evaluationsMatch && method === 'GET') {
+    const athleteId = evaluationsMatch[1];
+    await ensureCoachAccess(session, athleteId);
+    return sendJson(res, 200, {
+      evaluations: await getCycleEvaluations(athleteId, {
+        macrocycle_id: url.searchParams.get('macrocycle_id'),
+        mesocycle_id: url.searchParams.get('mesocycle_id'),
+        microcycle_id: url.searchParams.get('microcycle_id'),
+      }),
+    });
+  }
+  if (evaluationsMatch && method === 'POST') {
+    const athleteId = evaluationsMatch[1];
+    await ensureCoachAccess(session, athleteId);
+    return sendJson(res, 201, { evaluation: await addCycleEvaluation(session, athleteId, await readJson(req)) });
+  }
+
+  const evaluationMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/evaluations\/([^/]+)$/);
+  if (evaluationMatch && method === 'PUT') {
+    const athleteId = evaluationMatch[1];
+    const evaluationId = evaluationMatch[2];
+    await ensureCoachAccess(session, athleteId);
+    return sendJson(res, 200, {
+      evaluation: await updateCycleEvaluation(session, evaluationId, athleteId, await readJson(req)),
+    });
   }
 
   const intervalsKeyMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/integrations\/intervals$/);
@@ -1615,6 +2933,17 @@ async function api(req, res, url) {
     const externalId = decodeURIComponent(activityDetailMatch[2]);
     await ensureCoachAccess(session, athleteId);
     return sendJson(res, 200, await getActivityDetail(session, athleteId, externalId));
+  }
+
+  const activityWorkoutLinkMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/activities\/([^/]+)\/workout$/);
+  if (activityWorkoutLinkMatch && method === 'PUT') {
+    const athleteId = activityWorkoutLinkMatch[1];
+    const externalId = decodeURIComponent(activityWorkoutLinkMatch[2]);
+    await ensureCoachAccess(session, athleteId);
+    const body = await readJson(req);
+    return sendJson(res, 200, {
+      activity: await linkActivityToWorkout(athleteId, externalId, body.workout_id),
+    });
   }
 
   const analyzeActivityMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/activities\/([^/]+)\/analyze$/);
