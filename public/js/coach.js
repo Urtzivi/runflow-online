@@ -1,5 +1,5 @@
 const $ = id => document.getElementById(id);
-const state = { user: null, config: null, athletes: [], athlete: null, editingSession: null, modalBlocks: [], activities: [], recovery: [], currentActivityId: null, currentActivity: null, calendar: { month: new Date(new Date().getFullYear(), new Date().getMonth(), 1), weeks: new Map(), selectedWeekStart: isoMonday(), loading: false }, seasons: [], plan: null, planTab: 'season', selectedSeasonId: null, selectedMicrocycleId: null, planEditor: null, evaluationEditor: null };
+const state = { user: null, config: null, athletes: [], athlete: null, editingSession: null, modalBlocks: [], activities: [], recovery: [], loadToleranceSnapshot: null, currentActivityId: null, currentActivity: null, calendar: { month: new Date(new Date().getFullYear(), new Date().getMonth(), 1), weeks: new Map(), selectedWeekStart: isoMonday(), loading: false }, seasons: [], plan: null, planTab: 'season', selectedSeasonId: null, selectedMicrocycleId: null, planEditor: null, evaluationEditor: null };
 const dayNames = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
 async function api(url, options = {}) {
@@ -70,6 +70,7 @@ function switchView(name) {
   document.querySelectorAll('.tab').forEach(button => button.classList.toggle('active', button.dataset.view === name));
   document.querySelectorAll('.view').forEach(view => view.classList.toggle('active', view.id === `${name}View`));
   if (name === 'plan' && state.athlete && !state.plan) loadPlan().catch(error => showMessage(error.message, 'error'));
+  if (name === 'profile' && state.athlete && !state.loadToleranceSnapshot) loadLoadTolerance(false).catch(error => { const el = $('loadToleranceHistoryStatus'); if (el) el.textContent = error.message; });
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -242,10 +243,12 @@ function selectCalendarWeek(weekStart, rerender = true) {
   $('targetWeekLoadText').textContent = `objetivo ${Number(week.target_load || 0) || '—'}`;
   $('actualWeekLoad').textContent = Math.round(Number(execution.load || 0));
   $('extraWeekLoad').textContent = Number(execution.extra_load || 0) > 0 ? `+${Math.round(Number(execution.extra_load))} extra` : 'sin carga extra';
-  $('weekCompletionRate').textContent = pctLabel(execution.completion_rate ?? 0);
-  $('weekPriorityCompliance').textContent = `A: ${pctLabel(execution.a_sessions_completion_pct)}`;
+  const hasPlannedSessions = (week.workouts || []).length > 0;
+  $('weekCompletionRate').textContent = hasPlannedSessions ? pctLabel(execution.completion_rate ?? 0) : '—';
+  $('weekPriorityCompliance').textContent = hasPlannedSessions ? `A: ${pctLabel(execution.a_sessions_completion_pct)}` : 'A: —';
   $('generatedSessionCount').textContent = (week.workouts || []).length;
   $('completedSessionCount').textContent = `${Number(execution.completed_sessions || 0)} realizadas${Number(execution.extra_sessions || 0) ? ` · ${Number(execution.extra_sessions)} extra` : ''}`;
+  if ($('weekToleranceStatus')) $('weekToleranceStatus').innerHTML = selectedWeekToleranceHtml(week);
   $('saveWeek').textContent = week.status === 'published' ? 'Guardar cambios' : 'Guardar borrador';
   $('publishWeek').textContent = week.status === 'published' ? 'Actualizar en la app' : 'Publicar semana';
   if (rerender) renderCalendar();
@@ -302,11 +305,12 @@ function renderCalendar() {
     const realLoad = Number(execution.load || 0);
     const target = Number(week.target_load || 0);
     const completion = Number(execution.completion_rate || 0);
+    const completionText = (week.workouts || []).length ? `${Math.round(completion)}%` : '—';
     const loadPct = Number(execution.load_adherence_pct);
     const progressPct = Number.isFinite(loadPct) ? Math.min(100, Math.max(0, loadPct)) : (target > 0 ? Math.min(100, (planLoad / target) * 100) : 0);
     cells.push(`<button class="calendar-week-summary ${selected ? 'active' : ''}" data-select-week="${weekStart}" type="button">
       <strong>${dateLabel(weekStart)} – ${dateLabel(addDays(weekStart, 6))}</strong>
-      <span>Plan <b>${Math.round(planLoad)}</b></span><span>Real <b>${Math.round(realLoad)}</b></span><span>Cumpl. <b>${Math.round(completion)}%</b></span>${Number(execution.extra_load || 0) > 0 ? `<span>Extra <b>+${Math.round(Number(execution.extra_load))}</b></span>` : ''}<span>${week.status === 'published' ? 'Publicada' : 'Borrador'}</span>
+      <span>Plan <b>${Math.round(planLoad)}</b></span><span>Real <b>${Math.round(realLoad)}</b></span><span>Cumpl. <b>${completionText}</b></span>${Number(execution.extra_load || 0) > 0 ? `<span>Extra <b>+${Math.round(Number(execution.extra_load))}</b></span>` : ''}${toleranceBadgeHtml(target || planLoad)}<span>${week.status === 'published' ? 'Publicada' : 'Borrador'}</span>
       <i><em style="width:${progressPct}%"></em></i>
     </button>`);
     cursor = addCalendarDays(cursor, 7);
@@ -351,6 +355,111 @@ function renderSessionEditor() {
   renderCalendar();
 }
 
+function currentLoadToleranceProfile() {
+  const value = state.athlete?.profile?.load_tolerance_profile;
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function toleranceNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function loadToleranceState(load, profile = currentLoadToleranceProfile()) {
+  const value = toleranceNumber(load);
+  if (value === null || value <= 0) return { key: 'none', label: 'Sin carga' };
+  const habitualMin = toleranceNumber(profile.habitual_min);
+  const habitualMax = toleranceNumber(profile.habitual_max);
+  const developmentMin = toleranceNumber(profile.development_min);
+  const developmentMax = toleranceNumber(profile.development_max);
+  const highMin = toleranceNumber(profile.high_min);
+  const highMax = toleranceNumber(profile.high_max);
+  const ceiling = toleranceNumber(profile.provisional_ceiling);
+  const hasReference = [habitualMin, habitualMax, developmentMin, developmentMax, highMin, highMax, ceiling].some(item => item !== null);
+  if (!hasReference) return { key: 'unknown', label: 'Sin tolerancia definida' };
+  if (ceiling !== null && value > ceiling) return { key: 'over', label: 'Supera techo' };
+  if (highMin !== null && value >= highMin) return { key: 'high', label: 'Carga alta' };
+  if (developmentMin !== null && value >= developmentMin) return { key: 'development', label: 'Desarrollo' };
+  if (habitualMin !== null && value >= habitualMin) return { key: 'habitual', label: 'Habitual' };
+  if (habitualMax !== null && value <= habitualMax && habitualMin === null) return { key: 'habitual', label: 'Habitual' };
+  if (developmentMax !== null && value <= developmentMax && developmentMin === null) return { key: 'development', label: 'Desarrollo' };
+  if (highMax !== null && value <= highMax && highMin === null) return { key: 'high', label: 'Carga alta' };
+  if (ceiling !== null && value <= ceiling && highMin === null) return { key: 'high', label: 'Carga alta' };
+  return { key: 'low', label: 'Por debajo del habitual' };
+}
+
+function toleranceBadgeHtml(load, prefix = '') {
+  const stateInfo = loadToleranceState(load);
+  if (stateInfo.key === 'none') return '';
+  const text = prefix ? `${prefix}: ${stateInfo.label}` : stateInfo.label;
+  return `<span class="load-tolerance-chip tolerance-${stateInfo.key}">${escapeHtml(text)}</span>`;
+}
+
+function confidenceLabel(value) {
+  return ({ provisional: 'Provisional', observing: 'En observación', consolidated: 'Consolidado' })[value] || 'Provisional';
+}
+
+function renderLoadToleranceProfile() {
+  const profile = currentLoadToleranceProfile();
+  const pairs = [
+    ['loadToleranceHabitualMin', 'habitual_min'], ['loadToleranceHabitualMax', 'habitual_max'],
+    ['loadToleranceDevelopmentMin', 'development_min'], ['loadToleranceDevelopmentMax', 'development_max'],
+    ['loadToleranceHighMin', 'high_min'], ['loadToleranceHighMax', 'high_max'],
+    ['loadToleranceCeiling', 'provisional_ceiling'],
+  ];
+  pairs.forEach(([id, key]) => { if ($(id)) $(id).value = profile[key] ?? ''; });
+  if ($('loadToleranceConfidence')) $('loadToleranceConfidence').value = profile.confidence || 'provisional';
+  if ($('loadToleranceNotes')) $('loadToleranceNotes').value = profile.notes || '';
+  if ($('loadToleranceConfidenceBadge')) {
+    $('loadToleranceConfidenceBadge').textContent = confidenceLabel(profile.confidence);
+    $('loadToleranceConfidenceBadge').className = `badge ${profile.confidence === 'consolidated' ? '' : 'pending'}`;
+  }
+}
+
+function renderLoadToleranceSnapshot() {
+  if (!$('loadToleranceMedian')) return;
+  const data = state.loadToleranceSnapshot || {};
+  const stats = data.stats || {};
+  $('loadToleranceMedian').textContent = stats.median_load ?? '—';
+  $('loadToleranceP75').textContent = stats.p75_load ?? '—';
+  $('loadToleranceMaxObserved').textContent = stats.max_load ?? '—';
+  $('loadToleranceWeeksData').textContent = stats.weeks_with_data ?? 0;
+  const rows = (data.weeks || []).filter(item => item.has_data).slice(-8).reverse();
+  $('loadToleranceRecentWeeks').innerHTML = rows.length
+    ? rows.map(item => `<span class="tolerance-history-chip"><small>${dateLabel(item.week_start)}</small><b>${Math.round(Number(item.load || 0))}</b></span>`).join('')
+    : '<span class="muted small">No hay semanas completas con actividades suficientes.</span>';
+}
+
+async function loadLoadTolerance(sync = false) {
+  if (!state.athlete) return;
+  const status = $('loadToleranceHistoryStatus');
+  if (status) status.textContent = sync ? 'Actualizando actividades y referencia…' : 'Cargando referencia observada…';
+  try {
+    state.loadToleranceSnapshot = await api(`/api/coach/athletes/${state.athlete.id}/load-tolerance?weeks=12&sync=${sync ? '1' : '0'}`);
+    renderLoadToleranceSnapshot();
+    if (status) status.textContent = sync ? 'Referencia actualizada con las últimas semanas completas.' : 'Referencia calculada con los datos guardados.';
+  } catch (error) {
+    if (status) status.textContent = error.message;
+    throw error;
+  }
+}
+
+function numberInputOrNull(id) {
+  const value = $(id)?.value;
+  if (value === '' || value === undefined || value === null) return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function selectedWeekToleranceHtml(week) {
+  const execution = week?.execution || {};
+  const plan = Number(week?.target_load || execution.planned_load || generatedLoad(week) || 0);
+  const actual = Number(execution.load || 0);
+  const planState = loadToleranceState(plan);
+  if (planState.key === 'unknown') return '<span class="muted small">Define la tolerancia de carga en «Ficha y zonas» para contextualizar esta semana.</span>';
+  return `<div><strong>Tolerancia individual</strong><div class="tolerance-inline-row">${toleranceBadgeHtml(plan, 'Plan')}${actual > 0 ? toleranceBadgeHtml(actual, 'Real') : '<span class="load-tolerance-chip tolerance-none">Real: pendiente</span>'}</div></div>`;
+}
+
 function renderProfile() {
   const athlete = state.athlete;
   const profile = athlete.profile || {};
@@ -372,6 +481,8 @@ function renderProfile() {
   $('currentIssues').value = profile.current_issues || '';
   $('objective').value = profile.objective || '';
   $('coachNotes').value = profile.coach_notes || '';
+  renderLoadToleranceProfile();
+  renderLoadToleranceSnapshot();
   const fields = ['display_name', 'email', 'birth_date', 'sex', 'weight_kg', 'watch_model', 'level', 'objective'];
   const values = { display_name: athlete.display_name, email: athlete.email, ...profile };
   const completed = fields.filter(field => values[field]).length;
@@ -450,6 +561,7 @@ function renderAll() {
 async function loadAthlete(id) {
   const data = await api(`/api/coach/athletes/${id}?week_start=${isoMonday()}`);
   state.athlete = data.athlete;
+  state.loadToleranceSnapshot = null;
   if (!state.athlete.zones) state.athlete.zones = { hr: [], pace: [] };
   state.calendar.month = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
   state.calendar.weeks = new Map();
@@ -457,7 +569,7 @@ async function loadAthlete(id) {
   renderAll();
   resetActivityViews();
   state.plan = null; state.seasons = []; state.selectedSeasonId = null; state.selectedMicrocycleId = null;
-  await Promise.allSettled([loadCalendarMonth(), loadActivities(false), loadRecovery(false), loadPlan()]);
+  await Promise.allSettled([loadCalendarMonth(), loadActivities(false), loadRecovery(false), loadPlan(), loadLoadTolerance(false)]);
 }
 
 function weekPayload(status, weekStart = state.calendar.selectedWeekStart) {
@@ -745,6 +857,7 @@ $('saveProfile').addEventListener('click', async () => {
     level: $('level').value, experience_years: $('experience').value, weekly_sessions: $('weeklySessions').value, weekly_km: $('weeklyKm').value, weekly_hours: $('weeklyHours').value,
     availability: { notes: $('availability').value }, restrictions: $('restrictions').value, injury_history: $('injuryHistory').value, current_issues: $('currentIssues').value,
     objective: $('objective').value, coach_notes: $('coachNotes').value, watch_brand: state.athlete.profile?.watch_brand || '', watch_model: state.athlete.profile?.watch_model || '', custom_fields: state.athlete.profile?.custom_fields || [],
+    load_tolerance_profile: { habitual_min: numberInputOrNull('loadToleranceHabitualMin'), habitual_max: numberInputOrNull('loadToleranceHabitualMax'), development_min: numberInputOrNull('loadToleranceDevelopmentMin'), development_max: numberInputOrNull('loadToleranceDevelopmentMax'), high_min: numberInputOrNull('loadToleranceHighMin'), high_max: numberInputOrNull('loadToleranceHighMax'), provisional_ceiling: numberInputOrNull('loadToleranceCeiling'), confidence: $('loadToleranceConfidence').value, notes: $('loadToleranceNotes').value },
   };
   try {
     $('profileStatus').textContent = 'Guardando…';
@@ -995,7 +1108,7 @@ function renderPlanBlocks() {
           <div class="cycle-eval">${evaluationBadge(meso.evaluation)}</div>
           <div class="micro-list">${(meso.microcycles || []).length ? meso.microcycles.map(micro => `
             <article class="micro-card ${String(state.selectedMicrocycleId) === String(micro.id) ? 'selected' : ''}">
-              <div class="micro-main"><div class="plan-title-line"><span class="cycle-kicker micro">SEM</span><strong>${escapeHtml(micro.name || 'Semana')}</strong><span class="badge pending">${escapeHtml(micro.type || micro.week_type || 'microciclo')}</span></div><small>${dateLabel(micro.start_date)} – ${dateLabel(micro.end_date)} · carga ${Number(micro.planned?.load || 0)} plan / ${Number(micro.actual?.load || 0)} real · ${micro.progress?.adherence?.load_pct == null ? '—' : Math.round(Number(micro.progress.adherence.load_pct)) + '%'} vs plan a fecha · ${Number(micro.actual?.completion_rate || 0)}% sesiones</small><p>${escapeHtml(micro.primary_objective || '')}</p></div>
+              <div class="micro-main"><div class="plan-title-line"><span class="cycle-kicker micro">SEM</span><strong>${escapeHtml(micro.name || 'Semana')}</strong><span class="badge pending">${escapeHtml(micro.type || micro.week_type || 'microciclo')}</span></div><small>${dateLabel(micro.start_date)} – ${dateLabel(micro.end_date)} · carga ${Number(micro.planned?.load || 0)} plan / ${Number(micro.actual?.load || 0)} real · ${micro.progress?.adherence?.load_pct == null ? '—' : Math.round(Number(micro.progress.adherence.load_pct)) + '%'} vs plan a fecha · ${Number(micro.actual?.completion_rate || 0)}% sesiones</small><div class="micro-tolerance">${toleranceBadgeHtml(micro.planned?.load || 0, 'Plan')}${Number(micro.actual?.load || 0) > 0 ? toleranceBadgeHtml(micro.actual?.load || 0, 'Real') : ''}</div><p>${escapeHtml(micro.primary_objective || '')}</p></div>
               <div class="micro-priority-summary">${(micro.workouts || []).filter(w => w.priority === 'A').length} A · ${(micro.workouts || []).filter(w => w.priority === 'B' || !w.priority).length} B · ${(micro.workouts || []).filter(w => w.priority === 'C').length} C</div>
               <div class="actions"><button class="btn soft small" data-plan-action="select-micro" data-id="${micro.id}" type="button">Ver</button><button class="btn soft small" data-plan-action="evaluate" data-cycle="microcycle" data-id="${micro.id}" type="button">Evaluar</button><button class="btn soft small" data-plan-action="edit-micro" data-id="${micro.id}" type="button">Editar</button></div>
             </article>`).join('') : '<div class="empty-state compact-empty">Este mesociclo todavía no tiene semanas.</div>'}</div>
@@ -1014,6 +1127,7 @@ function renderSelectedPlanWeek() {
   $('planWeekObjective').textContent = micro.primary_objective || 'Sin objetivo principal definido.';
   if (micro.progress) micro.progress.actual_load = micro.actual?.load;
   $('planWeekProgress').innerHTML = progressPanel(micro.progress, 'Semana · cumplimiento a fecha de hoy');
+  if ($('planWeekTolerance')) $('planWeekTolerance').innerHTML = selectedWeekToleranceHtml({ target_load: micro.planned?.load, execution: { planned_load: micro.planned?.load, load: micro.actual?.load } });
   $('planWeekCompare').innerHTML = `${planCompareItem('Horas', micro.planned?.hours, micro.actual?.hours, ' h')}${planCompareItem('Carga', micro.planned?.load, micro.actual?.load)}${planCompareItem('Distancia', micro.planned?.distance_km, micro.actual?.distance_km, ' km')}${planCompareItem('Desnivel', micro.planned?.elevation_m, micro.actual?.elevation_m, ' m')}${planCompareItem('Fuerza', micro.planned?.strength_sessions, micro.actual?.strength_sessions)}`;
   $('planWeekSessions').innerHTML = (micro.workouts || []).length ? micro.workouts.map(workoutPlanChip).join('') : '<div class="empty-state compact-empty">No hay sesiones dentro de esta semana.</div>';
 }
@@ -1536,6 +1650,12 @@ $('syncCalendarActuals').addEventListener('click', async () => {
 $('syncActivities').addEventListener('click', () => loadActivities(true));
 $('saveActivityWorkoutLink').addEventListener('click', saveActivityWorkoutLink);
 $('syncRecovery').addEventListener('click', () => loadRecovery(true));
+$('refreshLoadTolerance').addEventListener('click', async () => {
+  const button = $('refreshLoadTolerance'); const original = button.textContent;
+  try { button.disabled = true; button.textContent = 'Actualizando…'; await loadLoadTolerance(true); showMessage('Referencia de carga actualizada.', 'success'); }
+  catch (error) { showMessage(error.message, 'error'); }
+  finally { button.disabled = false; button.textContent = original; }
+});
 $('analyzeActivity').addEventListener('click', analyzeCurrentActivity);
 $('saveActivityReview').addEventListener('click', saveCurrentReview);
 
