@@ -275,3 +275,29 @@ textarea { resize: vertical; min-height: 96px; line-height: 1.45; }
 .priority-chip{display:inline-grid;place-items:center;width:19px;height:19px;border-radius:6px;background:var(--green);color:#fff;font-size:.58rem;font-style:normal;margin-right:5px;vertical-align:middle}.calendar-session.priority-b .priority-chip{background:var(--blue)}.calendar-session.priority-c .priority-chip{background:#8a9996}
 @media(max-width:1050px){.plan-command-inner{align-items:stretch;flex-direction:column}.plan-season-actions{align-items:stretch}.plan-season-actions label{min-width:0;flex:1}.micro-card{grid-template-columns:1fr}.micro-priority-summary{white-space:normal}.plan-compare-grid,.plan-compare-grid.compact{grid-template-columns:1fr 1fr}}
 @media(max-width:760px){.plan-season-actions{display:grid;grid-template-columns:1fr}.plan-goal{grid-template-columns:1fr}.plan-goal-target{padding-left:42px}.macro-head,.meso-head{flex-direction:column}.plan-compare-grid,.plan-compare-grid.compact{grid-template-columns:1fr}.plan-tabs{width:100%}.plan-tab{flex:1}}
+
+/* RunFlow 2.1 · Plan vs Real y seguimiento de cumplimiento */
+.plan-real-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
+.calendar-load-summary>div small{display:block;margin-top:4px;color:var(--muted);font-size:.68rem}
+.calendar-session{display:block;width:100%;cursor:pointer}
+.calendar-session.execution-completed{box-shadow:inset 0 0 0 1px rgba(31,130,111,.18),0 2px 6px rgba(20,63,57,.06)}
+.calendar-session.execution-partial{box-shadow:inset 0 0 0 1px rgba(196,119,31,.3)}
+.calendar-session.execution-skipped{opacity:.68;filter:saturate(.55)}
+.session-real{display:block;margin-top:5px;padding:3px 6px;border-radius:7px;background:#e8f6f2;color:var(--green-dark);font-size:.61rem;font-weight:900;letter-spacing:.02em}
+.session-real.partial{background:var(--orange-soft);color:var(--orange)}
+.session-real.pending-real{background:#f2f5f4;color:var(--muted);font-weight:800}
+.session-real.skipped-real{background:var(--red-soft);color:var(--red)}
+.calendar-actual-extra{display:block;width:100%;border:1px dashed #d69a50;border-left:4px solid var(--orange);border-radius:10px;background:#fff8ec;padding:7px 8px;text-align:left;cursor:pointer}
+.calendar-actual-extra strong{display:block;font-size:.68rem;color:#8b571b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.calendar-actual-extra small{display:flex;justify-content:space-between;gap:6px;margin-top:3px;color:var(--muted);font-size:.64rem}
+.calendar-week-summary{grid-template-columns:minmax(155px,1fr) repeat(5,auto) minmax(100px,.45fr)}
+.cycle-progress-panel{padding:13px 14px;border:1px solid #cce3dd;border-radius:15px;background:linear-gradient(135deg,#f2faf8,#fff)}
+.cycle-progress-panel.compact{margin-top:10px;padding:10px 12px}
+.cycle-progress-head{display:flex;justify-content:space-between;gap:12px;align-items:center}
+.cycle-progress-head span{display:block;color:var(--muted);font-size:.7rem;font-weight:850;text-transform:uppercase;letter-spacing:.04em}
+.cycle-progress-head strong{display:block;margin-top:3px;font-size:.9rem}
+.cycle-progress-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:9px}
+.cycle-progress-grid>div{padding:8px 9px;border-radius:10px;background:rgba(255,255,255,.8);border:1px solid var(--line)}
+.cycle-progress-grid span{display:block;color:var(--muted);font-size:.64rem;font-weight:800}.cycle-progress-grid b{display:block;margin-top:2px;font-size:.88rem}
+.activity-link-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:end}.activity-link-row label{margin:0}
+@media(max-width:760px){.calendar-week-summary{grid-template-columns:1fr 1fr}.calendar-week-summary strong,.calendar-week-summary i{grid-column:1/-1}.cycle-progress-grid{grid-template-columns:1fr 1fr}.activity-link-row{grid-template-columns:1fr}.activity-link-row .btn{width:100%}}

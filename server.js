@@ -21,7 +21,7 @@ const APP_ENCRYPTION_KEY = String(process.env.APP_ENCRYPTION_KEY || '');
 const OPENAI_API_KEY = String(process.env.OPENAI_API_KEY || '');
 const OPENAI_MODEL = String(process.env.OPENAI_MODEL || 'gpt-5.6-terra');
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
-const APP_VERSION = 'Online Pilot 1.3';
+const APP_VERSION = 'Online Pilot 1.4';
 const INTERVALS_API_BASE = 'https://intervals.icu/api/v1';
 
 function validateRuntimeConfig() {
@@ -544,34 +544,70 @@ function rangesOverlap(startA, endA, startB, endB) {
   return startA <= endB && startB <= endA;
 }
 
-async function listCalendarWeeks(athleteId, oldest, newest) {
+async function listCalendarWeeks(athleteId, oldest, newest, sync = false) {
   const rangeStart = validDate(oldest) || addDays(startOfWeek(), -35);
   const rangeEnd = validDate(newest) || addDays(startOfWeek(), 42);
+
+  if (sync && !DEMO_MODE) await syncActivities(athleteId, rangeStart, rangeEnd);
+
+  let weeks = [];
+  let workouts = [];
+  let activities = [];
+  let manualLogs = [];
+
   if (DEMO_MODE) {
     const athlete = demo.athletes.find(item => item.id === athleteId);
     if (!athlete) throw Object.assign(new Error('Deportista no encontrado.'), { status: 404 });
     const candidates = [];
-    if (athlete.week && rangesOverlap(athlete.week.week_start, addDays(athlete.week.week_start, 6), rangeStart, rangeEnd)) {
-      candidates.push(JSON.parse(JSON.stringify(athlete.week)));
-    }
-    return candidates.sort((a, b) => String(a.week_start).localeCompare(String(b.week_start)));
+    if (athlete.week) candidates.push(athlete.week);
+    if (Array.isArray(athlete.microcycles)) candidates.push(...athlete.microcycles);
+    weeks = candidates
+      .filter(item => rangesOverlap(item.week_start, item.end_date || addDays(item.week_start, 6), rangeStart, rangeEnd))
+      .map(item => JSON.parse(JSON.stringify(item)))
+      .sort((a, b) => String(a.week_start).localeCompare(String(b.week_start)));
+    workouts = weeks.flatMap(week => (week.workouts || []).map(workout => ({ ...workout, training_week_id: week.id })));
+    activities = (demo.activities || []).filter(item => item.athlete_id === athleteId && String(item.activity_date).slice(0, 10) >= rangeStart && String(item.activity_date).slice(0, 10) <= rangeEnd);
+    manualLogs = (demo.manual_logs || []).filter(item => item.athlete_id === athleteId);
+  } else {
+    weeks = await prodRows(
+      'training_weeks',
+      `athlete_id=eq.${encodeURIComponent(athleteId)}&week_start=gte.${rangeStart}&week_start=lte.${rangeEnd}&select=*&order=week_start.asc`
+    );
+    const ids = weeks.map(item => item.id);
+    workouts = ids.length
+      ? await prodRows('workouts', `training_week_id=in.(${ids.join(',')})&select=*&order=workout_date.asc`)
+      : [];
+    activities = await listStoredActivities(athleteId, rangeStart, rangeEnd);
+    const workoutIds = workouts.map(item => item.id);
+    manualLogs = workoutIds.length
+      ? await prodRows('manual_session_logs', `athlete_id=eq.${encodeURIComponent(athleteId)}&workout_id=in.(${workoutIds.join(',')})&select=*`)
+      : [];
   }
-  const weeks = await prodRows(
-    'training_weeks',
-    `athlete_id=eq.${encodeURIComponent(athleteId)}&week_start=gte.${rangeStart}&week_start=lte.${rangeEnd}&select=*&order=week_start.asc`
-  );
-  if (!weeks.length) return [];
-  const ids = weeks.map(item => item.id);
-  const workouts = await prodRows(
-    'workouts',
-    `training_week_id=in.(${ids.join(',')})&select=*&order=workout_date.asc`
-  );
-  const grouped = new Map();
-  workouts.forEach(item => {
-    if (!grouped.has(item.training_week_id)) grouped.set(item.training_week_id, []);
-    grouped.get(item.training_week_id).push(item);
-  });
-  return weeks.map(week => ({ ...week, workouts: grouped.get(week.id) || [] }));
+
+  const knownWeekStarts = new Set(weeks.map(item => item.week_start));
+  for (const activity of activities) {
+    const date = String(activity.activity_date || '').slice(0, 10);
+    if (!validDate(date)) continue;
+    const activityWeekStart = startOfWeek(new Date(`${date}T12:00:00Z`));
+    if (activityWeekStart < rangeStart || activityWeekStart > rangeEnd || knownWeekStarts.has(activityWeekStart)) continue;
+    weeks.push({
+      id: null,
+      athlete_id: athleteId,
+      week_start: activityWeekStart,
+      end_date: addDays(activityWeekStart, 6),
+      week_type: 'Sin planificación',
+      title: '',
+      coach_comment: '',
+      target_load: 0,
+      status: 'draft',
+      lifecycle_status: 'planned',
+    });
+    knownWeekStarts.add(activityWeekStart);
+  }
+  weeks.sort((a, b) => String(a.week_start).localeCompare(String(b.week_start)));
+
+  activities = await autoLinkActivitiesToWorkouts(athleteId, workouts, activities);
+  return decorateCalendarWeeks(weeks, workouts, activities, manualLogs);
 }
 
 async function publishedWeekExists(athleteId, weekStart) {
@@ -1515,6 +1551,13 @@ function microcycleFromRow(row, workouts = [], actual = null) {
       strength_sessions: Number(row.planned_strength_sessions || 0),
     },
     actual: actualMetrics,
+    progress: cycleProgress({
+      hours: Number(row.planned_hours || 0),
+      distance_km: Number(row.planned_distance_km || 0),
+      elevation_m: Number(row.planned_elevation_m || 0),
+      load: Number(row.target_load || 0),
+      strength_sessions: Number(row.planned_strength_sessions || 0),
+    }, actualMetrics, row.week_start, row.end_date || addDays(row.week_start, 6), workouts),
     recovery_target: row.recovery_target || '',
     lifecycle_status: row.lifecycle_status || 'planned',
     publication_status: row.status || 'draft',
@@ -1586,7 +1629,10 @@ function normaliseMicrocycle(body, existing = {}) {
     end_date: endDate,
     microcycle_type: ['adaptation', 'load', 'development', 'overload', 'deload', 'taper', 'recovery', 'competition'].includes(type) ? type : null,
     primary_objective: sanitiseText(source.primary_objective, 3000),
-    week_type: sanitiseText(source.week_type || source.name || 'Planificación', 80),
+    week_type: sanitiseText(
+      (hasOwn(body || {}, 'week_type') ? body.week_type : '') || microcycleTypeLabel(type) || source.week_type || source.name || 'Planificación',
+      80
+    ),
     coach_comment: sanitiseText(source.notes || source.coach_comment, 4000),
     target_load: numberOrNull(plannedLoad, 0, 1_000_000) ?? 0,
     planned_hours: numberOrNull(plannedHours, 0, 10000) ?? 0,
@@ -1723,6 +1769,172 @@ async function updateMicrocycle(microcycleId, athleteId, body) {
   return microcycleFromRow(saved, workouts);
 }
 
+function microcycleTypeLabel(type) {
+  return ({
+    adaptation: 'Adaptación',
+    load: 'Carga',
+    development: 'Construcción',
+    overload: 'Sobrecarga',
+    deload: 'Descarga',
+    taper: 'Afinamiento',
+    recovery: 'Recuperación',
+    competition: 'Competición',
+  })[String(type || '').toLowerCase()] || '';
+}
+
+function matchText(value) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function titleSimilarity(a, b) {
+  const stop = new Set(['run', 'running', 'trail', 'ride', 'strength', 'fuerza', 'sesion', 'entrenamiento', 'actividad']);
+  const aa = new Set(matchText(a).split(/\s+/).filter(token => token.length > 2 && !stop.has(token)));
+  const bb = new Set(matchText(b).split(/\s+/).filter(token => token.length > 2 && !stop.has(token)));
+  if (!aa.size || !bb.size) return 0;
+  let intersection = 0;
+  aa.forEach(token => { if (bb.has(token)) intersection += 1; });
+  return intersection / new Set([...aa, ...bb]).size;
+}
+
+async function autoLinkActivitiesToWorkouts(athleteId, workouts, activities) {
+  const rows = (activities || []).map(item => ({ ...item }));
+  const alreadyUsed = new Set(rows.filter(item => item.workout_id).map(item => String(item.workout_id)));
+  const byDateSport = new Map();
+  for (const workout of workouts || []) {
+    const key = `${workout.workout_date}|${sportKey(workout.sport)}`;
+    if (!byDateSport.has(key)) byDateSport.set(key, []);
+    byDateSport.get(key).push(workout);
+  }
+
+  const updates = [];
+  for (const activity of rows) {
+    if (activity.workout_id) continue;
+    const date = String(activity.activity_date || '').slice(0, 10);
+    const key = `${date}|${sportKey(activity.sport)}`;
+    let candidates = (byDateSport.get(key) || []).filter(workout => !alreadyUsed.has(String(workout.id)));
+    if (!candidates.length) continue;
+
+    let target = null;
+    if (candidates.length === 1) {
+      target = candidates[0];
+    } else {
+      const ranked = candidates
+        .map(workout => ({ workout, score: titleSimilarity(activity.name, workout.title) }))
+        .sort((a, b) => b.score - a.score);
+      if (ranked[0] && ranked[0].score >= 0.34 && (!ranked[1] || ranked[0].score - ranked[1].score >= 0.12)) target = ranked[0].workout;
+    }
+    if (!target) continue;
+
+    activity.workout_id = target.id;
+    alreadyUsed.add(String(target.id));
+    updates.push({ activity, target });
+  }
+
+  if (!updates.length) return rows;
+  if (DEMO_MODE) {
+    for (const { activity, target } of updates) {
+      const original = (demo.activities || []).find(item => String(item.id) === String(activity.id) || item.intervals_activity_id === activity.intervals_activity_id);
+      if (original) original.workout_id = target.id;
+    }
+    saveDemo();
+    return rows;
+  }
+
+  await Promise.all(updates.map(({ activity, target }) => prodRows(
+    'activities',
+    `id=eq.${encodeURIComponent(activity.id)}&athlete_id=eq.${encodeURIComponent(athleteId)}`,
+    { method: 'PATCH', body: { workout_id: target.id }, prefer: 'return=minimal' }
+  )));
+  return rows;
+}
+
+function aggregateActivityMetrics(rows) {
+  const activities = rows || [];
+  return {
+    activity_count: activities.length,
+    load: roundOrNull(activities.reduce((sum, item) => sum + Number(item.load || 0), 0), 1) || 0,
+    duration_min: roundOrNull(activities.reduce((sum, item) => sum + Number(item.duration_sec || 0), 0) / 60, 1) || 0,
+    distance_km: roundOrNull(activities.reduce((sum, item) => sum + Number(item.distance_m || 0), 0) / 1000, 2) || 0,
+    elevation_m: roundOrNull(activities.reduce((sum, item) => sum + Number(item.elevation_gain_m || 0), 0), 1) || 0,
+  };
+}
+
+function decorateCalendarWeeks(weeks, workouts, activities, manualLogs) {
+  const workoutsByWeek = new Map();
+  for (const workout of workouts || []) {
+    if (!workoutsByWeek.has(workout.training_week_id)) workoutsByWeek.set(workout.training_week_id, []);
+    workoutsByWeek.get(workout.training_week_id).push(workout);
+  }
+  const activitiesByWorkout = new Map();
+  for (const activity of activities || []) {
+    if (!activity.workout_id) continue;
+    if (!activitiesByWorkout.has(String(activity.workout_id))) activitiesByWorkout.set(String(activity.workout_id), []);
+    activitiesByWorkout.get(String(activity.workout_id)).push(activity);
+  }
+  const logsByWorkout = new Map();
+  for (const log of manualLogs || []) {
+    if (!log.workout_id) continue;
+    if (!logsByWorkout.has(String(log.workout_id))) logsByWorkout.set(String(log.workout_id), []);
+    logsByWorkout.get(String(log.workout_id)).push(log);
+  }
+  const weekIds = new Set((weeks || []).map(item => String(item.id)));
+  const workoutIds = new Set((workouts || []).filter(item => weekIds.has(String(item.training_week_id))).map(item => String(item.id)));
+
+  return (weeks || []).map(week => {
+    const rawWorkouts = workoutsByWeek.get(week.id) || week.workouts || [];
+    const decoratedWorkouts = rawWorkouts.map(workout => {
+      const linked = activitiesByWorkout.get(String(workout.id)) || [];
+      const logs = (logsByWorkout.get(String(workout.id)) || []).sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+      const log = logs[0] || null;
+      let execution_status = 'planned';
+      if (linked.length) execution_status = log && log.status === 'partial' ? 'partial' : 'completed';
+      else if (log && ['completed', 'partial', 'skipped'].includes(log.status)) execution_status = log.status;
+      const actual = linked.length ? aggregateActivityMetrics(linked) : {
+        activity_count: 0,
+        load: null,
+        duration_min: log && ['completed', 'partial'].includes(log.status) ? Number(log.actual_duration_min || 0) : null,
+        distance_km: null,
+        elevation_m: null,
+      };
+      return {
+        ...workout,
+        execution_status,
+        actual,
+        manual_log: log ? { status: log.status, rpe: log.rpe, pain: log.pain, comment: log.comment } : null,
+        activities: linked.map(publicActivitySummary),
+      };
+    });
+
+    const start = week.week_start;
+    const end = week.end_date || addDays(start, 6);
+    const weekActivities = (activities || []).filter(item => {
+      const date = String(item.activity_date || '').slice(0, 10);
+      return date >= start && date <= end;
+    });
+    const unplanned = weekActivities.filter(item => !item.workout_id || !workoutIds.has(String(item.workout_id))).map(publicActivitySummary);
+    const execution = calculateExecutionMetrics(rawWorkouts, weekActivities, manualLogs || []);
+    const generated = rawWorkouts.reduce((sum, item) => sum + Number(item.planned_load || 0), 0);
+    return {
+      ...week,
+      week_type: microcycleTypeLabel(week.microcycle_type) || week.week_type || '',
+      workouts: decoratedWorkouts,
+      unplanned_activities: unplanned,
+      execution: {
+        ...execution,
+        planned_load: roundOrNull(generated, 1) || 0,
+        target_load: Number(week.target_load || 0),
+        load_adherence_pct: generated > 0 ? roundOrNull((Number(execution.linked_load || 0) / generated) * 100, 1) : null,
+        target_load_pct: Number(week.target_load || 0) > 0 ? roundOrNull((Number(execution.load || 0) / Number(week.target_load)) * 100, 1) : null,
+      },
+    };
+  });
+}
+
 function sportKey(value) {
   const sport = String(value || '').toLowerCase();
   if (sport.includes('strength') || sport.includes('fuerza')) return 'strength';
@@ -1732,7 +1944,7 @@ function sportKey(value) {
 }
 
 function calculateExecutionMetrics(workouts, activities, manualLogs) {
-  const workoutIds = new Set(workouts.map(item => String(item.id)));
+  const workoutIds = new Set((workouts || []).map(item => String(item.id)));
   const logsByWorkout = new Map();
   for (const log of manualLogs || []) {
     if (!log.workout_id || !workoutIds.has(String(log.workout_id))) continue;
@@ -1749,7 +1961,7 @@ function calculateExecutionMetrics(workouts, activities, manualLogs) {
   }
 
   const workoutsByDateSport = new Map();
-  for (const workout of workouts) {
+  for (const workout of workouts || []) {
     const key = `${workout.workout_date}|${sportKey(workout.sport)}`;
     if (!workoutsByDateSport.has(key)) workoutsByDateSport.set(key, []);
     workoutsByDateSport.get(key).push(workout);
@@ -1757,7 +1969,7 @@ function calculateExecutionMetrics(workouts, activities, manualLogs) {
 
   const fallbackActivityIds = new Set();
   const completedWorkoutIds = new Set();
-  for (const workout of workouts) {
+  for (const workout of workouts || []) {
     const id = String(workout.id);
     const logs = logsByWorkout.get(id) || [];
     const explicitActivity = linkedActivities.get(id) || [];
@@ -1784,8 +1996,10 @@ function calculateExecutionMetrics(workouts, activities, manualLogs) {
     if (item.workout_id) return workoutIds.has(String(item.workout_id));
     return fallbackActivityIds.has(String(item.id || item.intervals_activity_id));
   });
+  const relevantIds = new Set(relevantActivities.map(item => String(item.id || item.intervals_activity_id)));
+  const extraActivities = (activities || []).filter(item => !relevantIds.has(String(item.id || item.intervals_activity_id)));
+  const allActivities = [...relevantActivities, ...extraActivities];
 
-  const activityDurationSec = relevantActivities.reduce((sum, item) => sum + Number(item.duration_sec || 0), 0);
   const linkedActivityWorkoutIds = new Set(relevantActivities.filter(item => item.workout_id).map(item => String(item.workout_id)));
   let manualDurationMin = 0;
   for (const [workoutId, logs] of logsByWorkout.entries()) {
@@ -1795,19 +2009,29 @@ function calculateExecutionMetrics(workouts, activities, manualLogs) {
   }
 
   const strengthWorkoutIds = new Set(
-    workouts.filter(item => item.is_strength || sportKey(item.sport) === 'strength').map(item => String(item.id))
+    (workouts || []).filter(item => item.is_strength || sportKey(item.sport) === 'strength').map(item => String(item.id))
   );
   const completedStrength = [...completedWorkoutIds].filter(id => strengthWorkoutIds.has(id)).length;
-  const aWorkouts = workouts.filter(item => item.priority === 'A');
+  const extraStrength = extraActivities.filter(item => sportKey(item.sport) === 'strength').length;
+  const aWorkouts = (workouts || []).filter(item => item.priority === 'A');
   const completedA = aWorkouts.filter(item => completedWorkoutIds.has(String(item.id))).length;
 
+  const linkedMetrics = aggregateActivityMetrics(relevantActivities);
+  const extraMetrics = aggregateActivityMetrics(extraActivities);
+  const totalMetrics = aggregateActivityMetrics(allActivities);
+
   return {
-    hours: roundOrNull((activityDurationSec / 3600) + (manualDurationMin / 60), 2) || 0,
-    distance_km: roundOrNull(relevantActivities.reduce((sum, item) => sum + Number(item.distance_m || 0), 0) / 1000, 2) || 0,
-    elevation_m: roundOrNull(relevantActivities.reduce((sum, item) => sum + Number(item.elevation_gain_m || 0), 0), 1) || 0,
-    load: roundOrNull(relevantActivities.reduce((sum, item) => sum + Number(item.load || 0), 0), 2) || 0,
-    strength_sessions: completedStrength,
-    completion_rate: workouts.length ? roundOrNull((completedWorkoutIds.size / workouts.length) * 100, 1) : 0,
+    hours: roundOrNull((totalMetrics.duration_min / 60) + (manualDurationMin / 60), 2) || 0,
+    distance_km: totalMetrics.distance_km,
+    elevation_m: totalMetrics.elevation_m,
+    load: totalMetrics.load,
+    linked_load: linkedMetrics.load,
+    extra_load: extraMetrics.load,
+    extra_sessions: extraActivities.length,
+    strength_sessions: completedStrength + extraStrength,
+    completion_rate: (workouts || []).length ? roundOrNull((completedWorkoutIds.size / workouts.length) * 100, 1) : 0,
+    completed_sessions: completedWorkoutIds.size,
+    planned_sessions: (workouts || []).length,
     a_sessions_completion_pct: aWorkouts.length ? roundOrNull((completedA / aWorkouts.length) * 100, 1) : null,
   };
 }
@@ -1832,7 +2056,85 @@ async function loadExecutionForRange(athleteId, oldest, newest, workouts) {
   return calculateExecutionMetrics(workouts, activities, manualLogs);
 }
 
+function clampPct(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.max(0, Math.round(n * 10) / 10) : null;
+}
+
+function dateElapsedRatio(startDate, endDate, today = new Date().toISOString().slice(0, 10)) {
+  if (!startDate || !endDate) return 0;
+  if (today < startDate) return 0;
+  if (today >= endDate) return 1;
+  const start = new Date(`${startDate}T12:00:00Z`).getTime();
+  const end = new Date(`${endDate}T12:00:00Z`).getTime();
+  const now = new Date(`${today}T12:00:00Z`).getTime();
+  return Math.max(0, Math.min(1, (now - start + 86400000) / (end - start + 86400000)));
+}
+
+function workoutPlannedToDate(workouts, today) {
+  const due = (workouts || []).filter(item => item.workout_date && item.workout_date <= today);
+  return {
+    hours: due.reduce((sum, item) => sum + Number(item.planned_duration_min || 0), 0) / 60,
+    distance_km: due.reduce((sum, item) => sum + Number(item.planned_distance_km || 0), 0),
+    elevation_m: due.reduce((sum, item) => sum + Number(item.planned_elevation_m || 0), 0),
+    load: due.reduce((sum, item) => sum + Number(item.planned_load || 0), 0),
+    strength_sessions: due.filter(item => item.is_strength || sportKey(item.sport) === 'strength').length,
+  };
+}
+
+function cycleProgress(planned, actual, startDate, endDate, workouts = []) {
+  const today = new Date().toISOString().slice(0, 10);
+  const ratio = dateElapsedRatio(startDate, endDate, today);
+  const workoutDue = workoutPlannedToDate(workouts, today);
+  const workoutTotals = workoutPlannedToDate(workouts, '9999-12-31');
+  const keys = ['hours', 'distance_km', 'elevation_m', 'load', 'strength_sessions'];
+  const plannedToDate = {};
+  for (const key of keys) {
+    const total = Number(planned && planned[key] || 0);
+    const workoutTotal = Number(workoutTotals[key] || 0);
+    plannedToDate[key] = workoutTotal > 0 ? Number(workoutDue[key] || 0) : total * ratio;
+    plannedToDate[key] = roundOrNull(plannedToDate[key], key === 'elevation_m' || key === 'strength_sessions' ? 0 : 2) || 0;
+  }
+  const adherence = {};
+  for (const key of keys) {
+    const due = Number(plannedToDate[key] || 0);
+    adherence[`${key}_pct`] = due > 0 ? clampPct((Number(actual && actual[key] || 0) / due) * 100) : null;
+  }
+  const loadPct = adherence.load_pct;
+  const status = ratio === 0 ? 'not_started' : loadPct == null ? 'no_target' : loadPct < 85 ? 'behind' : loadPct > 115 ? 'above' : 'on_track';
+  return {
+    as_of: today,
+    elapsed_pct: clampPct(ratio * 100),
+    planned_to_date: plannedToDate,
+    adherence,
+    status,
+    completion_rate: actual && actual.completion_rate != null ? actual.completion_rate : null,
+    a_sessions_completion_pct: actual && actual.a_sessions_completion_pct != null ? actual.a_sessions_completion_pct : null,
+    extra_load: Number(actual && actual.extra_load || 0),
+    extra_sessions: Number(actual && actual.extra_sessions || 0),
+  };
+}
+
 function mesocycleApi(row, microcycles, actual) {
+  const planned = {
+    hours: Number(row.planned_hours || 0),
+    distance_km: Number(row.planned_distance_km || 0),
+    elevation_m: Number(row.planned_elevation_m || 0),
+    load: Number(row.planned_load || 0),
+    strength_sessions: Number(row.planned_strength_sessions || 0),
+    intensity_distribution: safeObject(row.planned_intensity_distribution),
+  };
+  const actualMetrics = {
+    ...(actual || {
+      hours: Number(row.actual_hours || 0),
+      distance_km: Number(row.actual_distance_km || 0),
+      elevation_m: Number(row.actual_elevation_m || 0),
+      load: Number(row.actual_load || 0),
+      strength_sessions: Number(row.actual_strength_sessions || 0),
+    }),
+    intensity_distribution: safeObject(row.actual_intensity_distribution),
+  };
+  const workouts = (microcycles || []).flatMap(item => item.workouts || []);
   return {
     id: row.id,
     macrocycle_id: row.macrocycle_id,
@@ -1842,24 +2144,9 @@ function mesocycleApi(row, microcycles, actual) {
     duration_weeks: row.duration_weeks,
     primary_adaptation: row.primary_adaptation,
     secondary_adaptations: Array.isArray(row.secondary_adaptations) ? row.secondary_adaptations : [],
-    planned: {
-      hours: Number(row.planned_hours || 0),
-      distance_km: Number(row.planned_distance_km || 0),
-      elevation_m: Number(row.planned_elevation_m || 0),
-      load: Number(row.planned_load || 0),
-      strength_sessions: Number(row.planned_strength_sessions || 0),
-      intensity_distribution: safeObject(row.planned_intensity_distribution),
-    },
-    actual: {
-      ...(actual || {
-        hours: Number(row.actual_hours || 0),
-        distance_km: Number(row.actual_distance_km || 0),
-        elevation_m: Number(row.actual_elevation_m || 0),
-        load: Number(row.actual_load || 0),
-        strength_sessions: Number(row.actual_strength_sessions || 0),
-      }),
-      intensity_distribution: safeObject(row.actual_intensity_distribution),
-    },
+    planned,
+    actual: actualMetrics,
+    progress: cycleProgress(planned, actualMetrics, row.start_date, row.end_date, workouts),
     progression_pattern: Array.isArray(row.progression_pattern) ? row.progression_pattern : [],
     success_criteria: row.success_criteria || '',
     success_criteria_rules: Array.isArray(row.success_criteria_rules) ? row.success_criteria_rules : [],
@@ -2082,15 +2369,32 @@ async function getPlan(athleteId, requestedSeasonId = null) {
     item.macrocycle_id === cycleId || item.mesocycle_id === cycleId || item.microcycle_id === cycleId
   ) || null;
 
-  const macrocycles = macroRows.map(row => ({
-    ...row,
-    mesocycles: (mesoApiByMacro.get(row.id) || []).map(meso => ({
+  const macrocycles = [];
+  for (const row of macroRows) {
+    const mesocycles = (mesoApiByMacro.get(row.id) || []).map(meso => ({
       ...meso,
       evaluation: latestEvaluation(meso.id),
       microcycles: (meso.microcycles || []).map(micro => ({ ...micro, evaluation: latestEvaluation(micro.id) })),
-    })),
-    evaluation: latestEvaluation(row.id),
-  }));
+    }));
+    const workouts = mesocycles.flatMap(meso => (meso.microcycles || []).flatMap(micro => micro.workouts || []));
+    const planned = mesocycles.reduce((acc, meso) => {
+      acc.hours += Number(meso.planned?.hours || 0);
+      acc.distance_km += Number(meso.planned?.distance_km || 0);
+      acc.elevation_m += Number(meso.planned?.elevation_m || 0);
+      acc.load += Number(meso.planned?.load || 0);
+      acc.strength_sessions += Number(meso.planned?.strength_sessions || 0);
+      return acc;
+    }, { hours: 0, distance_km: 0, elevation_m: 0, load: 0, strength_sessions: 0 });
+    const actual = await loadExecutionForRange(athleteId, row.start_date, row.end_date, workouts);
+    macrocycles.push({
+      ...row,
+      planned,
+      actual,
+      progress: cycleProgress(planned, actual, row.start_date, row.end_date, workouts),
+      mesocycles,
+      evaluation: latestEvaluation(row.id),
+    });
+  }
 
   const goals = allGoals.filter(goal => goal.season_id === season.id);
   let unassignedMicrocycles = [];
@@ -2111,8 +2415,19 @@ async function getPlan(athleteId, requestedSeasonId = null) {
     }
   }
 
+  const seasonPlanned = macrocycles.reduce((acc, macro) => {
+    acc.hours += Number(macro.planned?.hours || 0);
+    acc.distance_km += Number(macro.planned?.distance_km || 0);
+    acc.elevation_m += Number(macro.planned?.elevation_m || 0);
+    acc.load += Number(macro.planned?.load || 0);
+    acc.strength_sessions += Number(macro.planned?.strength_sessions || 0);
+    return acc;
+  }, { hours: 0, distance_km: 0, elevation_m: 0, load: 0, strength_sessions: 0 });
+  const seasonWorkouts = macrocycles.flatMap(macro => (macro.mesocycles || []).flatMap(meso => (meso.microcycles || []).flatMap(micro => micro.workouts || [])));
+  const seasonActual = await loadExecutionForRange(athleteId, season.start_date, season.end_date, seasonWorkouts);
+
   return {
-    season,
+    season: { ...season, planned: seasonPlanned, actual: seasonActual, progress: cycleProgress(seasonPlanned, seasonActual, season.start_date, season.end_date, seasonWorkouts) },
     goals,
     macrocycles,
     unassigned: {
@@ -2713,7 +3028,7 @@ async function api(req, res, url) {
     const athleteId = calendarMatch[1];
     await ensureCoachAccess(session, athleteId);
     const { oldest, newest } = dateRangeParams(url, 70);
-    return sendJson(res, 200, { weeks: await listCalendarWeeks(athleteId, oldest, newest), oldest, newest });
+    return sendJson(res, 200, { weeks: await listCalendarWeeks(athleteId, oldest, newest, url.searchParams.get('sync') === '1'), oldest, newest });
   }
 
   const profileMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/profile$/);

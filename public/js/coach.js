@@ -40,6 +40,17 @@ function dateLabel(dateString) {
   if (!dateString) return 'Sin fecha';
   return new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'short' }).format(new Date(`${dateString}T12:00:00`));
 }
+function microcycleTypeLabel(type) {
+  return ({ adaptation: 'Adaptación', load: 'Carga', development: 'Construcción', overload: 'Sobrecarga', deload: 'Descarga', taper: 'Afinamiento', recovery: 'Recuperación', competition: 'Competición' })[String(type || '').toLowerCase()] || '';
+}
+function pctLabel(value) {
+  if (value === null || value === undefined || value === '') return '—';
+  const n = Number(value);
+  return Number.isFinite(n) ? `${Math.round(n)}%` : '—';
+}
+function progressStatusLabel(status) {
+  return ({ not_started: 'Aún no iniciado', no_target: 'Sin referencia', behind: 'Por debajo de lo previsto', on_track: 'En línea con el plan', above: 'Por encima de lo previsto' })[status] || 'Sin datos';
+}
 function daysUntil(dateString) {
   if (!dateString) return '—';
   const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -214,16 +225,27 @@ function selectCalendarWeek(weekStart, rerender = true) {
   state.calendar.selectedWeekStart = weekStart;
   localStorage.setItem(`runflow_calendar_week_${state.athlete?.id || 'default'}`, weekStart);
   const week = calendarWeek(weekStart);
+  const execution = week.execution || {};
   $('weekStart').value = weekStart;
-  $('weekType').value = week.week_type || 'Carga controlada';
+  const weekType = microcycleTypeLabel(week.microcycle_type) || week.week_type || 'Carga controlada';
+  if (![...$('weekType').options].some(option => option.value === weekType)) {
+    const option = document.createElement('option'); option.value = weekType; option.textContent = weekType; $('weekType').appendChild(option);
+  }
+  $('weekType').value = weekType;
   $('targetLoad').value = Number(week.target_load || 0);
-  $('weekTitle').value = week.title || '';
+  $('weekTitle').value = week.primary_objective || week.title || '';
   $('weekComment').value = week.coach_comment || '';
   $('selectedWeekLabel').textContent = `${dateLabel(weekStart)} – ${dateLabel(addDays(weekStart, 6))}`;
   $('selectedWeekStatus').textContent = week.status === 'published' ? 'Publicada' : 'Borrador';
   $('selectedWeekStatus').className = `badge ${week.status === 'published' ? '' : 'pending'}`;
-  $('generatedWeekLoad').textContent = generatedLoad(week);
+  $('generatedWeekLoad').textContent = Math.round(Number(execution.planned_load ?? generatedLoad(week) ?? 0));
+  $('targetWeekLoadText').textContent = `objetivo ${Number(week.target_load || 0) || '—'}`;
+  $('actualWeekLoad').textContent = Math.round(Number(execution.load || 0));
+  $('extraWeekLoad').textContent = Number(execution.extra_load || 0) > 0 ? `+${Math.round(Number(execution.extra_load))} extra` : 'sin carga extra';
+  $('weekCompletionRate').textContent = pctLabel(execution.completion_rate ?? 0);
+  $('weekPriorityCompliance').textContent = `A: ${pctLabel(execution.a_sessions_completion_pct)}`;
   $('generatedSessionCount').textContent = (week.workouts || []).length;
+  $('completedSessionCount').textContent = `${Number(execution.completed_sessions || 0)} realizadas${Number(execution.extra_sessions || 0) ? ` · ${Number(execution.extra_sessions)} extra` : ''}`;
   $('saveWeek').textContent = week.status === 'published' ? 'Guardar cambios' : 'Guardar borrador';
   $('publishWeek').textContent = week.status === 'published' ? 'Actualizar en la app' : 'Publicar semana';
   if (rerender) renderCalendar();
@@ -234,6 +256,18 @@ function renderWeekEditor() {
   $('weekConnectionBadge').textContent = state.athlete.intervals_status === 'connected' ? 'Intervals conectado' : 'Intervals pendiente';
   $('weekConnectionBadge').className = `badge ${state.athlete.intervals_status === 'connected' ? '' : 'pending'}`;
   renderCalendar();
+}
+
+function actualWorkoutLine(workout) {
+  const actual = workout.actual || {};
+  const status = workout.execution_status || 'planned';
+  if (status === 'planned') return '<span class="session-real pending-real">Pendiente</span>';
+  if (status === 'skipped') return '<span class="session-real skipped-real">No realizada</span>';
+  const parts = [];
+  if (actual.load !== null && actual.load !== undefined && Number.isFinite(Number(actual.load))) parts.push(`carga ${Math.round(Number(actual.load))}`);
+  if (Number(actual.distance_km || 0) > 0) parts.push(`${Number(actual.distance_km).toFixed(1)} km`);
+  if (Number(actual.duration_min || 0) > 0) parts.push(`${Math.round(Number(actual.duration_min))} min`);
+  return `<span class="session-real ${status}">${status === 'partial' ? 'PARCIAL' : 'REAL'} ${escapeHtml(parts.join(' · ') || 'registrada')}</span>`;
 }
 
 function renderCalendar() {
@@ -248,24 +282,32 @@ function renderCalendar() {
     const weekStart = dateToIso(cursor);
     const week = calendarWeek(weekStart);
     const selected = weekStart === state.calendar.selectedWeekStart;
+    const execution = week.execution || {};
     for (let index = 0; index < 7; index += 1) {
       const date = dateToIso(addCalendarDays(cursor, index));
       const dayDate = parseLocalDate(date);
       const workouts = (week.workouts || []).filter(item => item.workout_date === date);
-      const dayLoad = workouts.reduce((sum, item) => sum + Number(item.planned_load || 0), 0);
+      const extras = (week.unplanned_activities || []).filter(item => String(item.activity_date || '').slice(0, 10) === date);
+      const dayPlan = workouts.reduce((sum, item) => sum + Number(item.planned_load || 0), 0);
+      const dayReal = workouts.reduce((sum, item) => sum + Number(item.actual?.load || 0), 0) + extras.reduce((sum, item) => sum + Number(item.load || 0), 0);
+      const plannedCards = workouts.map(workout => `<button class="calendar-session ${workoutVisualClass(workout)} priority-${String(workout.priority || 'B').toLowerCase()} execution-${escapeHtml(workout.execution_status || 'planned')}" data-session-id="${workout.id}" data-session-week="${weekStart}" type="button"><strong><i class="priority-chip">${escapeHtml(workout.priority || 'B')}</i>${escapeHtml(workout.title)}</strong><small><span>${escapeHtml(workout.sport || 'Run')} · PLAN</span><b>${Number(workout.planned_load || 0)}</b></small>${actualWorkoutLine(workout)}</button>`).join('');
+      const extraCards = extras.map(activity => `<button class="calendar-actual-extra" data-extra-activity="${escapeHtml(activity.intervals_activity_id || '')}" type="button"><strong>EXTRA · ${escapeHtml(activity.name || activity.sport || 'Actividad')}</strong><small>${escapeHtml(activity.sport || '')} · REAL <b>${Number.isFinite(Number(activity.load)) ? Math.round(Number(activity.load)) : '—'}</b></small></button>`).join('');
       cells.push(`<article class="calendar-day ${dayDate.getMonth() !== month.getMonth() ? 'outside' : ''} ${date === today ? 'today' : ''} ${selected ? 'selected-week' : ''}" data-select-week="${weekStart}">
         <div class="calendar-day-head"><span class="calendar-day-number">${dayDate.getDate()}</span><button class="calendar-add" data-add-date="${date}" type="button" aria-label="Añadir sesión el ${date}">+</button></div>
-        <div class="calendar-sessions">${workouts.map(workout => `<button class="calendar-session ${workoutVisualClass(workout)} priority-${String(workout.priority || 'B').toLowerCase()}" data-session-id="${workout.id}" data-session-week="${weekStart}" type="button"><strong><i class="priority-chip">${escapeHtml(workout.priority || 'B')}</i>${escapeHtml(workout.title)}</strong><small><span>${escapeHtml(workout.sport || 'Run')}</span><b>${Number(workout.planned_load || 0)}</b></small></button>`).join('')}</div>
-        <div class="calendar-day-load"><span>${workouts.length} sesión${workouts.length === 1 ? '' : 'es'}</span><b>Carga ${dayLoad}</b></div>
+        <div class="calendar-sessions">${plannedCards}${extraCards}</div>
+        <div class="calendar-day-load"><span>${workouts.length} plan${extras.length ? ` · ${extras.length} extra` : ''}</span><b>Plan ${Math.round(dayPlan)} · Real ${Math.round(dayReal)}</b></div>
       </article>`);
     }
-    const load = generatedLoad(week);
+    const planLoad = Number(execution.planned_load ?? generatedLoad(week) ?? 0);
+    const realLoad = Number(execution.load || 0);
     const target = Number(week.target_load || 0);
-    const percentage = target > 0 ? Math.round((load / target) * 100) : 0;
+    const completion = Number(execution.completion_rate || 0);
+    const loadPct = Number(execution.load_adherence_pct);
+    const progressPct = Number.isFinite(loadPct) ? Math.min(100, Math.max(0, loadPct)) : (target > 0 ? Math.min(100, (planLoad / target) * 100) : 0);
     cells.push(`<button class="calendar-week-summary ${selected ? 'active' : ''}" data-select-week="${weekStart}" type="button">
       <strong>${dateLabel(weekStart)} – ${dateLabel(addDays(weekStart, 6))}</strong>
-      <span>Programada <b>${load}</b></span><span>Objetivo <b>${target || '—'}</b></span><span>${week.status === 'published' ? 'Publicada' : 'Borrador'}</span>
-      <i><em style="width:${Math.min(100, percentage)}%"></em></i>
+      <span>Plan <b>${Math.round(planLoad)}</b></span><span>Real <b>${Math.round(realLoad)}</b></span><span>Cumpl. <b>${Math.round(completion)}%</b></span>${Number(execution.extra_load || 0) > 0 ? `<span>Extra <b>+${Math.round(Number(execution.extra_load))}</b></span>` : ''}<span>${week.status === 'published' ? 'Publicada' : 'Borrador'}</span>
+      <i><em style="width:${progressPct}%"></em></i>
     </button>`);
     cursor = addCalendarDays(cursor, 7);
   }
@@ -279,16 +321,23 @@ function renderCalendar() {
     selectCalendarWeek(button.dataset.sessionWeek, false);
     openSessionModal(button.dataset.sessionId, null);
   }));
+  $('calendarGrid').querySelectorAll('[data-extra-activity]').forEach(button => button.addEventListener('click', event => {
+    event.stopPropagation();
+    const id = button.dataset.extraActivity;
+    if (!id) return;
+    switchView('activities');
+    loadActivityDetail(id).catch(error => showMessage(error.message, 'error'));
+  }));
   $('calendarGrid').querySelectorAll('[data-select-week]').forEach(element => element.addEventListener('click', () => selectCalendarWeek(element.dataset.selectWeek)));
   selectCalendarWeek(state.calendar.selectedWeekStart, false);
 }
 
-async function loadCalendarMonth() {
+async function loadCalendarMonth(sync = false) {
   if (!state.athlete) return;
   state.calendar.loading = true;
-  $('calendarGrid').innerHTML = '<div class="empty-state calendar-loading">Cargando sesiones…</div>';
+  $('calendarGrid').innerHTML = `<div class="empty-state calendar-loading">${sync ? 'Actualizando realizados desde Intervals…' : 'Cargando sesiones…'}</div>`;
   const { start, end } = monthCalendarRange();
-  const data = await api(`/api/coach/athletes/${state.athlete.id}/calendar?oldest=${dateToIso(start)}&newest=${dateToIso(end)}`);
+  const data = await api(`/api/coach/athletes/${state.athlete.id}/calendar?oldest=${dateToIso(start)}&newest=${dateToIso(end)}&sync=${sync ? '1' : '0'}`);
   state.calendar.weeks = new Map((data.weeks || []).map(week => [week.week_start, { ...emptyCalendarWeek(week.week_start), ...week, workouts: Array.isArray(week.workouts) ? week.workouts : [] }]));
   let selected = localStorage.getItem(`runflow_calendar_week_${state.athlete.id}`) || state.calendar.selectedWeekStart || isoMonday();
   if (parseLocalDate(selected) < start || parseLocalDate(selected) > end) selected = isoMonday(new Date(state.calendar.month.getFullYear(), state.calendar.month.getMonth(), 1, 12));
@@ -438,7 +487,8 @@ function weekPayload(status, weekStart = state.calendar.selectedWeekStart) {
 function syncWeekStateFromInputs() {
   const week = calendarWeek(state.calendar.selectedWeekStart);
   week.week_type = $('weekType').value;
-  week.title = $('weekTitle').value;
+  week.primary_objective = $('weekTitle').value;
+  if (!week.title) week.title = $('weekTitle').value || 'Semana';
   week.coach_comment = $('weekComment').value;
   week.target_load = Number($('targetLoad').value || 0);
   return week;
@@ -814,6 +864,13 @@ function metricValue(value, suffix = '') {
 function planCompareItem(label, planned, actual, suffix = '') {
   return `<div class="plan-compare-item"><span>${escapeHtml(label)}</span><div><b>${metricValue(planned, suffix)}</b><small>plan</small></div><div><b>${metricValue(actual, suffix)}</b><small>real</small></div></div>`;
 }
+function progressPanel(progress, label = 'Cumplimiento a fecha de hoy') {
+  if (!progress) return '<div class="muted small">Sin datos de seguimiento.</div>';
+  const loadPct = progress.adherence?.load_pct;
+  const completion = progress.completion_rate;
+  const extra = Number(progress.extra_load || 0);
+  return `<div class="cycle-progress-head"><div><span>${escapeHtml(label)}</span><strong>${escapeHtml(progressStatusLabel(progress.status))}</strong></div><span class="badge ${progress.status === 'on_track' ? '' : 'pending'}">${loadPct == null ? '—' : pctLabel(loadPct)} carga</span></div><div class="cycle-progress-grid"><div><span>Plan hasta hoy</span><b>${metricValue(progress.planned_to_date?.load)}</b></div><div><span>Real</span><b>${metricValue(progress.actual_load ?? '')}</b></div><div><span>Sesiones</span><b>${completion == null ? '—' : pctLabel(completion)}</b></div><div><span>Extra</span><b>${extra ? `+${Math.round(extra)}` : '0'}</b></div></div>`;
+}
 
 function allPlanMesocycles() {
   return (state.plan?.macrocycles || []).flatMap(macro => macro.mesocycles || []);
@@ -892,6 +949,8 @@ function renderPlan() {
   $('planSessionCount').textContent = `${sessions.length} sesiones`;
   $('planSeasonStatusText').textContent = `${planStatusLabel(season.status)} · ${dateLabel(season.start_date)} – ${dateLabel(season.end_date)}`;
   $('planSeasonObjective').textContent = season.season_objective || 'Todavía no se ha definido la dirección principal de esta temporada.';
+  if (season.progress) season.progress.actual_load = season.actual?.load;
+  $('planSeasonProgress').innerHTML = progressPanel(season.progress, 'Temporada · cumplimiento a fecha de hoy');
 
   const goals = state.plan.goals || [];
   $('planGoalList').innerHTML = goals.length ? goals.map(goal => `
@@ -926,15 +985,17 @@ function renderPlanBlocks() {
     const goal = (state.plan.goals || []).find(item => String(item.id) === String(macro.goal_id));
     return `<article class="macro-card">
       <div class="macro-head"><div><div class="plan-title-line"><span class="cycle-kicker">MACRO</span><h3>${escapeHtml(macro.name)}</h3><span class="badge ${macro.status === 'active' ? '' : 'pending'}">${planStatusLabel(macro.status)}</span></div><p>${dateLabel(macro.start_date)} – ${dateLabel(macro.end_date)}${goal ? ` · objetivo ${escapeHtml(goal.name)}` : ''}</p><strong class="cycle-objective">${escapeHtml(macro.primary_objective || 'Sin objetivo principal definido')}</strong></div><div class="actions"><button class="btn soft small" data-plan-action="evaluate" data-cycle="macrocycle" data-id="${macro.id}" type="button">Evaluar</button><button class="btn soft small" data-plan-action="edit-macro" data-id="${macro.id}" type="button">Editar</button><button class="btn primary small" data-plan-action="new-meso" data-id="${macro.id}" type="button">+ Mesociclo</button></div></div>
+      <div class="cycle-progress-panel compact">${(() => { if (macro.progress) macro.progress.actual_load = macro.actual?.load; return progressPanel(macro.progress, 'Macrociclo · a fecha de hoy'); })()}</div>
       <div class="cycle-eval">${evaluationBadge(macro.evaluation)}</div>
       <div class="meso-list">${(macro.mesocycles || []).length ? macro.mesocycles.map(meso => `
         <article class="meso-card">
           <div class="meso-head"><div><div class="plan-title-line"><span class="cycle-kicker meso">MESO</span><h3>${escapeHtml(meso.name)}</h3><span class="badge ${meso.status === 'active' ? '' : 'pending'}">${planStatusLabel(meso.status)}</span></div><p>${dateLabel(meso.start_date)} – ${dateLabel(meso.end_date)} · ${escapeHtml(meso.primary_adaptation || '')}</p></div><div class="actions"><button class="btn soft small" data-plan-action="evaluate" data-cycle="mesocycle" data-id="${meso.id}" type="button">Evaluar</button><button class="btn soft small" data-plan-action="edit-meso" data-id="${meso.id}" type="button">Editar</button><button class="btn secondary small" data-plan-action="new-micro" data-id="${meso.id}" type="button">+ Semana</button></div></div>
+          <div class="cycle-progress-panel compact">${(() => { if (meso.progress) meso.progress.actual_load = meso.actual?.load; return progressPanel(meso.progress, 'Mesociclo · a fecha de hoy'); })()}</div>
           <div class="plan-compare-grid compact">${planCompareItem('Horas', meso.planned?.hours, meso.actual?.hours, ' h')}${planCompareItem('Carga', meso.planned?.load, meso.actual?.load)}${planCompareItem('Distancia', meso.planned?.distance_km, meso.actual?.distance_km, ' km')}${planCompareItem('Desnivel', meso.planned?.elevation_m, meso.actual?.elevation_m, ' m')}</div>
           <div class="cycle-eval">${evaluationBadge(meso.evaluation)}</div>
           <div class="micro-list">${(meso.microcycles || []).length ? meso.microcycles.map(micro => `
             <article class="micro-card ${String(state.selectedMicrocycleId) === String(micro.id) ? 'selected' : ''}">
-              <div class="micro-main"><div class="plan-title-line"><span class="cycle-kicker micro">SEM</span><strong>${escapeHtml(micro.name || 'Semana')}</strong><span class="badge pending">${escapeHtml(micro.type || micro.week_type || 'microciclo')}</span></div><small>${dateLabel(micro.start_date)} – ${dateLabel(micro.end_date)} · carga ${Number(micro.planned?.load || 0)} / ${Number(micro.actual?.load || 0)} · ${Number(micro.actual?.completion_rate || 0)}% completado</small><p>${escapeHtml(micro.primary_objective || '')}</p></div>
+              <div class="micro-main"><div class="plan-title-line"><span class="cycle-kicker micro">SEM</span><strong>${escapeHtml(micro.name || 'Semana')}</strong><span class="badge pending">${escapeHtml(micro.type || micro.week_type || 'microciclo')}</span></div><small>${dateLabel(micro.start_date)} – ${dateLabel(micro.end_date)} · carga ${Number(micro.planned?.load || 0)} plan / ${Number(micro.actual?.load || 0)} real · ${micro.progress?.adherence?.load_pct == null ? '—' : Math.round(Number(micro.progress.adherence.load_pct)) + '%'} vs plan a fecha · ${Number(micro.actual?.completion_rate || 0)}% sesiones</small><p>${escapeHtml(micro.primary_objective || '')}</p></div>
               <div class="micro-priority-summary">${(micro.workouts || []).filter(w => w.priority === 'A').length} A · ${(micro.workouts || []).filter(w => w.priority === 'B' || !w.priority).length} B · ${(micro.workouts || []).filter(w => w.priority === 'C').length} C</div>
               <div class="actions"><button class="btn soft small" data-plan-action="select-micro" data-id="${micro.id}" type="button">Ver</button><button class="btn soft small" data-plan-action="evaluate" data-cycle="microcycle" data-id="${micro.id}" type="button">Evaluar</button><button class="btn soft small" data-plan-action="edit-micro" data-id="${micro.id}" type="button">Editar</button></div>
             </article>`).join('') : '<div class="empty-state compact-empty">Este mesociclo todavía no tiene semanas.</div>'}</div>
@@ -951,6 +1012,8 @@ function renderSelectedPlanWeek() {
   $('planWeekTitle').textContent = micro.name || 'Semana';
   $('planWeekDates').textContent = `${dateLabel(micro.start_date)} – ${dateLabel(micro.end_date)} · ${planStatusLabel(micro.lifecycle_status)} · ${planStatusLabel(micro.publication_status)}`;
   $('planWeekObjective').textContent = micro.primary_objective || 'Sin objetivo principal definido.';
+  if (micro.progress) micro.progress.actual_load = micro.actual?.load;
+  $('planWeekProgress').innerHTML = progressPanel(micro.progress, 'Semana · cumplimiento a fecha de hoy');
   $('planWeekCompare').innerHTML = `${planCompareItem('Horas', micro.planned?.hours, micro.actual?.hours, ' h')}${planCompareItem('Carga', micro.planned?.load, micro.actual?.load)}${planCompareItem('Distancia', micro.planned?.distance_km, micro.actual?.distance_km, ' km')}${planCompareItem('Desnivel', micro.planned?.elevation_m, micro.actual?.elevation_m, ' m')}${planCompareItem('Fuerza', micro.planned?.strength_sessions, micro.actual?.strength_sessions)}`;
   $('planWeekSessions').innerHTML = (micro.workouts || []).length ? micro.workouts.map(workoutPlanChip).join('') : '<div class="empty-state compact-empty">No hay sesiones dentro de esta semana.</div>';
 }
@@ -1261,6 +1324,37 @@ function renderAnalysis(analysis) {
   $('analysisSummary').innerHTML = `<div class="analysis-score-row"><div class="analysis-score"><strong>${Number(analysis.score ?? 0)}</strong></div><div><span class="badge">${escapeHtml(analysisStatusLabel(analysis.status))}</span><h3 style="margin:9px 0 5px">${escapeHtml(analysis.headline || '')}</h3><p class="muted" style="margin:0">${escapeHtml(analysis.summary || '')}</p></div></div><div class="analysis-grid"><div class="analysis-section"><h4>Ejecución</h4><p>${escapeHtml(analysis.execution_analysis || '')}</p></div><div class="analysis-section"><h4>Respuesta fisiológica</h4><p>${escapeHtml(analysis.physiological_analysis || '')}</p></div><div class="analysis-section"><h4>Contexto y recuperación</h4><p>${escapeHtml(analysis.context_analysis || '')}</p></div></div>${alerts.map(alert => `<div class="analysis-alert ${escapeHtml(alert.level || 'info')}"><strong>${escapeHtml(alert.title || 'Aviso')}</strong><div>${escapeHtml(alert.detail || '')}</div></div>`).join('')}<div class="analysis-section"><h4>Recomendación: ${escapeHtml(recommendationLabel(recommendation.action))}</h4><p><strong>Próximas 24–48 h:</strong> ${escapeHtml(recommendation.next_24_48h || '')}</p><p style="margin-top:7px"><strong>Próxima calidad:</strong> ${escapeHtml(recommendation.next_quality_session || '')}</p></div><p class="muted small">Confianza: ${escapeHtml(analysis.confidence || '—')} · Motor: ${escapeHtml(meta.model || (meta.source === 'openai' ? state.config.openaiModel : 'RunFlow Rules'))}${meta.openai_error ? ` · OpenAI no respondió y se usaron reglas: ${escapeHtml(meta.openai_error)}` : ''}</p>`;
 }
 
+async function loadActivityWorkoutOptions(detail) {
+  const activity = detail?.activity;
+  if (!activity || !$('activityWorkoutLink')) return;
+  const date = String(activity.activity_date || '').slice(0, 10);
+  const weekStart = isoMonday(parseLocalDate(date));
+  try {
+    const data = await api(`/api/coach/athletes/${state.athlete.id}/calendar?oldest=${weekStart}&newest=${addDays(weekStart, 6)}`);
+    const week = (data.weeks || []).find(item => item.week_start === weekStart);
+    const workouts = week?.workouts || [];
+    let selectedId = activity.workout_id || detail.planned?.id || '';
+    if (!selectedId) {
+      const linked = workouts.find(workout => (workout.activities || []).some(item => item.intervals_activity_id === activity.intervals_activity_id));
+      if (linked) selectedId = linked.id;
+    }
+    $('activityWorkoutLink').innerHTML = `<option value="">Actividad no planificada</option>${workouts.map(workout => `<option value="${workout.id}" ${String(workout.id) === String(selectedId) ? 'selected' : ''}>${dateLabel(workout.workout_date)} · ${escapeHtml(workout.title)} · ${escapeHtml(workout.sport || '')}</option>`).join('')}`;
+    $('activityWorkoutLinkStatus').textContent = selectedId ? 'Actividad vinculada a una sesión del plan.' : 'Sin vínculo: esta carga contará como actividad extra.';
+  } catch (error) {
+    $('activityWorkoutLinkStatus').textContent = `No se pudieron cargar las sesiones candidatas: ${error.message}`;
+  }
+}
+
+async function saveActivityWorkoutLink() {
+  if (!state.currentActivityId) return showMessage('Selecciona primero una actividad.', 'error');
+  const workoutId = $('activityWorkoutLink').value || null;
+  try {
+    await api(`/api/coach/athletes/${state.athlete.id}/activities/${encodeURIComponent(state.currentActivityId)}/workout`, { method: 'PUT', body: JSON.stringify({ workout_id: workoutId }) });
+    showMessage(workoutId ? 'Actividad vinculada a la sesión planificada.' : 'Actividad marcada como no planificada.', 'success');
+    await Promise.all([loadActivityDetail(state.currentActivityId), loadCalendarMonth(false), loadPlan()]);
+  } catch (error) { showMessage(error.message, 'error'); }
+}
+
 function renderActivityDetail(detail) {
   state.currentActivity = detail;
   const activity = detail.activity;
@@ -1288,6 +1382,7 @@ async function loadActivityDetail(externalId) {
   try {
     const data = await api(`/api/coach/athletes/${state.athlete.id}/activities/${encodeURIComponent(externalId)}`);
     renderActivityDetail(data);
+    await loadActivityWorkoutOptions(data);
   } catch (error) {
     $('activityPlaceholder').classList.remove('hidden');
     $('activityDetail').classList.add('hidden');
@@ -1432,7 +1527,14 @@ $('openSelectedWeekCalendar').addEventListener('click', async () => {
 });
 $('evaluateSelectedWeek').addEventListener('click', () => state.selectedMicrocycleId && openEvaluation('microcycle', state.selectedMicrocycleId));
 
+$('syncCalendarActuals').addEventListener('click', async () => {
+  const button = $('syncCalendarActuals'); const original = button.textContent;
+  try { button.disabled = true; button.textContent = 'Actualizando…'; await loadCalendarMonth(true); await loadPlan(); showMessage('Realizados actualizados y comparados con el plan.', 'success'); }
+  catch (error) { showMessage(error.message, 'error'); }
+  finally { button.disabled = false; button.textContent = original; }
+});
 $('syncActivities').addEventListener('click', () => loadActivities(true));
+$('saveActivityWorkoutLink').addEventListener('click', saveActivityWorkoutLink);
 $('syncRecovery').addEventListener('click', () => loadRecovery(true));
 $('analyzeActivity').addEventListener('click', analyzeCurrentActivity);
 $('saveActivityReview').addEventListener('click', saveCurrentReview);

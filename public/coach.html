@@ -108,6 +108,7 @@
             <article class="metric"><span>Macrociclos</span><strong id="planMacroCount">0</strong><small id="planMesoCount">0 mesociclos</small></article>
             <article class="metric"><span>Semanas</span><strong id="planMicroCount">0</strong><small id="planSessionCount">0 sesiones</small></article>
           </div>
+          <div id="planSeasonProgress" class="cycle-progress-panel" style="margin-top:16px"></div>
           <div class="layout" style="margin-top:16px">
             <section class="card">
               <div class="card-head"><div><h2>Objetivos de temporada</h2><p>La prioridad A marca los hitos que condicionan la planificación.</p></div><button id="newPlanGoalInline" class="btn secondary small" type="button">+ Objetivo</button></div>
@@ -133,7 +134,8 @@
             <section class="card">
               <div class="card-head"><div><p class="eyebrow">Microciclo seleccionado</p><h2 id="planWeekTitle">—</h2><p id="planWeekDates">—</p></div><div class="actions"><button id="evaluateSelectedWeek" class="btn secondary small" type="button">Evaluar</button><button id="openSelectedWeekCalendar" class="btn primary small" type="button">Abrir en calendario</button></div></div>
               <div class="card-body">
-                <div class="plan-compare-grid" id="planWeekCompare"></div>
+                <div id="planWeekProgress" class="cycle-progress-panel compact"></div>
+                <div class="plan-compare-grid" id="planWeekCompare" style="margin-top:12px"></div>
                 <div class="form-section" style="margin-top:14px"><strong>Objetivo principal</strong><p id="planWeekObjective" class="muted" style="margin:6px 0 0">—</p></div>
               </div>
             </section>
@@ -150,8 +152,8 @@
       <div class="calendar-workspace">
         <section class="card calendar-card">
           <div class="card-head calendar-head">
-            <div><h2>Calendario de planificación</h2><p>Añade sesiones una a una y controla la carga semanal en tiempo real.</p></div>
-            <span id="weekConnectionBadge" class="badge pending">Intervals pendiente</span>
+            <div><h2>Calendario de planificación</h2><p>Planifica y compara en el mismo calendario lo previsto con lo realizado.</p></div>
+            <div class="actions"><button id="syncCalendarActuals" class="btn soft small" type="button">Actualizar realizados</button><span id="weekConnectionBadge" class="badge pending">Intervals pendiente</span></div>
           </div>
           <div class="calendar-toolbar">
             <div class="actions">
@@ -176,13 +178,15 @@
             <div class="card-head"><div><h2>Semana seleccionada</h2><p id="selectedWeekLabel">Selecciona una semana del calendario.</p></div><span id="selectedWeekStatus" class="badge pending">Borrador</span></div>
             <div class="card-body">
               <input id="weekStart" type="hidden">
-              <div class="calendar-load-summary">
-                <div><span>Carga generada</span><strong id="generatedWeekLoad">0</strong></div>
-                <div><span>Sesiones</span><strong id="generatedSessionCount">0</strong></div>
+              <div class="calendar-load-summary plan-real-summary">
+                <div><span>Carga plan</span><strong id="generatedWeekLoad">0</strong><small id="targetWeekLoadText">objetivo —</small></div>
+                <div><span>Carga real</span><strong id="actualWeekLoad">0</strong><small id="extraWeekLoad">sin carga extra</small></div>
+                <div><span>Cumplimiento</span><strong id="weekCompletionRate">0%</strong><small id="weekPriorityCompliance">A: —</small></div>
+                <div><span>Sesiones</span><strong id="generatedSessionCount">0</strong><small id="completedSessionCount">0 realizadas</small></div>
               </div>
               <div class="field-row" style="margin-top:14px">
                 <label>Carga objetivo<input id="targetLoad" type="number" min="0"></label>
-                <label>Tipo de semana<select id="weekType"><option>Carga controlada</option><option>Construcción</option><option>Descarga</option><option>Afinamiento</option><option>Competición</option><option>Adaptación</option></select></label>
+                <label>Tipo de semana<select id="weekType"><option>Carga</option><option>Carga controlada</option><option>Construcción</option><option>Sobrecarga</option><option>Descarga</option><option>Afinamiento</option><option>Recuperación</option><option>Competición</option><option>Adaptación</option></select></label>
               </div>
               <label style="margin-top:13px">Objetivo de la semana<input id="weekTitle" placeholder="Ej.: consolidar el umbral sin acumular fatiga"></label>
               <label style="margin-top:13px">Comentario para el deportista<textarea id="weekComment" placeholder="Explica qué buscamos y qué no debe añadir por su cuenta."></textarea></label>
@@ -242,6 +246,12 @@
                 <article class="metric"><span>Distancia</span><strong id="activityDistance">—</strong><small>Recorrido total</small></article>
                 <article class="metric"><span>Ritmo medio</span><strong id="activityPace">—</strong><small>min/km</small></article>
                 <article class="metric"><span>Pulso</span><strong id="activityHr">—</strong><small>media / máxima</small></article>
+              </div>
+
+              <div class="form-section activity-link-box" style="margin-top:18px">
+                <div class="card-head compact"><div><h3>Planificación asociada</h3><p>RunFlow intenta vincular automáticamente por fecha y deporte. Puedes corregirlo manualmente.</p></div></div>
+                <div class="activity-link-row"><label>Sesión planificada<select id="activityWorkoutLink"><option value="">Actividad no planificada</option></select></label><button id="saveActivityWorkoutLink" class="btn secondary align-end" type="button">Guardar vínculo</button></div>
+                <p id="activityWorkoutLinkStatus" class="muted small" style="margin:8px 0 0"></p>
               </div>
 
               <div class="form-section" style="margin-top:18px">
