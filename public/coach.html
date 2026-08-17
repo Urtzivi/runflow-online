@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#126f60">
-  <title>RunFlow Coach · Planificación 2.0</title>
+  <title>RunFlow Coach · Planificación 2.3</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
-  <link rel="stylesheet" href="/css/app.css?v=2.0">
+  <link rel="stylesheet" href="/css/app.css?v=2.3">
 </head>
 <body>
   <header class="topbar">
@@ -28,6 +28,7 @@
     <nav class="tabs" aria-label="Secciones del coach">
       <button class="tab active" data-view="summary">Resumen</button>
       <button class="tab" data-view="plan">Plan</button>
+      <button class="tab" data-view="library">Biblioteca</button>
       <button class="tab" data-view="week">Calendario</button>
       <button class="tab" data-view="activities">Actividades</button>
       <button class="tab" data-view="recovery">Recuperación</button>
@@ -149,12 +150,32 @@
       </div>
     </section>
 
+    <section id="libraryView" class="view" style="margin-top:18px">
+      <div class="stack">
+        <section class="card library-hero">
+          <div class="card-head">
+            <div><p class="eyebrow">Biblioteca de sesiones</p><h2>Elegir, adaptar y reutilizar</h2><p>Plantillas completas de running y fuerza. La carga es orientativa: el coach la ajusta al deportista.</p></div>
+            <div class="actions"><button id="newBlankFromLibrary" class="btn secondary" type="button">+ Sesión desde cero</button></div>
+          </div>
+          <div class="card-body">
+            <div class="field-row-3">
+              <label>Deporte<select id="librarySportFilter"><option value="all">Todos</option><option value="Run">Carrera</option><option value="Strength">Fuerza</option><option value="Ride">Ciclismo</option></select></label>
+              <label>Estímulo<select id="libraryStimulusFilter"><option value="all">Todos los estímulos</option></select></label>
+              <label>Buscar<input id="librarySearch" placeholder="VO2, umbral, trail, sóleo…"></label>
+            </div>
+            <p id="libraryStatus" class="muted small" style="margin:12px 0 0">Cargando biblioteca…</p>
+          </div>
+        </section>
+        <div id="libraryGrid" class="template-grid"><div class="empty-state">Cargando plantillas…</div></div>
+      </div>
+    </section>
+
     <section id="weekView" class="view" style="margin-top:18px">
       <div class="calendar-workspace">
         <section class="card calendar-card">
           <div class="card-head calendar-head">
             <div><h2>Calendario de planificación</h2><p>Planifica y compara en el mismo calendario lo previsto con lo realizado.</p></div>
-            <div class="actions"><button id="syncCalendarActuals" class="btn soft small" type="button">Actualizar realizados</button><span id="weekConnectionBadge" class="badge pending">Intervals pendiente</span></div>
+            <div class="actions"><button id="openLibraryFromCalendar" class="btn secondary small" type="button">Biblioteca</button><button id="importPlanButton" class="btn secondary small" type="button">Importar plan</button><button id="exportWeekButton" class="btn soft small" type="button">Exportar semana</button><button id="syncCalendarActuals" class="btn soft small" type="button">Actualizar realizados</button><span id="weekConnectionBadge" class="badge pending">Intervals pendiente</span><input id="planImportFile" type="file" accept="application/json,.json" hidden></div>
           </div>
           <div class="calendar-toolbar">
             <div class="actions">
@@ -242,7 +263,7 @@
           <section class="card">
             <div id="activityPlaceholder" class="empty-detail">Selecciona una actividad para revisar métricas, intervalos y análisis.</div>
             <div id="activityDetail" class="card-body hidden">
-              <div class="activity-title-row"><div><p id="activityDate" class="eyebrow"></p><h2 id="activityName">Actividad</h2><p id="activitySport" class="muted"></p></div><div class="actions"><button id="downloadActivity" class="btn secondary small" type="button">Descargar para análisis</button><span id="activityLoadBadge" class="badge">Carga —</span></div></div>
+              <div class="activity-title-row"><div><p id="activityDate" class="eyebrow"></p><h2 id="activityName">Actividad</h2><p id="activitySport" class="muted"></p></div><div class="actions"><button id="downloadActivityOriginal" class="btn secondary small" type="button">Archivo original</button><button id="downloadActivity" class="btn primary small" type="button">Paquete para análisis</button><span id="activityLoadBadge" class="badge">Carga —</span></div></div>
               <div class="grid grid-4" style="margin-top:16px">
                 <article class="metric"><span>Duración</span><strong id="activityDuration">—</strong><small>Tiempo en movimiento</small></article>
                 <article class="metric"><span>Distancia</span><strong id="activityDistance">—</strong><small>Recorrido total</small></article>
@@ -473,9 +494,21 @@
     </div>
   </div>
 
+  <div id="planImportModal" class="modal-backdrop hidden">
+    <div class="modal plan-modal">
+      <div class="modal-head"><div><p class="eyebrow">Importación RunFlow</p><h2>Revisar planificación</h2></div><button id="closePlanImportModal" class="btn secondary" type="button">Cerrar</button></div>
+      <div class="modal-body">
+        <div id="planImportSummary" class="import-summary"></div>
+        <div id="planImportWeeks" class="stack" style="margin-top:14px"></div>
+        <div class="form-section" style="margin-top:14px"><strong>Modo seguro</strong><p class="muted small" style="margin:6px 0 0">Las sesiones nuevas se añaden. Si el archivo contiene el mismo UUID de una sesión existente, esa sesión se actualiza. No se eliminan otras sesiones.</p></div>
+        <div class="actions" style="margin-top:18px"><button id="confirmPlanImport" class="btn primary" type="button">Importar planificación</button><span id="planImportStatus" class="muted small"></span></div>
+      </div>
+    </div>
+  </div>
+
   <div id="sessionModal" class="modal-backdrop hidden">
     <div class="modal">
-      <div class="modal-head"><div><p class="eyebrow">Constructor de sesión</p><h2 id="modalTitle">Editar entrenamiento</h2></div><button id="closeModal" class="btn secondary" type="button">Cerrar</button></div>
+      <div class="modal-head"><div><p class="eyebrow">Constructor de sesión</p><h2 id="modalTitle">Editar entrenamiento</h2></div><div class="actions"><button id="chooseTemplateFromModal" class="btn soft small" type="button">Biblioteca</button><button id="saveAsTemplate" class="btn secondary small" type="button">Guardar plantilla</button><button id="closeModal" class="btn secondary" type="button">Cerrar</button></div></div>
       <div class="modal-body">
         <div class="field-row-3"><label>Fecha<input id="modalWorkoutDate" type="date"></label><label>Deporte<select id="modalSport"><option value="Run">Carrera</option><option value="Ride">Ciclismo</option><option value="Strength">Fuerza</option><option value="Rest">Descanso</option></select></label><label>Prioridad<select id="modalPriority"><option value="A">A · Clave</option><option value="B">B · Importante</option><option value="C">C · Complementaria</option></select></label></div>
         <div class="field-row-3" style="margin-top:12px"><label>Carga prevista<input id="modalLoad" type="number" min="0"></label><label>Duración prevista (min)<input id="modalDuration" type="number" min="0" step="1"></label><label>Distancia prevista (km)<input id="modalDistance" type="number" min="0" step="0.1"></label></div>
@@ -486,7 +519,12 @@
         <label style="margin-top:12px">Resumen visible para el deportista<textarea id="modalSummary"></textarea></label>
         <div class="form-section" style="margin-top:14px"><h3>Calentamiento</h3><div class="field-row"><label>Duración (min)<input id="warmupMinutes" type="number" min="0"></label><label>Objetivo<input id="warmupTarget" placeholder="Z2 Pace / Z2 HR"></label></div></div>
         <div class="form-section"><h3>Activación opcional</h3><div class="field-row-3"><label>Repeticiones<input id="activationReps" type="number" min="0"></label><label>Trabajo (s)<input id="activationWork" type="number" min="0"></label><label>Recuperación (s)<input id="activationRecovery" type="number" min="0"></label></div><div class="field-row" style="margin-top:10px"><label>Objetivo trabajo<input id="activationTarget" placeholder="Z4 Pace"></label><label>Objetivo recuperación<input id="activationRecoveryTarget" placeholder="Z1 Pace"></label></div></div>
-        <div class="form-section"><div class="card-head" style="padding:0 0 10px"><div><h3>Bloques centrales</h3></div><button id="addBlock" class="btn secondary small" type="button">+ Bloque</button></div><div id="centralBlocks" class="stack"></div></div>
+        <div id="strengthBuilder" class="form-section hidden">
+          <div class="card-head" style="padding:0 0 10px"><div><h3>Fuerza · ejercicios</h3><p>Series, repeticiones, peso y descanso. El peso puede dejarse vacío y completarse cuando se conozca.</p></div><button id="addStrengthExercise" class="btn secondary small" type="button">+ Ejercicio</button></div>
+          <div class="field-row" style="margin-bottom:12px"><label>Coste neuromuscular<select id="strengthNeuromuscularCost"><option value="low">Bajo</option><option value="medium">Medio</option><option value="high">Alto</option></select></label><label>Objetivo de ejecución<input id="strengthExecutionNote" placeholder="Ej.: sin llegar al fallo, RIR 3"></label></div>
+          <div id="strengthExercises" class="strength-exercise-list"></div>
+        </div>
+        <div id="enduranceBlocksSection" class="form-section"><div class="card-head" style="padding:0 0 10px"><div><h3>Bloques centrales</h3></div><button id="addBlock" class="btn secondary small" type="button">+ Bloque</button></div><div id="centralBlocks" class="stack"></div></div>
         <div class="form-section"><h3>Vuelta a la calma</h3><div class="field-row"><label>Duración (min)<input id="cooldownMinutes" type="number" min="0"></label><label>Objetivo<input id="cooldownTarget" placeholder="Z1 Pace"></label></div></div>
         <label style="margin-top:14px">Texto estructurado para Intervals<textarea id="structuredDescription" style="min-height:170px"></textarea></label>
         <div class="actions session-modal-actions" style="margin-top:16px"><button id="deleteSessionModal" class="btn danger hidden" type="button">Eliminar sesión</button><span class="actions-spacer"></span><button id="generateDescription" class="btn secondary" type="button">Generar texto</button><button id="saveSessionModal" class="btn primary" type="button">Guardar sesión</button></div>
@@ -494,6 +532,6 @@
     </div>
   </div>
 
-  <script src="/js/coach.js?v=2.0"></script>
-<script src="/js/register-sw.js?v=2.0"></script></body>
+  <script src="/js/coach.js?v=2.3"></script>
+<script src="/js/register-sw.js?v=2.3"></script></body>
 </html>

@@ -21,8 +21,114 @@ const APP_ENCRYPTION_KEY = String(process.env.APP_ENCRYPTION_KEY || '');
 const OPENAI_API_KEY = String(process.env.OPENAI_API_KEY || '');
 const OPENAI_MODEL = String(process.env.OPENAI_MODEL || 'gpt-5.6-terra');
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
-const APP_VERSION = 'Online Pilot 1.5';
+const APP_VERSION = 'Online Pilot 1.6';
 const INTERVALS_API_BASE = 'https://intervals.icu/api/v1';
+
+const RUNFLOW_PLAN_SCHEMA = 'runflow.plan.v1';
+
+// Biblioteca base de sesiones. La carga es orientativa y siempre editable por el coach.
+const SYSTEM_WORKOUT_TEMPLATES = [
+  {
+    id: 'system-run-z2-40', source: 'system', name: 'Rodaje Z2 · 40 min', category: 'Rodaje', sport: 'Run', stimulus: 'Base aeróbica',
+    template_data: { sport: 'Run', priority: 'C', planned_load: 40, planned_duration_min: 40, planned_distance_km: 7, planned_elevation_m: 50, is_strength: false,
+      title: 'Rodaje aeróbico suave', session_objective: 'Acumular trabajo aeróbico de baja intensidad sin generar fatiga relevante.', adaptation_target: 'Base aeróbica', purpose: 'Sumar volumen fácil y favorecer la continuidad del entrenamiento.', summary: '40 min de carrera suave en Z2 por terreno cómodo. Ritmo controlado y sensación de poder seguir al terminar.',
+      blocks: [{ type: 'warmup', duration_min: 10, target: 'Z1' }, { type: 'central', name: 'Rodaje Z2', repetitions: 1, work_value: 20, work_unit: 'm', target: 'Z2', recovery_value: 0, recovery_unit: 'm', recovery_target: '' }, { type: 'cooldown', duration_min: 10, target: 'Z1' }], structured_description: 'Calentamiento\n- 10m Z1\n\nRodaje Z2\n- 20m Z2\n\nVuelta a la calma\n- 10m Z1' }
+  },
+  {
+    id: 'system-run-recovery-30', source: 'system', name: 'Regenerativo · 30 min', category: 'Rodaje', sport: 'Run', stimulus: 'Recuperación',
+    template_data: { sport: 'Run', priority: 'C', planned_load: 22, planned_duration_min: 30, planned_distance_km: 5, planned_elevation_m: 30, is_strength: false,
+      title: 'Rodaje regenerativo', session_objective: 'Favorecer la recuperación manteniendo movimiento aeróbico muy suave.', adaptation_target: 'Recuperación activa', purpose: 'Facilitar la asimilación de la carga previa.', summary: '30 min muy suaves, respiración cómoda y sin buscar ritmo.',
+      blocks: [{ type: 'warmup', duration_min: 5, target: 'Z1' }, { type: 'central', name: 'Rodaje regenerativo', repetitions: 1, work_value: 20, work_unit: 'm', target: 'Z1-Z2 baja', recovery_value: 0, recovery_unit: 'm', recovery_target: '' }, { type: 'cooldown', duration_min: 5, target: 'Z1' }] }
+  },
+  {
+    id: 'system-run-threshold-3x8', source: 'system', name: 'Umbral · 3 × 8 min', category: 'Umbral', sport: 'Run', stimulus: 'Umbral',
+    template_data: { sport: 'Run', priority: 'A', planned_load: 55, planned_duration_min: 60, planned_distance_km: 11, planned_elevation_m: 80, is_strength: false,
+      title: '3 × 8 min umbral', session_objective: 'Acumular tiempo de calidad cerca del umbral manteniendo control técnico y metabólico.', adaptation_target: 'Umbral / LT2', purpose: 'Desarrollar la capacidad de sostener intensidades altas sin convertir la sesión en un esfuerzo máximo.', summary: '3 × 8 min a intensidad de umbral con 2 min de trote suave entre bloques.',
+      blocks: [{ type: 'warmup', duration_min: 15, target: 'Z1-Z2' }, { type: 'activation', repetitions: 4, work_sec: 20, recovery_sec: 40, target: 'Progresivo', recovery_target: 'Z1' }, { type: 'central', name: 'Umbral', repetitions: 3, work_value: 8, work_unit: 'm', target: 'Z4 / umbral', recovery_value: 2, recovery_unit: 'm', recovery_target: 'Trote Z1' }, { type: 'cooldown', duration_min: 10, target: 'Z1' }] }
+  },
+  {
+    id: 'system-run-threshold-4x6', source: 'system', name: 'Umbral · 4 × 6 min', category: 'Umbral', sport: 'Run', stimulus: 'Umbral',
+    template_data: { sport: 'Run', priority: 'A', planned_load: 54, planned_duration_min: 60, planned_distance_km: 11, planned_elevation_m: 80, is_strength: false,
+      title: '4 × 6 min umbral', session_objective: 'Trabajar el umbral con repeticiones controladas y consistentes.', adaptation_target: 'Umbral / LT2', purpose: 'Acumular 24 minutos de trabajo de calidad con menor fatiga por repetición.', summary: '4 × 6 min a intensidad de umbral, recuperando 2 min al trote.',
+      blocks: [{ type: 'warmup', duration_min: 15, target: 'Z1-Z2' }, { type: 'central', name: 'Umbral', repetitions: 4, work_value: 6, work_unit: 'm', target: 'Z4 / umbral', recovery_value: 2, recovery_unit: 'm', recovery_target: 'Z1' }, { type: 'cooldown', duration_min: 10, target: 'Z1' }] }
+  },
+  {
+    id: 'system-run-vo2-6x3', source: 'system', name: 'VO₂max · 6 × 3 min', category: 'VO₂max', sport: 'Run', stimulus: 'VO₂max',
+    template_data: { sport: 'Run', priority: 'A', planned_load: 60, planned_duration_min: 58, planned_distance_km: 10.5, planned_elevation_m: 80, is_strength: false,
+      title: '6 × 3 min VO₂max', session_objective: 'Elevar el consumo de oxígeno y la capacidad de repetir esfuerzos intensos manteniendo buena mecánica.', adaptation_target: 'VO₂max', purpose: 'Introducir un estímulo intenso y dosificado dentro del bloque.', summary: '6 × 3 min fuerte y controlado, con 2 min suaves entre repeticiones.',
+      blocks: [{ type: 'warmup', duration_min: 15, target: 'Z1-Z2' }, { type: 'activation', repetitions: 4, work_sec: 20, recovery_sec: 40, target: 'Progresivo', recovery_target: 'Z1' }, { type: 'central', name: 'VO₂max', repetitions: 6, work_value: 3, work_unit: 'm', target: 'Z5 / VO₂max', recovery_value: 2, recovery_unit: 'm', recovery_target: 'Z1' }, { type: 'cooldown', duration_min: 10, target: 'Z1' }] }
+  },
+  {
+    id: 'system-run-vo2-10x1', source: 'system', name: 'VO₂max · 10 × 1 min', category: 'VO₂max', sport: 'Run', stimulus: 'VO₂max',
+    template_data: { sport: 'Run', priority: 'B', planned_load: 48, planned_duration_min: 45, planned_distance_km: 8, planned_elevation_m: 60, is_strength: false,
+      title: '10 × 1 min rápido', session_objective: 'Trabajar velocidad aeróbica y economía a ritmos altos con baja duración por repetición.', adaptation_target: 'VO₂max / economía', purpose: 'Aportar intensidad sin acumular demasiado tiempo continuo de fatiga.', summary: '10 × 1 min rápido con 1 min suave. Técnica limpia y sin sprintar.',
+      blocks: [{ type: 'warmup', duration_min: 12, target: 'Z1-Z2' }, { type: 'central', name: 'Repeticiones rápidas', repetitions: 10, work_value: 1, work_unit: 'm', target: 'Z5', recovery_value: 1, recovery_unit: 'm', recovery_target: 'Z1' }, { type: 'cooldown', duration_min: 10, target: 'Z1' }] }
+  },
+  {
+    id: 'system-run-hills-10x45', source: 'system', name: 'Cuestas · 10 × 45 s', category: 'Cuestas', sport: 'Run', stimulus: 'Fuerza específica / VO₂',
+    template_data: { sport: 'Run', priority: 'B', planned_load: 45, planned_duration_min: 48, planned_distance_km: 7.5, planned_elevation_m: 250, is_strength: false,
+      title: '10 × 45 s en cuesta', session_objective: 'Mejorar fuerza específica, técnica y capacidad de producir potencia en subida.', adaptation_target: 'Fuerza específica de carrera', purpose: 'Transferir fuerza al gesto de carrera con un estímulo corto y controlado.', summary: '10 × 45 s en cuesta con recuperación bajando suave. Priorizar técnica y potencia estable.',
+      blocks: [{ type: 'warmup', duration_min: 15, target: 'Z1-Z2' }, { type: 'central', name: 'Cuestas', repetitions: 10, work_value: 45, work_unit: 's', target: 'Fuerte controlado', recovery_value: 75, recovery_unit: 's', recovery_target: 'Bajada suave' }, { type: 'cooldown', duration_min: 10, target: 'Z1' }] }
+  },
+  {
+    id: 'system-run-long-90', source: 'system', name: 'Tirada larga · 90 min', category: 'Tirada larga', sport: 'Run', stimulus: 'Resistencia aeróbica',
+    template_data: { sport: 'Run', priority: 'A', planned_load: 65, planned_duration_min: 90, planned_distance_km: 15, planned_elevation_m: 500, is_strength: false,
+      title: 'Tirada larga aeróbica', session_objective: 'Desarrollar resistencia y tolerancia al tiempo de apoyo manteniendo intensidad aeróbica.', adaptation_target: 'Resistencia aeróbica', purpose: 'Construir la base de duración necesaria para trail y esfuerzos prolongados.', summary: '90 min aeróbicos, controlando el esfuerzo en subida y recuperando en terreno favorable.',
+      blocks: [{ type: 'warmup', duration_min: 10, target: 'Z1-Z2' }, { type: 'central', name: 'Tirada larga', repetitions: 1, work_value: 70, work_unit: 'm', target: 'Z2 / esfuerzo aeróbico', recovery_value: 0, recovery_unit: 'm', recovery_target: '' }, { type: 'cooldown', duration_min: 10, target: 'Z1' }] }
+  },
+  {
+    id: 'system-run-trail-climb', source: 'system', name: 'Trail · subidas controladas', category: 'Trail específico', sport: 'Run', stimulus: 'Subida / resistencia',
+    template_data: { sport: 'Run', priority: 'A', planned_load: 58, planned_duration_min: 70, planned_distance_km: 10, planned_elevation_m: 600, is_strength: false,
+      title: 'Trail con subidas controladas', session_objective: 'Mejorar la capacidad de subir de forma eficiente sin disparar la fatiga.', adaptation_target: 'Resistencia específica trail', purpose: 'Acercar el estímulo al terreno objetivo manteniendo control de intensidad.', summary: '70 min de trail. Subidas a esfuerzo controlado, bajadas fluidas y sin buscar velocidad máxima.',
+      blocks: [{ type: 'warmup', duration_min: 10, target: 'Suave' }, { type: 'central', name: 'Trail aeróbico', repetitions: 1, work_value: 50, work_unit: 'm', target: 'Z2-Z3 en subida', recovery_value: 0, recovery_unit: 'm', recovery_target: '' }, { type: 'cooldown', duration_min: 10, target: 'Suave' }] }
+  },
+  {
+    id: 'system-strength-trail-low-fatigue', source: 'system', name: 'Fuerza trail · baja fatiga · 35 min', category: 'Fuerza trail', sport: 'Strength', stimulus: 'Fuerza específica trail',
+    template_data: { sport: 'Strength', priority: 'B', planned_load: 40, planned_duration_min: 35, planned_distance_km: 0, planned_elevation_m: 0, is_strength: true,
+      title: 'Fuerza específica trail', session_objective: 'Desarrollar fuerza útil para subida, bajada y estabilidad con baja fatiga residual.', adaptation_target: 'Fuerza específica trail', purpose: 'Mejorar la fuerza de piernas y estabilidad sin comprometer las sesiones de carrera.', summary: '35 min de fuerza específica. Calidad de ejecución, descansos amplios y sin llegar al fallo.',
+      blocks: [{ type: 'warmup', duration_min: 6, target: 'Movilidad + activación' }, { type: 'strength', neuromuscular_cost: 'low', exercises: [
+        { name: 'Split squat', sets: 3, reps: '6/6', weight_kg: null, rir: 3, rest_sec: 90, unilateral: true, notes: 'Control de rodilla y pelvis' },
+        { name: 'Peso muerto rumano a una pierna', sets: 3, reps: '6/6', weight_kg: null, rir: 3, rest_sec: 90, unilateral: true, notes: 'Cadera estable' },
+        { name: 'Step-up alto', sets: 2, reps: '8/8', weight_kg: null, rir: 3, rest_sec: 75, unilateral: true, notes: 'Empuje completo' },
+        { name: 'Elevación de sóleo', sets: 3, reps: '10/10', weight_kg: null, rir: 3, rest_sec: 60, unilateral: false, notes: 'Pausa arriba' },
+        { name: 'Plancha lateral', sets: 2, reps: '30 s/lado', weight_kg: null, rir: null, rest_sec: 45, unilateral: false, notes: 'Pelvis neutra' }
+      ] }, { type: 'cooldown', duration_min: 4, target: 'Movilidad suave' }] }
+  },
+  {
+    id: 'system-strength-general-functional', source: 'system', name: 'Funcional general · 40 min', category: 'Fuerza general', sport: 'Strength', stimulus: 'Fuerza general',
+    template_data: { sport: 'Strength', priority: 'B', planned_load: 60, planned_duration_min: 40, planned_distance_km: 0, planned_elevation_m: 0, is_strength: true,
+      title: 'Funcional general', session_objective: 'Desarrollar fuerza general mediante un trabajo global de intensidad moderada.', adaptation_target: 'Fuerza general', purpose: 'Mantener una base de fuerza global.', summary: '40 min de fuerza funcional general. Evitar el fallo y controlar la fatiga de piernas.',
+      blocks: [{ type: 'warmup', duration_min: 6, target: 'Movilidad + activación' }, { type: 'strength', neuromuscular_cost: 'medium', exercises: [
+        { name: 'Sentadilla goblet', sets: 3, reps: '10', weight_kg: null, rir: 2, rest_sec: 60, unilateral: false, notes: '' },
+        { name: 'Peso muerto rumano', sets: 3, reps: '10', weight_kg: null, rir: 2, rest_sec: 60, unilateral: false, notes: '' },
+        { name: 'Remo con mancuerna', sets: 3, reps: '10/10', weight_kg: null, rir: 2, rest_sec: 45, unilateral: true, notes: '' },
+        { name: 'Press de hombro', sets: 3, reps: '8/8', weight_kg: null, rir: 2, rest_sec: 45, unilateral: true, notes: '' },
+        { name: 'Farmer carry', sets: 3, reps: '30 s', weight_kg: null, rir: null, rest_sec: 45, unilateral: false, notes: '' }
+      ] }, { type: 'cooldown', duration_min: 4, target: 'Movilidad suave' }] }
+  },
+  {
+    id: 'system-strength-downhill-eccentric', source: 'system', name: 'Fuerza excéntrica · bajadas', category: 'Fuerza trail', sport: 'Strength', stimulus: 'Tolerancia excéntrica',
+    template_data: { sport: 'Strength', priority: 'B', planned_load: 42, planned_duration_min: 35, planned_distance_km: 0, planned_elevation_m: 0, is_strength: true,
+      title: 'Fuerza excéntrica para bajadas', session_objective: 'Mejorar la tolerancia excéntrica de cuádriceps y el control de apoyo para descensos.', adaptation_target: 'Fuerza excéntrica / descenso', purpose: 'Preparar la musculatura para el coste mecánico de las bajadas de trail.', summary: 'Trabajo excéntrico controlado, sin llegar al fallo y con especial atención a la técnica.',
+      blocks: [{ type: 'warmup', duration_min: 6, target: 'Movilidad + activación' }, { type: 'strength', neuromuscular_cost: 'medium', exercises: [
+        { name: 'Step-down lento', sets: 3, reps: '6/6', weight_kg: null, rir: 3, rest_sec: 75, unilateral: true, notes: '3-4 s de bajada' },
+        { name: 'Split squat excéntrico', sets: 3, reps: '6/6', weight_kg: null, rir: 3, rest_sec: 90, unilateral: true, notes: '3 s de bajada' },
+        { name: 'Sentadilla española isométrica', sets: 3, reps: '30-40 s', weight_kg: null, rir: null, rest_sec: 60, unilateral: false, notes: '' },
+        { name: 'Gemelo excéntrico', sets: 3, reps: '8/8', weight_kg: null, rir: 3, rest_sec: 60, unilateral: true, notes: 'Bajada lenta' }
+      ] }, { type: 'cooldown', duration_min: 4, target: 'Movilidad suave' }] }
+  },
+  {
+    id: 'system-strength-soleus-calf', source: 'system', name: 'Sóleo + gemelo · 25 min', category: 'Fuerza trail', sport: 'Strength', stimulus: 'Pie / tobillo',
+    template_data: { sport: 'Strength', priority: 'C', planned_load: 25, planned_duration_min: 25, planned_distance_km: 0, planned_elevation_m: 0, is_strength: true,
+      title: 'Sóleo, gemelo y pie', session_objective: 'Reforzar la musculatura del tobillo y la capacidad de producir fuerza repetida.', adaptation_target: 'Sóleo / gemelo / pie', purpose: 'Mejorar robustez y transferencia de fuerza en carrera y subida.', summary: '25 min específicos de sóleo, gemelo y pie con ejecución controlada.',
+      blocks: [{ type: 'warmup', duration_min: 4, target: 'Tobillo + pie' }, { type: 'strength', neuromuscular_cost: 'low', exercises: [
+        { name: 'Sóleo sentado', sets: 4, reps: '10', weight_kg: null, rir: 3, rest_sec: 60, unilateral: false, notes: '' },
+        { name: 'Gemelo de pie', sets: 3, reps: '8/8', weight_kg: null, rir: 3, rest_sec: 60, unilateral: true, notes: '' },
+        { name: 'Tibial anterior', sets: 3, reps: '15', weight_kg: null, rir: 3, rest_sec: 45, unilateral: false, notes: '' },
+        { name: 'Short foot', sets: 2, reps: '8/8', weight_kg: null, rir: null, rest_sec: 30, unilateral: true, notes: 'Control del arco plantar' }
+      ] }, { type: 'cooldown', duration_min: 3, target: 'Movilidad suave' }] }
+  }
+];
 
 function validateRuntimeConfig() {
   if (DEMO_MODE) return;
@@ -82,6 +188,20 @@ function sendText(res, status, text, type = 'text/plain; charset=utf-8') {
     ...securityHeaders(),
   });
   res.end(text);
+}
+
+
+function sendBuffer(res, status, buffer, type = 'application/octet-stream', filename = null) {
+  const body = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer || '');
+  const headers = {
+    'Content-Type': type,
+    'Content-Length': body.length,
+    'Cache-Control': 'no-store',
+    ...securityHeaders(),
+  };
+  if (filename) headers['Content-Disposition'] = `attachment; filename="${String(filename).replace(/["\\\r\n]/g, '_')}"`;
+  res.writeHead(status, headers);
+  res.end(body);
 }
 
 function readJson(req, maxBytes = 1_000_000) {
@@ -832,6 +952,85 @@ async function saveZones(athleteId, body) {
   const rows = [...zones.hr, ...zones.pace].map(item => ({ athlete_id: athleteId, ...item }));
   if (rows.length) await prodRows('training_zones', '', { method: 'POST', body: rows });
   return zones;
+}
+
+
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function normaliseTemplateData(source) {
+  const item = safeObject(source);
+  return {
+    sport: sanitiseText(item.sport || 'Run', 40),
+    priority: ['A', 'B', 'C'].includes(item.priority) ? item.priority : 'B',
+    planned_load: numberOrNull(item.planned_load, 0, 1000) ?? 0,
+    planned_duration_min: numberOrNull(item.planned_duration_min, 0, 2000),
+    planned_distance_km: numberOrNull(item.planned_distance_km, 0, 2000),
+    planned_elevation_m: numberOrNull(item.planned_elevation_m, 0, 100000),
+    is_strength: Boolean(item.is_strength || String(item.sport || '').toLowerCase() === 'strength'),
+    title: sanitiseText(item.title || 'Sesión', 160),
+    session_objective: sanitiseText(item.session_objective, 3000),
+    adaptation_target: sanitiseText(item.adaptation_target, 1000),
+    purpose: sanitiseText(item.purpose, 3000),
+    summary: sanitiseText(item.summary, 3000),
+    structured_description: sanitiseText(item.structured_description || item.summary, 10000),
+    blocks: Array.isArray(item.blocks) ? cloneJson(item.blocks.slice(0, 30)) : [],
+  };
+}
+
+async function listWorkoutTemplates(session, athleteId = null) {
+  const system = SYSTEM_WORKOUT_TEMPLATES.map(item => ({ ...cloneJson(item), editable: false }));
+  if (DEMO_MODE) {
+    if (!Array.isArray(demo.workout_templates)) demo.workout_templates = [];
+    const custom = demo.workout_templates
+      .filter(item => item.coach_user_id === session.user.id && (!item.athlete_id || !athleteId || item.athlete_id === athleteId))
+      .map(item => ({ ...cloneJson(item), source: 'custom', editable: true }));
+    return [...custom, ...system];
+  }
+  const filters = [`coach_user_id=eq.${encodeURIComponent(session.user.id)}`];
+  if (athleteId) filters.push(`or=(athlete_id.is.null,athlete_id.eq.${encodeURIComponent(athleteId)})`);
+  const rows = await prodRows('workout_templates', `${filters.join('&')}&select=*&order=updated_at.desc`);
+  return [
+    ...rows.map(item => ({ ...item, source: 'custom', editable: true })),
+    ...system,
+  ];
+}
+
+async function createWorkoutTemplate(session, body) {
+  const athleteId = sanitiseText(body && body.athlete_id, 80) || null;
+  if (athleteId) await ensureCoachAccess(session, athleteId);
+  const row = {
+    id: crypto.randomUUID(),
+    coach_user_id: session.user.id,
+    athlete_id: athleteId,
+    name: sanitiseText(body && body.name, 160),
+    category: sanitiseText(body && body.category || 'Mi biblioteca', 80),
+    sport: sanitiseText(body && body.sport || body && body.template_data && body.template_data.sport || 'Run', 40),
+    stimulus: sanitiseText(body && body.stimulus || body && body.template_data && body.template_data.adaptation_target, 160),
+    template_data: normaliseTemplateData(body && (body.template_data || body.workout || body)),
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  if (!row.name) throw Object.assign(new Error('Pon un nombre a la plantilla.'), { status: 400 });
+  if (DEMO_MODE) {
+    if (!Array.isArray(demo.workout_templates)) demo.workout_templates = [];
+    demo.workout_templates.unshift(row); saveDemo();
+    return { ...row, source: 'custom', editable: true };
+  }
+  const rows = await prodRows('workout_templates', '', { method: 'POST', body: row });
+  return { ...rows[0], source: 'custom', editable: true };
+}
+
+async function deleteWorkoutTemplate(session, templateId) {
+  if (DEMO_MODE) {
+    if (!Array.isArray(demo.workout_templates)) demo.workout_templates = [];
+    const before = demo.workout_templates.length;
+    demo.workout_templates = demo.workout_templates.filter(item => !(item.id === templateId && item.coach_user_id === session.user.id));
+    if (demo.workout_templates.length === before) throw Object.assign(new Error('Plantilla no encontrada.'), { status: 404 });
+    saveDemo(); return;
+  }
+  await prodRows('workout_templates', `id=eq.${encodeURIComponent(templateId)}&coach_user_id=eq.${encodeURIComponent(session.user.id)}`, { method: 'DELETE', prefer: 'return=minimal' });
 }
 
 async function persistWeekWorkouts(savedWeek, athleteId, workouts, publicationStatus) {
@@ -2555,6 +2754,175 @@ async function syncWeekToIntervals(athleteId, week) {
 }
 
 
+
+async function intervalsFetchBinary(apiKey, endpoint) {
+  const response = await fetch(`${INTERVALS_API_BASE}${endpoint}`, {
+    headers: {
+      Authorization: `Basic ${Buffer.from(`API_KEY:${apiKey}`).toString('base64')}`,
+      Accept: 'application/octet-stream, application/gzip, */*',
+    },
+  });
+  const arrayBuffer = await response.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+  if (!response.ok) {
+    const text = buffer.toString('utf8').slice(0, 1000);
+    let data = text;
+    try { data = text ? JSON.parse(text) : null; } catch { /* keep text */ }
+    throw Object.assign(new Error((data && (data.message || data.error)) || `Intervals.icu respondió con HTTP ${response.status}.`), { status: response.status, details: data });
+  }
+  return {
+    buffer,
+    content_type: response.headers.get('content-type') || 'application/octet-stream',
+    content_disposition: response.headers.get('content-disposition') || '',
+  };
+}
+
+const CRC32_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n += 1) {
+    let c = n;
+    for (let k = 0; k < 8; k += 1) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+    table[n] = c >>> 0;
+  }
+  return table;
+})();
+
+function crc32(buffer) {
+  let crc = 0xffffffff;
+  for (const byte of buffer) crc = CRC32_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function dosDateTime(date = new Date()) {
+  const year = Math.max(1980, date.getFullYear());
+  const time = ((date.getHours() & 31) << 11) | ((date.getMinutes() & 63) << 5) | (Math.floor(date.getSeconds() / 2) & 31);
+  const day = ((year - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate();
+  return { time, day };
+}
+
+function buildZip(entries) {
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+  const stamp = dosDateTime();
+  for (const entry of entries) {
+    const name = Buffer.from(String(entry.name || 'file').replace(/\\/g, '/'), 'utf8');
+    const data = Buffer.isBuffer(entry.data) ? entry.data : Buffer.from(String(entry.data ?? ''), 'utf8');
+    const crc = crc32(data);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(0, 6);
+    local.writeUInt16LE(0, 8); // stored, no compression
+    local.writeUInt16LE(stamp.time, 10);
+    local.writeUInt16LE(stamp.day, 12);
+    local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    local.writeUInt16LE(0, 28);
+    localParts.push(local, name, data);
+
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(0, 8);
+    central.writeUInt16LE(0, 10);
+    central.writeUInt16LE(stamp.time, 12);
+    central.writeUInt16LE(stamp.day, 14);
+    central.writeUInt32LE(crc, 16);
+    central.writeUInt32LE(data.length, 20);
+    central.writeUInt32LE(data.length, 24);
+    central.writeUInt16LE(name.length, 28);
+    central.writeUInt16LE(0, 30);
+    central.writeUInt16LE(0, 32);
+    central.writeUInt16LE(0, 34);
+    central.writeUInt16LE(0, 36);
+    central.writeUInt32LE(0, 38);
+    central.writeUInt32LE(offset, 42);
+    centralParts.push(central, name);
+    offset += local.length + name.length + data.length;
+  }
+  const centralDirectory = Buffer.concat(centralParts);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(0, 4);
+  end.writeUInt16LE(0, 6);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(centralDirectory.length, 12);
+  end.writeUInt32LE(offset, 16);
+  end.writeUInt16LE(0, 20);
+  return Buffer.concat([...localParts, centralDirectory, end]);
+}
+
+function safeFilename(value, fallback = 'activity') {
+  const cleaned = String(value || fallback).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^_+|_+$/g, '');
+  return cleaned.slice(0, 100) || fallback;
+}
+
+async function originalActivityDownload(athleteId, externalId) {
+  if (DEMO_MODE) throw Object.assign(new Error('La descarga del archivo original solo está disponible con Intervals conectado.'), { status: 400 });
+  const apiKey = await getIntervalsKey(athleteId);
+  if (!apiKey) throw Object.assign(new Error('Este deportista todavía no tiene Intervals.icu conectado.'), { status: 409 });
+  const activity = await activityRowByExternalId(athleteId, externalId);
+  const result = await intervalsFetchBinary(apiKey, `/activity/${encodeURIComponent(externalId)}/file`);
+  const fileType = String(activity && activity.raw_summary && activity.raw_summary.file_type || 'fit').replace(/[^a-z0-9]/gi, '').toLowerCase() || 'fit';
+  const base = safeFilename(`${String(activity && activity.activity_date || '').slice(0, 10)}_${activity && activity.name || externalId}`);
+  return { ...result, filename: `${base}.${fileType}.gz` };
+}
+
+async function activityAnalysisPackage(session, athleteId, externalId) {
+  const detail = await getActivityDetail(session, athleteId, externalId);
+  const activity = detail.activity || {};
+  const base = safeFilename(`${String(activity.activity_date || '').slice(0, 10)}_${activity.name || externalId}`);
+  const manifest = {
+    schema: 'runflow.activity-package.v1',
+    generated_at: new Date().toISOString(),
+    intervals_activity_id: externalId,
+    athlete_id: athleteId,
+    files: ['activity.json', 'intervals_raw_detail.json', 'README.txt'],
+    note: 'Paquete de análisis. Incluye el contexto de RunFlow y, cuando Intervals lo permite, los archivos binarios original y procesado.',
+  };
+  const context = {
+    schema: 'runflow.activity-context.v1',
+    generated_at: manifest.generated_at,
+    activity: { ...activity, raw_summary: undefined },
+    planned: detail.planned || null,
+    recovery: detail.recovery || [],
+    review: detail.review || null,
+  };
+  const entries = [
+    { name: 'manifest.json', data: JSON.stringify(manifest, null, 2) },
+    { name: 'activity.json', data: JSON.stringify(context, null, 2) },
+    { name: 'intervals_raw_detail.json', data: JSON.stringify(activity.raw_summary || {}, null, 2) },
+    { name: 'README.txt', data: 'RunFlow activity package v1\n\nSube este ZIP directamente a ChatGPT para analizar la sesión. El paquete contiene el detalle completo recibido de Intervals.icu, el contexto Plan vs Real, recuperación y, si están disponibles, los archivos de actividad.\n' },
+  ];
+  if (!DEMO_MODE) {
+    const apiKey = await getIntervalsKey(athleteId);
+    if (apiKey) {
+      try {
+        const original = await intervalsFetchBinary(apiKey, `/activity/${encodeURIComponent(externalId)}/file`);
+        const fileType = String(activity.raw_summary && activity.raw_summary.file_type || 'fit').replace(/[^a-z0-9]/gi, '').toLowerCase() || 'fit';
+        entries.push({ name: `original_activity.${fileType}.gz`, data: original.buffer });
+        manifest.files.push(`original_activity.${fileType}.gz`);
+      } catch (error) {
+        manifest.original_file_error = error.message;
+      }
+      try {
+        const processed = await intervalsFetchBinary(apiKey, `/activity/${encodeURIComponent(externalId)}/fit-file`);
+        entries.push({ name: 'intervals_processed.fit.gz', data: processed.buffer });
+        manifest.files.push('intervals_processed.fit.gz');
+      } catch (error) {
+        manifest.processed_fit_error = error.message;
+      }
+    }
+  }
+  entries[0] = { name: 'manifest.json', data: JSON.stringify(manifest, null, 2) };
+  return { buffer: buildZip(entries), filename: `${base}_runflow_analysis.zip` };
+}
+
 function unwrapIntervalsData(value) {
   if (Array.isArray(value)) return value;
   if (value && Array.isArray(value.data)) return value.data;
@@ -3114,6 +3482,25 @@ async function api(req, res, url) {
   }
 
 
+
+  const templatesMatch = pathname.match(/^\/api\/coach\/templates$/);
+  if (templatesMatch && method === 'GET') {
+    requireRole(session, 'coach');
+    const athleteId = sanitiseText(url.searchParams.get('athlete_id'), 80) || null;
+    if (athleteId) await ensureCoachAccess(session, athleteId);
+    return sendJson(res, 200, { templates: await listWorkoutTemplates(session, athleteId) });
+  }
+  if (templatesMatch && method === 'POST') {
+    requireRole(session, 'coach');
+    return sendJson(res, 201, { template: await createWorkoutTemplate(session, await readJson(req)) });
+  }
+  const templateDeleteMatch = pathname.match(/^\/api\/coach\/templates\/([^/]+)$/);
+  if (templateDeleteMatch && method === 'DELETE') {
+    requireRole(session, 'coach');
+    await deleteWorkoutTemplate(session, templateDeleteMatch[1]);
+    return sendJson(res, 200, { ok: true });
+  }
+
   const calendarMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/calendar$/);
   if (calendarMatch && method === 'GET') {
     const athleteId = calendarMatch[1];
@@ -3340,6 +3727,25 @@ async function api(req, res, url) {
     const { oldest, newest } = dateRangeParams(url, 35);
     const rows = url.searchParams.get('sync') === '1' ? await syncRecovery(athleteId, oldest, newest) : await listRecoveryRows(athleteId, oldest, newest);
     return sendJson(res, 200, { rows, oldest, newest });
+  }
+
+
+  const activityOriginalMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/activities\/([^/]+)\/original-file$/);
+  if (activityOriginalMatch && method === 'GET') {
+    const athleteId = activityOriginalMatch[1];
+    const externalId = decodeURIComponent(activityOriginalMatch[2]);
+    await ensureCoachAccess(session, athleteId);
+    const file = await originalActivityDownload(athleteId, externalId);
+    return sendBuffer(res, 200, file.buffer, file.content_type, file.filename);
+  }
+
+  const activityPackageMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/activities\/([^/]+)\/analysis-package$/);
+  if (activityPackageMatch && method === 'GET') {
+    const athleteId = activityPackageMatch[1];
+    const externalId = decodeURIComponent(activityPackageMatch[2]);
+    await ensureCoachAccess(session, athleteId);
+    const file = await activityAnalysisPackage(session, athleteId, externalId);
+    return sendBuffer(res, 200, file.buffer, 'application/zip', file.filename);
   }
 
   const activityDetailMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/activities\/([^/]+)$/);
