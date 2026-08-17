@@ -21,7 +21,7 @@ const APP_ENCRYPTION_KEY = String(process.env.APP_ENCRYPTION_KEY || '');
 const OPENAI_API_KEY = String(process.env.OPENAI_API_KEY || '');
 const OPENAI_MODEL = String(process.env.OPENAI_MODEL || 'gpt-5.6-terra');
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
-const APP_VERSION = 'Online Pilot 1.6.1';
+const APP_VERSION = 'Online Pilot 1.6.2';
 const INTERVALS_API_BASE = 'https://intervals.icu/api/v1';
 
 const RUNFLOW_PLAN_SCHEMA = 'runflow.plan.v1';
@@ -2737,20 +2737,269 @@ async function intervalsFetch(apiKey, endpoint, options = {}) {
   return data;
 }
 
-async function syncWeekToIntervals(athleteId, week) {
-  if (DEMO_MODE) return { demo: true, exported: week.workouts.length };
+function intervalsEventTypeForSport(sport) {
+  const value = String(sport || 'Run');
+  if (value === 'Strength') return 'WeightTraining';
+  if (value === 'Rest') return null;
+  return value;
+}
+
+function normaliseIntervalsTarget(target, sport = 'Run') {
+  let value = sanitiseText(target, 120).replace(/\s+/g, ' ').trim();
+  if (!value) return sport === 'Run' || sport === 'TrailRun' ? 'Z2 Pace' : 'Z2';
+
+  const zone = value.match(/\bZ\s*([1-7])(?:\s*-\s*Z?\s*([1-7]))?/i);
+  if (zone) {
+    const label = zone[2] ? `Z${zone[1]}-Z${zone[2]}` : `Z${zone[1]}`;
+    if (/\b(Pace|HR)\b/i.test(value)) return value;
+    if (sport === 'Run' || sport === 'TrailRun') return `${label} Pace`;
+    return label;
+  }
+
+  if (/\b(Pace|HR|FTP)\b/i.test(value) || /%/.test(value) || /\d:\d{2}/.test(value)) return value;
+  if (/progresiv/i.test(value)) return sport === 'Run' || sport === 'TrailRun' ? 'Z3-Z4 Pace' : '';
+  if (/suave|trote/i.test(value)) return sport === 'Run' || sport === 'TrailRun' ? 'Z1 Pace' : '';
+  if (/aer[oó]bic/i.test(value)) return sport === 'Run' || sport === 'TrailRun' ? 'Z2 Pace' : '';
+  return '';
+}
+
+function intervalsDurationToken(value, unit = 'm') {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  const cleaned = Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100);
+  if (unit === 's') return `${cleaned}s`;
+  if (unit === 'km') return `${cleaned}km`;
+  if (unit === 'mtr') return `${cleaned}mtr`;
+  return `${cleaned}m`;
+}
+
+function compileIntervalsWorkoutDescription(workout) {
+  const sport = String(workout && workout.sport || 'Run');
+  const blocks = Array.isArray(workout && workout.blocks) ? workout.blocks : [];
+  if (sport === 'Strength') return sanitiseText(workout.structured_description || workout.summary, 10000);
+
+  const lines = [];
+  const pushStep = (duration, target) => {
+    if (!duration) return;
+    const normalised = normaliseIntervalsTarget(target, sport);
+    lines.push(`- ${duration}${normalised ? ` ${normalised}` : ''}`);
+  };
+
+  blocks.forEach(block => {
+    if (!block || typeof block !== 'object') return;
+    if (block.type === 'warmup') {
+      const duration = intervalsDurationToken(block.duration_min, 'm');
+      if (duration) {
+        if (lines.length) lines.push('');
+        lines.push('Calentamiento');
+        pushStep(duration, block.target || 'Z1');
+      }
+      return;
+    }
+
+    if (block.type === 'activation') {
+      const reps = Math.max(1, Math.round(Number(block.repetitions || 1)));
+      const work = intervalsDurationToken(block.work_sec, 's');
+      const recovery = intervalsDurationToken(block.recovery_sec, 's');
+      if (!work) return;
+      if (lines.length) lines.push('');
+      lines.push(reps > 1 ? `Activacion ${reps}x` : 'Activacion');
+      pushStep(work, block.target || 'Z4');
+      if (recovery) pushStep(recovery, block.recovery_target || 'Z1');
+      return;
+    }
+
+    if (block.type === 'central') {
+      const reps = Math.max(1, Math.round(Number(block.repetitions || 1)));
+      const work = intervalsDurationToken(block.work_value, block.work_unit || 'm');
+      const recovery = intervalsDurationToken(block.recovery_value, block.recovery_unit || 'm');
+      if (!work) return;
+      if (lines.length) lines.push('');
+      const name = sanitiseText(block.name || 'Bloque principal', 100) || 'Bloque principal';
+      if (reps > 1) lines.push(`${name} ${reps}x`);
+      else lines.push(name);
+      pushStep(work, block.target || 'Z2');
+      if (recovery) pushStep(recovery, block.recovery_target || 'Z1');
+      return;
+    }
+
+    if (block.type === 'steady') {
+      const duration = intervalsDurationToken(block.duration_min || block.work_value, block.duration_min ? 'm' : (block.work_unit || 'm'));
+      if (!duration) return;
+      if (lines.length) lines.push('');
+      lines.push(sanitiseText(block.name || 'Bloque principal', 100) || 'Bloque principal');
+      pushStep(duration, block.target || 'Z2');
+      return;
+    }
+
+    if (block.type === 'cooldown') {
+      const duration = intervalsDurationToken(block.duration_min, 'm');
+      if (duration) {
+        if (lines.length) lines.push('');
+        lines.push('Vuelta a la calma');
+        pushStep(duration, block.target || 'Z1');
+      }
+    }
+  });
+
+  const compiled = lines.join('\n').trim();
+  return compiled || sanitiseText(workout.structured_description || workout.summary, 10000);
+}
+
+function buildIntervalsEvent(workout) {
+  const type = intervalsEventTypeForSport(workout.sport);
+  if (!type) return null;
+  const event = {
+    category: 'WORKOUT',
+    start_date_local: `${workout.workout_date}T00:00:00`,
+    type,
+    name: sanitiseText(workout.title || 'Sesion', 160),
+    description: compileIntervalsWorkoutDescription(workout),
+    external_id: `runflow-workout-${workout.id}`,
+  };
+  const load = numberOrNull(workout.planned_load, 0, 1000);
+  const duration = numberOrNull(workout.planned_duration_min, 0, 2000);
+  if (load !== null) event.icu_training_load = load;
+  if (duration !== null) event.moving_time = Math.round(duration * 60);
+  return event;
+}
+
+async function intervalsEventsForRange(apiKey, oldest, newest) {
+  const query = `/athlete/0/events?oldest=${encodeURIComponent(oldest)}&newest=${encodeURIComponent(newest)}`;
+  const rows = await intervalsFetch(apiKey, query);
+  return Array.isArray(rows) ? rows : [];
+}
+
+function sameIntervalsLegacyEvent(candidate, workout, event) {
+  if (!candidate || candidate.category !== 'WORKOUT') return false;
+  if (candidate.external_id) return false;
+  const localDate = String(candidate.start_date_local || '').slice(0, 10);
+  return localDate === workout.workout_date
+    && String(candidate.name || '') === String(event.name || '')
+    && String(candidate.type || '') === String(event.type || '');
+}
+
+async function saveIntervalsEventId(athleteId, workoutId, eventId) {
+  if (DEMO_MODE || !workoutId || eventId === null || eventId === undefined) return;
+  await prodRows(
+    'workouts',
+    `id=eq.${encodeURIComponent(workoutId)}&athlete_id=eq.${encodeURIComponent(athleteId)}`,
+    { method: 'PATCH', body: { intervals_event_id: String(eventId), updated_at: new Date().toISOString() }, prefer: 'return=minimal' }
+  );
+}
+
+async function deleteIntervalsEvents(apiKey, workouts) {
+  const rows = Array.isArray(workouts) ? workouts : [];
+  let deleted = 0;
+  for (const workout of rows) {
+    if (!workout || intervalsEventTypeForSport(workout.sport) === null) continue;
+    if (workout.intervals_event_id) {
+      try {
+        await intervalsFetch(apiKey, `/athlete/0/events/${encodeURIComponent(workout.intervals_event_id)}`, { method: 'DELETE' });
+        deleted += 1;
+      } catch (error) {
+        if (Number(error.status) !== 404) throw error;
+      }
+      continue;
+    }
+    try {
+      const result = await intervalsFetch(apiKey, '/athlete/0/events/bulk-delete', {
+        method: 'PUT',
+        body: JSON.stringify([{ external_id: `runflow-workout-${workout.id}` }]),
+      });
+      deleted += Number(result || 0);
+    } catch (error) {
+      if (Number(error.status) !== 404) throw error;
+    }
+  }
+  return deleted;
+}
+
+async function syncWeekToIntervals(athleteId, week, deletedWorkouts = []) {
+  if (DEMO_MODE) return { demo: true, exported: week.workouts.length, created: 0, updated: 0, deleted: 0, legacy_adopted: 0 };
   const apiKey = await getIntervalsKey(athleteId);
   if (!apiKey) return { skipped: true, reason: 'Intervals pendiente de conectar.' };
-  const events = week.workouts.filter(item => !['Strength', 'Rest'].includes(item.sport)).map(item => ({
-    category: 'WORKOUT',
-    start_date_local: `${item.workout_date}T00:00:00`,
-    type: item.sport || 'Run',
-    name: item.title,
-    description: item.structured_description || item.summary || '',
-  }));
-  if (!events.length) return { exported: 0 };
-  const result = await intervalsFetch(apiKey, '/athlete/0/events/bulk', { method: 'POST', body: JSON.stringify(events) });
-  return { exported: events.length, result };
+
+  const deleted = await deleteIntervalsEvents(apiKey, deletedWorkouts);
+  const candidates = (week.workouts || [])
+    .filter(item => intervalsEventTypeForSport(item.sport) !== null)
+    .map(item => ({ workout: item, event: buildIntervalsEvent(item) }));
+  if (!candidates.length) return { exported: 0, created: 0, updated: 0, deleted, legacy_adopted: 0, result: [] };
+
+  const oldest = week.week_start || candidates.map(item => item.workout.workout_date).sort()[0];
+  const newest = week.end_date || addDays(oldest, 6);
+  let calendarEvents = [];
+  try { calendarEvents = await intervalsEventsForRange(apiKey, oldest, newest); } catch { calendarEvents = []; }
+
+  const results = [];
+  const pendingCreate = [];
+  let updated = 0;
+  let legacyAdopted = 0;
+
+  for (const entry of candidates) {
+    const { workout, event } = entry;
+    if (workout.intervals_event_id) {
+      try {
+        const result = await intervalsFetch(apiKey, `/athlete/0/events/${encodeURIComponent(workout.intervals_event_id)}`, {
+          method: 'PUT',
+          body: JSON.stringify(event),
+        });
+        results.push(result);
+        await saveIntervalsEventId(athleteId, workout.id, result && result.id !== undefined ? result.id : workout.intervals_event_id);
+        workout.intervals_event_id = String(result && result.id !== undefined ? result.id : workout.intervals_event_id);
+        updated += 1;
+        continue;
+      } catch (error) {
+        if (Number(error.status) !== 404) throw error;
+        workout.intervals_event_id = null;
+      }
+    }
+
+    const exactLegacy = calendarEvents.filter(candidate => sameIntervalsLegacyEvent(candidate, workout, event));
+    if (exactLegacy.length === 1) {
+      const legacy = exactLegacy[0];
+      const result = await intervalsFetch(apiKey, `/athlete/0/events/${encodeURIComponent(legacy.id)}`, {
+        method: 'PUT',
+        body: JSON.stringify(event),
+      });
+      results.push(result);
+      await saveIntervalsEventId(athleteId, workout.id, result && result.id !== undefined ? result.id : legacy.id);
+      workout.intervals_event_id = String(result && result.id !== undefined ? result.id : legacy.id);
+      updated += 1;
+      legacyAdopted += 1;
+      continue;
+    }
+
+    pendingCreate.push(entry);
+  }
+
+  let created = 0;
+  if (pendingCreate.length) {
+    const bulk = await intervalsFetch(apiKey, '/athlete/0/events/bulk?upsert=true', {
+      method: 'POST',
+      body: JSON.stringify(pendingCreate.map(item => item.event)),
+    });
+    const bulkRows = Array.isArray(bulk) ? bulk : [];
+    for (let index = 0; index < pendingCreate.length; index += 1) {
+      const entry = pendingCreate[index];
+      const result = bulkRows[index] || null;
+      results.push(result);
+      if (result && result.id !== undefined) {
+        await saveIntervalsEventId(athleteId, entry.workout.id, result.id);
+        entry.workout.intervals_event_id = String(result.id);
+      }
+    }
+    created = pendingCreate.length;
+  }
+
+  return {
+    exported: candidates.length,
+    created,
+    updated,
+    deleted,
+    legacy_adopted: legacyAdopted,
+    result: results,
+  };
 }
 
 
@@ -3561,11 +3810,46 @@ async function api(req, res, url) {
     const body = await readJson(req);
     const weekStart = validDate(body.week_start) || startOfWeek();
     const alreadyPublished = await publishedWeekExists(athleteId, weekStart);
-    const week = await saveWeek(athleteId, body, true);
-    const intervals = alreadyPublished
-      ? { skipped: true, reason: 'La semana se ha actualizado en la app. No se ha reenviado a Intervals para evitar sesiones duplicadas.' }
-      : await syncWeekToIntervals(athleteId, week);
+
+    let previousWorkouts = [];
+    if (!DEMO_MODE) {
+      const previousWeeks = await prodRows(
+        'training_weeks',
+        `athlete_id=eq.${encodeURIComponent(athleteId)}&week_start=eq.${weekStart}&select=id&limit=1`
+      );
+      if (previousWeeks[0]) {
+        previousWorkouts = await prodRows(
+          'workouts',
+          `training_week_id=eq.${encodeURIComponent(previousWeeks[0].id)}&select=*`
+        );
+      }
+    }
+
+    let week = await saveWeek(athleteId, body, true);
+    const savedIds = new Set((week.workouts || []).map(item => String(item.id)));
+    const deletedWorkouts = previousWorkouts.filter(item => !savedIds.has(String(item.id)));
+    const intervals = await syncWeekToIntervals(athleteId, week, deletedWorkouts);
+
+    if (!DEMO_MODE && week.id) {
+      const refreshed = await prodRows(
+        'workouts',
+        `training_week_id=eq.${encodeURIComponent(week.id)}&select=*&order=workout_date.asc`
+      );
+      week = { ...week, workouts: refreshed };
+    }
     return sendJson(res, 200, { week, intervals, already_published: alreadyPublished });
+  }
+
+  const intervalsPreviewMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/intervals-preview$/);
+  if (intervalsPreviewMatch && method === 'POST') {
+    const athleteId = intervalsPreviewMatch[1];
+    await ensureCoachAccess(session, athleteId);
+    const body = await readJson(req);
+    const source = Array.isArray(body.workouts) ? body.workouts : (body.workout ? [body.workout] : []);
+    const weekStart = validDate(body.week_start) || startOfWeek();
+    const workouts = source.slice(0, 30).map((item, index) => normaliseWorkout(item, athleteId, weekStart, index));
+    const events = workouts.map(buildIntervalsEvent).filter(Boolean);
+    return sendJson(res, 200, { events });
   }
 
   const planMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/plan$/);

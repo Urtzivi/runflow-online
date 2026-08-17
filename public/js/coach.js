@@ -250,8 +250,8 @@ function selectCalendarWeek(weekStart, rerender = true) {
   $('generatedSessionCount').textContent = (week.workouts || []).length;
   $('completedSessionCount').textContent = `${Number(execution.completed_sessions || 0)} realizadas${Number(execution.extra_sessions || 0) ? ` · ${Number(execution.extra_sessions)} extra` : ''}`;
   if ($('weekToleranceStatus')) $('weekToleranceStatus').innerHTML = selectedWeekToleranceHtml(week);
-  $('saveWeek').textContent = week.status === 'published' ? 'Guardar cambios' : 'Guardar borrador';
-  $('publishWeek').textContent = week.status === 'published' ? 'Actualizar en la app' : 'Publicar semana';
+  $('saveWeek').textContent = week.status === 'published' ? 'Guardar y sincronizar' : 'Guardar borrador';
+  $('publishWeek').textContent = week.status === 'published' ? 'Sincronizar con Intervals' : 'Publicar semana';
   if (rerender) renderCalendar();
 }
 
@@ -621,7 +621,7 @@ async function persistCalendarWeek(weekStart, publish = false, quiet = false) {
     renderSummary();
   }
   if (!quiet) {
-    const extra = data.intervals?.skipped ? ` ${data.intervals.reason}` : (shouldPublish ? ` Se han preparado ${data.intervals?.exported ?? 0} sesiones para Intervals.` : '');
+    const extra = data.intervals?.skipped ? ` ${data.intervals.reason}` : (shouldPublish ? ` Intervals: ${data.intervals?.exported ?? 0} sincronizadas · ${data.intervals?.created ?? 0} nuevas · ${data.intervals?.updated ?? 0} actualizadas${Number(data.intervals?.deleted || 0) ? ` · ${data.intervals.deleted} eliminadas` : ''}.` : '');
     showMessage(`${shouldPublish ? 'Semana publicada.' : 'Semana guardada.'}${extra}`, 'success');
   }
   renderCalendar();
@@ -653,12 +653,13 @@ function openSessionModal(workoutId = null, date = null) {
   $('modalWorkoutTitle').value = workout.title || '';
   $('modalSummary').value = workout.summary || '';
   $('structuredDescription').value = workout.structured_description || '';
+  if ($('intervalsPreviewBox')) $('intervalsPreviewBox').classList.add('hidden');
   const blocks = workout.blocks || [];
   const warmup = blocks.find(block => block.type === 'warmup') || {};
   const activation = blocks.find(block => block.type === 'activation') || {};
   const cooldown = blocks.find(block => block.type === 'cooldown') || {};
   const strengthBlock = blocks.find(block => block.type === 'strength') || {};
-  state.modalBlocks = blocks.filter(block => block.type === 'central').map(block => ({ ...block }));
+  state.modalBlocks = blocks.filter(block => ['central', 'steady'].includes(block.type)).map(block => block.type === 'steady' ? ({ type: 'central', name: block.name || 'Bloque principal', repetitions: 1, work_value: Number(block.duration_min || block.work_value || 0), work_unit: block.duration_min ? 'm' : (block.work_unit || 'm'), target: block.target || 'Z2', recovery_value: 0, recovery_unit: 'm', recovery_target: 'Z1' }) : ({ ...block }));
   state.strengthExercises = Array.isArray(strengthBlock.exercises) ? strengthBlock.exercises.map(item => ({ ...item })) : [];
   $('strengthNeuromuscularCost').value = strengthBlock.neuromuscular_cost || 'low';
   $('strengthExecutionNote').value = strengthBlock.execution_note || '';
@@ -727,13 +728,62 @@ function buildBlocks() {
   return blocks;
 }
 
+function intervalsTargetForBuilder(target, sport = 'Run') {
+  const value = String(target || '').replace(/\s+/g, ' ').trim();
+  const zone = value.match(/\bZ\s*([1-7])(?:\s*-\s*Z?\s*([1-7]))?/i);
+  if (zone) {
+    const label = zone[2] ? `Z${zone[1]}-Z${zone[2]}` : `Z${zone[1]}`;
+    if (/\b(Pace|HR)\b/i.test(value)) return value;
+    return ['Run', 'TrailRun'].includes(sport) ? `${label} Pace` : label;
+  }
+  if (/\b(Pace|HR|FTP)\b/i.test(value) || /%/.test(value) || /\d:\d{2}/.test(value)) return value;
+  if (/progresiv/i.test(value)) return ['Run', 'TrailRun'].includes(sport) ? 'Z3-Z4 Pace' : '';
+  if (/suave|trote/i.test(value)) return ['Run', 'TrailRun'].includes(sport) ? 'Z1 Pace' : '';
+  if (/aer[oó]bic/i.test(value)) return ['Run', 'TrailRun'].includes(sport) ? 'Z2 Pace' : '';
+  return '';
+}
+
+function builderDurationToken(value, unit = 'm') {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  const cleaned = Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100);
+  if (unit === 's') return `${cleaned}s`;
+  if (unit === 'km') return `${cleaned}km`;
+  return `${cleaned}m`;
+}
+
 function generateStructuredDescription() {
   const lines = [];
   const blocks = buildBlocks();
+  const sport = $('modalSport').value || 'Run';
+  const isStrength = sport === 'Strength' || $('modalIsStrength').checked;
+
   blocks.forEach(block => {
-    if (block.type === 'warmup') lines.push('Calentamiento', `- ${block.duration_min}m ${block.target}`, '');
-    if (block.type === 'activation') lines.push(`Activación ${block.repetitions}x`, `- ${block.work_sec}s ${block.target}`, `- ${block.recovery_sec}s ${block.recovery_target}`, '');
-    if (block.type === 'central') lines.push(`${block.name || 'Bloque central'} ${block.repetitions}x`, `- ${block.work_value}${block.work_unit} ${block.target}`, `- ${block.recovery_value}${block.recovery_unit} ${block.recovery_target}`, '');
+    if (block.type === 'warmup') {
+      const duration = builderDurationToken(block.duration_min, 'm');
+      if (duration) { const target = intervalsTargetForBuilder(block.target, sport); lines.push('Calentamiento', `- ${duration}${target ? ` ${target}` : ''}`, ''); }
+    }
+    if (block.type === 'activation') {
+      const work = builderDurationToken(block.work_sec, 's');
+      const recovery = builderDurationToken(block.recovery_sec, 's');
+      if (work) {
+        lines.push(Number(block.repetitions || 1) > 1 ? `Activacion ${Number(block.repetitions)}x` : 'Activacion');
+        { const target = intervalsTargetForBuilder(block.target, sport); lines.push(`- ${work}${target ? ` ${target}` : ''}`); }
+        if (recovery) { const target = intervalsTargetForBuilder(block.recovery_target, sport); lines.push(`- ${recovery}${target ? ` ${target}` : ''}`); }
+        lines.push('');
+      }
+    }
+    if (block.type === 'central') {
+      const work = builderDurationToken(block.work_value, block.work_unit || 'm');
+      const recovery = builderDurationToken(block.recovery_value, block.recovery_unit || 'm');
+      if (work) {
+        const reps = Math.max(1, Number(block.repetitions || 1));
+        lines.push(reps > 1 ? `${block.name || 'Bloque principal'} ${reps}x` : (block.name || 'Bloque principal'));
+        { const target = intervalsTargetForBuilder(block.target, sport); lines.push(`- ${work}${target ? ` ${target}` : ''}`); }
+        if (recovery) { const target = intervalsTargetForBuilder(block.recovery_target, sport); lines.push(`- ${recovery}${target ? ` ${target}` : ''}`); }
+        lines.push('');
+      }
+    }
     if (block.type === 'strength') {
       const cost = ({ low: 'bajo', medium: 'medio', high: 'alto' })[block.neuromuscular_cost] || block.neuromuscular_cost || '—';
       lines.push(`Fuerza · coste neuromuscular ${cost}`);
@@ -742,17 +792,49 @@ function generateStructuredDescription() {
         const parts = [];
         if (exercise.sets) parts.push(`${exercise.sets}x${exercise.reps || '—'}`);
         else if (exercise.reps) parts.push(exercise.reps);
-        if (Number.isFinite(Number(exercise.weight_kg))) parts.push(`${Number(exercise.weight_kg)} kg`);
-        if (Number.isFinite(Number(exercise.rir))) parts.push(`RIR ${Number(exercise.rir)}`);
-        if (Number.isFinite(Number(exercise.rest_sec))) parts.push(`descanso ${Number(exercise.rest_sec)} s`);
+        if (exercise.weight_kg !== '' && exercise.weight_kg !== null && exercise.weight_kg !== undefined && Number.isFinite(Number(exercise.weight_kg))) parts.push(`${Number(exercise.weight_kg)} kg`);
+        if (exercise.rir !== '' && exercise.rir !== null && exercise.rir !== undefined && Number.isFinite(Number(exercise.rir))) parts.push(`RIR ${Number(exercise.rir)}`);
+        if (exercise.rest_sec !== '' && exercise.rest_sec !== null && exercise.rest_sec !== undefined && Number.isFinite(Number(exercise.rest_sec))) parts.push(`descanso ${Number(exercise.rest_sec)} s`);
         lines.push(`- ${exercise.name}${parts.length ? ` · ${parts.join(' · ')}` : ''}${exercise.notes ? ` · ${exercise.notes}` : ''}`);
       });
       lines.push('');
     }
-    if (block.type === 'cooldown') lines.push('Vuelta a la calma', `- ${block.duration_min}m ${block.target}`, '');
+    if (block.type === 'cooldown') {
+      const duration = builderDurationToken(block.duration_min, 'm');
+      if (duration) { const target = intervalsTargetForBuilder(block.target, sport); lines.push('Vuelta a la calma', `- ${duration}${target ? ` ${target}` : ''}`, ''); }
+    }
   });
   $('structuredDescription').value = lines.join('\n').trim();
+  if ($('intervalsPreviewBox')) $('intervalsPreviewBox').classList.add('hidden');
   return $('structuredDescription').value;
+}
+
+
+async function previewCurrentSessionInIntervals() {
+  if (!state.editingSession) return;
+  try {
+    const workout = currentModalWorkout();
+    $('previewIntervals').disabled = true;
+    $('intervalsPreviewText').value = 'Generando vista previa…';
+    $('intervalsPreviewBox').classList.remove('hidden');
+    const data = await api(`/api/coach/athletes/${state.athlete.id}/intervals-preview`, {
+      method: 'POST',
+      body: JSON.stringify({ week_start: state.editingSession.weekStart, workouts: [workout] }),
+    });
+    const event = data.events && data.events[0];
+    if (!event) {
+      $('intervalsPreviewText').value = 'Esta sesión no se envía a Intervals.';
+      $('intervalsPreviewMeta').textContent = '';
+      return;
+    }
+    $('intervalsPreviewMeta').textContent = `${event.type} · carga ${event.icu_training_load ?? '—'} · ${event.moving_time ? `${Math.round(event.moving_time / 60)} min` : 'duración —'}`;
+    $('intervalsPreviewText').value = event.description || '(sin descripción estructurada)';
+  } catch (error) {
+    $('intervalsPreviewText').value = error.message;
+    showMessage(error.message, 'error');
+  } finally {
+    $('previewIntervals').disabled = false;
+  }
 }
 
 
@@ -819,7 +901,7 @@ function applyTemplateToOpenSession(template) {
   const activation = blocks.find(block => block.type === 'activation') || {};
   const cooldown = blocks.find(block => block.type === 'cooldown') || {};
   const strength = blocks.find(block => block.type === 'strength') || {};
-  state.modalBlocks = blocks.filter(block => block.type === 'central').map(block => ({ ...block }));
+  state.modalBlocks = blocks.filter(block => ['central', 'steady'].includes(block.type)).map(block => block.type === 'steady' ? ({ type: 'central', name: block.name || 'Bloque principal', repetitions: 1, work_value: Number(block.duration_min || block.work_value || 0), work_unit: block.duration_min ? 'm' : (block.work_unit || 'm'), target: block.target || 'Z2', recovery_value: 0, recovery_unit: 'm', recovery_target: 'Z1' }) : ({ ...block }));
   state.strengthExercises = Array.isArray(strength.exercises) ? strength.exercises.map(item => ({ ...item })) : [];
   $('strengthNeuromuscularCost').value = strength.neuromuscular_cost || 'low';
   $('strengthExecutionNote').value = strength.execution_note || '';
@@ -1123,7 +1205,7 @@ $('saveWeek').addEventListener('click', async () => {
     $('saveWeekStatus').textContent = 'Guardando…';
     const week = calendarWeek(state.calendar.selectedWeekStart);
     await persistCalendarWeek(state.calendar.selectedWeekStart, week.status === 'published');
-    $('saveWeekStatus').textContent = week.status === 'published' ? 'Cambios guardados en la app' : 'Borrador guardado';
+    $('saveWeekStatus').textContent = week.status === 'published' ? 'Cambios guardados y sincronizados' : 'Borrador guardado';
   } catch (error) {
     showMessage(error.message, 'error');
   } finally {
@@ -1189,6 +1271,7 @@ $('closeModal').addEventListener('click', () => $('sessionModal').classList.add(
 $('sessionModal').addEventListener('click', event => { if (event.target === $('sessionModal')) $('sessionModal').classList.add('hidden'); });
 $('addBlock').addEventListener('click', () => { state.modalBlocks.push({ type: 'central', name: `Bloque ${state.modalBlocks.length + 1}`, repetitions: 4, work_value: 3, work_unit: 'm', target: 'Z4 Pace', recovery_value: 2, recovery_unit: 'm', recovery_target: 'Z1 Pace' }); renderCentralBlocks(); });
 $('generateDescription').addEventListener('click', generateStructuredDescription);
+$('previewIntervals').addEventListener('click', previewCurrentSessionInIntervals);
 $('modalSport').addEventListener('change', () => { $('modalIsStrength').checked = $('modalSport').value === 'Strength'; updateSessionBuilderMode(); });
 $('modalIsStrength').addEventListener('change', updateSessionBuilderMode);
 $('addStrengthExercise').addEventListener('click', () => { state.strengthExercises.push({ name: '', sets: 3, reps: '8', weight_kg: '', rir: 3, rest_sec: 60, unilateral: false, notes: '' }); renderStrengthExercises(); });
