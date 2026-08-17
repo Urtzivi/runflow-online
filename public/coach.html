@@ -135,6 +135,7 @@
               <div class="card-head"><div><p class="eyebrow">Microciclo seleccionado</p><h2 id="planWeekTitle">—</h2><p id="planWeekDates">—</p></div><div class="actions"><button id="evaluateSelectedWeek" class="btn secondary small" type="button">Evaluar</button><button id="openSelectedWeekCalendar" class="btn primary small" type="button">Abrir en calendario</button></div></div>
               <div class="card-body">
                 <div id="planWeekProgress" class="cycle-progress-panel compact"></div>
+                <div id="planWeekTolerance" class="tolerance-week-status"></div>
                 <div class="plan-compare-grid" id="planWeekCompare" style="margin-top:12px"></div>
                 <div class="form-section" style="margin-top:14px"><strong>Objetivo principal</strong><p id="planWeekObjective" class="muted" style="margin:6px 0 0">—</p></div>
               </div>
@@ -184,6 +185,7 @@
                 <div><span>Cumplimiento</span><strong id="weekCompletionRate">0%</strong><small id="weekPriorityCompliance">A: —</small></div>
                 <div><span>Sesiones</span><strong id="generatedSessionCount">0</strong><small id="completedSessionCount">0 realizadas</small></div>
               </div>
+              <div id="weekToleranceStatus" class="tolerance-week-status"></div>
               <div class="field-row" style="margin-top:14px">
                 <label>Carga objetivo<input id="targetLoad" type="number" min="0"></label>
                 <label>Tipo de semana<select id="weekType"><option>Carga</option><option>Carga controlada</option><option>Construcción</option><option>Sobrecarga</option><option>Descarga</option><option>Afinamiento</option><option>Recuperación</option><option>Competición</option><option>Adaptación</option></select></label>
@@ -336,6 +338,22 @@
               <div class="field-row" style="margin-top:12px"><label>Kilómetros actuales<input id="weeklyKm" type="number" step="0.1"></label><label>Horas actuales<input id="weeklyHours" type="number" step="0.1"></label></div>
               <label style="margin-top:12px">Disponibilidad<textarea id="availability" placeholder="Días disponibles, tiempo entre semana, fin de semana, preferencias…"></textarea></label>
               <label style="margin-top:12px">Restricciones laborales o familiares<textarea id="restrictions"></textarea></label>
+            </div>
+            <div class="form-section load-tolerance-section">
+              <div class="card-head compact"><div><h3>Tolerancia de carga semanal</h3><p>Rangos individuales definidos por el entrenador. RunFlow avisa, pero no bloquea la planificación.</p></div><span id="loadToleranceConfidenceBadge" class="badge pending">Provisional</span></div>
+              <div class="tolerance-range-grid">
+                <div class="tolerance-range-card habitual"><strong>Habitual</strong><small>Carga sostenible con normalidad</small><div class="field-row"><label>Mín.<input id="loadToleranceHabitualMin" type="number" min="0" step="1"></label><label>Máx.<input id="loadToleranceHabitualMax" type="number" min="0" step="1"></label></div></div>
+                <div class="tolerance-range-card development"><strong>Desarrollo</strong><small>Rango para buscar adaptación</small><div class="field-row"><label>Mín.<input id="loadToleranceDevelopmentMin" type="number" min="0" step="1"></label><label>Máx.<input id="loadToleranceDevelopmentMax" type="number" min="0" step="1"></label></div></div>
+                <div class="tolerance-range-card high"><strong>Alta</strong><small>Uso ocasional y con vigilancia</small><div class="field-row"><label>Mín.<input id="loadToleranceHighMin" type="number" min="0" step="1"></label><label>Máx.<input id="loadToleranceHighMax" type="number" min="0" step="1"></label></div></div>
+              </div>
+              <div class="field-row" style="margin-top:12px"><label>Techo provisional<input id="loadToleranceCeiling" type="number" min="0" step="1" placeholder="Al superarlo, RunFlow avisa"></label><label>Confianza del perfil<select id="loadToleranceConfidence"><option value="provisional">Provisional</option><option value="observing">En observación</option><option value="consolidated">Consolidado</option></select></label></div>
+              <label style="margin-top:12px">Notas sobre tolerancia<textarea id="loadToleranceNotes" placeholder="Ej.: tolera bien 230–250 si duerme bien; después de lesión reducir temporalmente…"></textarea></label>
+              <div class="tolerance-history">
+                <div class="card-head compact"><div><h3>Referencia observada</h3><p>Últimas 12 semanas completas con actividades guardadas. Es contexto, no calcula automáticamente el techo.</p></div><button id="refreshLoadTolerance" class="btn soft small" type="button">Actualizar desde Intervals</button></div>
+                <div class="grid grid-4 tolerance-history-metrics"><article class="metric"><span>Mediana</span><strong id="loadToleranceMedian">—</strong><small>carga semanal</small></article><article class="metric"><span>P75</span><strong id="loadToleranceP75">—</strong><small>semana alta observada</small></article><article class="metric"><span>Máxima</span><strong id="loadToleranceMaxObserved">—</strong><small>observada</small></article><article class="metric"><span>Semanas</span><strong id="loadToleranceWeeksData">0</strong><small>con datos</small></article></div>
+                <div id="loadToleranceRecentWeeks" class="tolerance-week-history"><span class="muted small">Todavía no se ha cargado el histórico.</span></div>
+                <p id="loadToleranceHistoryStatus" class="muted small" style="margin:10px 0 0"></p>
+              </div>
             </div>
             <div class="form-section">
               <h3>Salud y objetivos</h3>

@@ -21,7 +21,7 @@ const APP_ENCRYPTION_KEY = String(process.env.APP_ENCRYPTION_KEY || '');
 const OPENAI_API_KEY = String(process.env.OPENAI_API_KEY || '');
 const OPENAI_MODEL = String(process.env.OPENAI_MODEL || 'gpt-5.6-terra');
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
-const APP_VERSION = 'Online Pilot 1.4';
+const APP_VERSION = 'Online Pilot 1.5';
 const INTERVALS_API_BASE = 'https://intervals.icu/api/v1';
 
 function validateRuntimeConfig() {
@@ -409,6 +409,40 @@ function validDate(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(value || '')) ? String(value) : null;
 }
 
+function normaliseLoadToleranceProfile(value) {
+  const source = safeObject(value);
+  const profile = {
+    habitual_min: numberOrNull(source.habitual_min, 0, 10000),
+    habitual_max: numberOrNull(source.habitual_max, 0, 10000),
+    development_min: numberOrNull(source.development_min, 0, 10000),
+    development_max: numberOrNull(source.development_max, 0, 10000),
+    high_min: numberOrNull(source.high_min, 0, 10000),
+    high_max: numberOrNull(source.high_max, 0, 10000),
+    provisional_ceiling: numberOrNull(source.provisional_ceiling, 0, 10000),
+    confidence: ['provisional', 'observing', 'consolidated'].includes(source.confidence)
+      ? source.confidence
+      : 'provisional',
+    notes: sanitiseText(source.notes, 3000),
+    updated_at: new Date().toISOString(),
+  };
+
+  for (const [minKey, maxKey, label] of [
+    ['habitual_min', 'habitual_max', 'habitual'],
+    ['development_min', 'development_max', 'desarrollo'],
+    ['high_min', 'high_max', 'alta'],
+  ]) {
+    if (profile[minKey] !== null && profile[maxKey] !== null && profile[maxKey] < profile[minKey]) {
+      throw Object.assign(new Error(`El máximo del rango de carga ${label} no puede ser menor que el mínimo.`), { status: 400 });
+    }
+  }
+
+  if (profile.provisional_ceiling !== null && profile.high_max !== null && profile.provisional_ceiling < profile.high_max) {
+    throw Object.assign(new Error('El techo provisional no puede quedar por debajo del máximo de carga alta.'), { status: 400 });
+  }
+
+  return profile;
+}
+
 function normaliseProfile(body) {
   return {
     birth_date: validDate(body.birth_date),
@@ -430,6 +464,7 @@ function normaliseProfile(body) {
     objective: sanitiseText(body.objective, 2000),
     coach_notes: sanitiseText(body.coach_notes, 8000),
     custom_fields: Array.isArray(body.custom_fields) ? body.custom_fields.slice(0, 50).map(item => ({ label: sanitiseText(item.label, 100), value: sanitiseText(item.value, 1000) })) : [],
+    ...(hasOwn(body, 'load_tolerance_profile') ? { load_tolerance_profile: normaliseLoadToleranceProfile(body.load_tolerance_profile) } : {}),
     updated_at: new Date().toISOString(),
   };
 }
@@ -2648,6 +2683,62 @@ async function syncActivities(athleteId, oldest, newest) {
   return listStoredActivities(athleteId, oldest, newest);
 }
 
+function percentile(values, p) {
+  const sorted = values.map(Number).filter(Number.isFinite).sort((a, b) => a - b);
+  if (!sorted.length) return null;
+  if (sorted.length === 1) return sorted[0];
+  const position = (sorted.length - 1) * p;
+  const lower = Math.floor(position);
+  const upper = Math.ceil(position);
+  if (lower === upper) return sorted[lower];
+  return sorted[lower] + (sorted[upper] - sorted[lower]) * (position - lower);
+}
+
+async function loadToleranceSnapshot(athleteId, weeks = 12, sync = false) {
+  const requestedWeeks = Math.max(4, Math.min(24, Number(weeks) || 12));
+  const currentWeekStart = startOfWeek();
+  const oldest = addDays(currentWeekStart, -7 * requestedWeeks);
+  const newest = addDays(currentWeekStart, -1);
+  const activities = sync
+    ? await syncActivities(athleteId, oldest, newest)
+    : await listStoredActivities(athleteId, oldest, newest);
+
+  const weekly = [];
+  for (let offset = requestedWeeks; offset >= 1; offset -= 1) {
+    const weekStart = addDays(currentWeekStart, -7 * offset);
+    const weekEnd = addDays(weekStart, 6);
+    const rows = activities.filter(item => {
+      const date = String(item.activity_date || '').slice(0, 10);
+      return date >= weekStart && date <= weekEnd;
+    });
+    const load = rows.reduce((sum, item) => sum + Number(item.load || 0), 0);
+    weekly.push({
+      week_start: weekStart,
+      week_end: weekEnd,
+      load: roundOrNull(load, 1) || 0,
+      activities: rows.length,
+      has_data: rows.length > 0,
+    });
+  }
+
+  const observed = weekly.filter(item => item.has_data).map(item => Number(item.load || 0));
+  return {
+    weeks: weekly,
+    stats: {
+      weeks_requested: requestedWeeks,
+      weeks_with_data: observed.length,
+      average_load: roundOrNull(average(observed), 1),
+      median_load: roundOrNull(percentile(observed, 0.5), 1),
+      p25_load: roundOrNull(percentile(observed, 0.25), 1),
+      p75_load: roundOrNull(percentile(observed, 0.75), 1),
+      min_load: observed.length ? roundOrNull(Math.min(...observed), 1) : null,
+      max_load: observed.length ? roundOrNull(Math.max(...observed), 1) : null,
+      oldest,
+      newest,
+    },
+  };
+}
+
 function normaliseWellnessRow(athleteId, item) {
   const date = validDate(item && item.id) || validDate(item && item.date) || new Date().toISOString().slice(0, 10);
   const fitness = firstFinite(item || {}, ['ctl', 'fitness']);
@@ -3037,6 +3128,15 @@ async function api(req, res, url) {
     await ensureCoachAccess(session, athleteId);
     const body = await readJson(req);
     return sendJson(res, 200, { athlete: await saveProfile(athleteId, body) });
+  }
+
+  const loadToleranceMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/load-tolerance$/);
+  if (loadToleranceMatch && method === 'GET') {
+    const athleteId = loadToleranceMatch[1];
+    await ensureCoachAccess(session, athleteId);
+    const weeks = Math.max(4, Math.min(24, Number(url.searchParams.get('weeks') || 12)));
+    const sync = url.searchParams.get('sync') === '1';
+    return sendJson(res, 200, await loadToleranceSnapshot(athleteId, weeks, sync));
   }
 
   const zonesMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/zones$/);
