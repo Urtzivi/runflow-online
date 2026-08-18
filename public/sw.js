@@ -1,4 +1,4 @@
-const CACHE='runflow-athlete-2-0';
+const CACHE='runflow-2-4-performance-msgbadge';
 const CORE=['/','/login','/coach','/athlete','/css/app.css','/js/login.js','/js/coach.js','/js/athlete.js','/assets/icon-192.png'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(CORE))));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key))))));

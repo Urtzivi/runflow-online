@@ -4,10 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#083f36">
-  <title>RunFlow Athlete 2.0</title>
+  <title>RunFlow Athlete 2.1</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
-  <link rel="stylesheet" href="/css/app.css?v=athlete-2.0">
+  <link rel="stylesheet" href="/css/app.css?v=athlete-2.1">
 </head>
 <body class="athlete-v2-body">
   <main class="athlete-v2-shell">
@@ -41,12 +41,24 @@
         <section class="athlete-two-cards">
           <article class="athlete-mini-card recovery">
             <div class="athlete-mini-icon">♡</div>
-            <div><span>Recuperación</span><strong id="recoveryLabel">—</strong><small id="recoveryDetail">Sin datos</small></div>
+            <div><span>Preparación para entrenar</span><strong id="recoveryLabel">—</strong><small id="recoveryDetail">Sin datos</small></div>
           </article>
           <article class="athlete-mini-card load">
             <div class="athlete-mini-icon">▥</div>
             <div class="athlete-mini-grow"><span>Carga semanal</span><strong id="weekLoadText">—</strong><small id="weekLoadDetail">Plan —</small><i><em id="weekLoadBar" style="width:0%"></em></i></div>
           </article>
+        </section>
+
+        <section class="athlete-section-card athlete-fitness-card">
+          <div class="athlete-section-head">
+            <div><span>Estado de forma · estimación RunFlow</span><h3><strong id="athleteFitnessIndex">—</strong> <small id="athleteFitnessTrend">En construcción</small></h3></div>
+            <span id="athleteFitnessQuality" class="athlete-status-pill">Provisional</span>
+          </div>
+          <div id="athleteFitnessSpark" class="athlete-fitness-spark" aria-label="Evolución del estado de forma"></div>
+          <div class="athlete-fitness-foot">
+            <span id="athleteFitnessChange">Necesitamos más histórico para medir la evolución.</span>
+            <span id="athleteConsistency">Consistencia —</span>
+          </div>
         </section>
 
         <section class="athlete-section-card">
@@ -164,7 +176,7 @@
     </div>
   </div>
 
-  <script src="/js/athlete.js?v=athlete-2.0"></script>
-  <script src="/js/register-sw.js?v=athlete-2.0"></script>
+  <script src="/js/athlete.js?v=2.4"></script>
+  <script src="/js/register-sw.js?v=2.4"></script>
 </body>
 </html>
