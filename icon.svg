@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" rx="220" fill="#083f36"/>
+  <text x="512" y="590" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="410" font-weight="900" letter-spacing="-42" fill="#62d2be">RF</text>
+  <text x="512" y="760" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="88" font-weight="700" letter-spacing="18" fill="#ffffff">RUNFLOW</text>
+</svg>
