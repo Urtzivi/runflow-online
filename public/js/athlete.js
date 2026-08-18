@@ -45,6 +45,7 @@ function message(text, type='') { const el=$('athleteMessage'); el.textContent=t
 function durationLabel(seconds) { const value=Number(seconds); if(!Number.isFinite(value))return '—'; const h=Math.floor(value/3600),m=Math.floor((value%3600)/60),s=Math.round(value%60); return h?`${h} h ${String(m).padStart(2,'0')} min`:`${m}:${String(s).padStart(2,'0')}`; }
 function distanceLabel(metres) { const value=Number(metres); return Number.isFinite(value)?`${(value/1000).toFixed(value>=10000?1:2)} km`:'—'; }
 function paceLabel(seconds) { const value=Number(seconds); if(!Number.isFinite(value)||value<=0)return '—'; const rounded=Math.round(value); return `${Math.floor(rounded/60)}:${String(rounded%60).padStart(2,'0')}/km`; }
+function numericOrNull(value){if(value===null||value===undefined||value==='')return null;const n=Number(value);return Number.isFinite(n)?n:null;}
 function numberLabel(value, suffix='') { const number=Number(value); return Number.isFinite(number)?`${Math.round(number*10)/10}${suffix}`:'—'; }
 function initials(name) { return String(name || 'A').trim().split(/\s+/).slice(0,2).map(part=>part[0]||'').join('').toUpperCase() || 'A'; }
 function sportKey(value) { const sport=String(value||'').toLowerCase(); if(sport.includes('strength')||sport.includes('fuerza'))return 'strength'; if(sport.includes('ride')||sport.includes('bike')||sport.includes('cicl'))return 'ride'; if(sport.includes('rest')||sport.includes('descanso'))return 'rest'; return 'run'; }
@@ -107,10 +108,10 @@ function renderPerformance() {
   $('athleteTrajectoryStatus').textContent=trajectory?.goal?`${trajectory.status} · objetivo ${trajectory.goal.name}${Number.isFinite(Number(trajectory.delta))?` · ${Number(trajectory.delta)>=0?'+':''}${Number(trajectory.delta).toFixed(1)}`:''}`:'Tu entrenador puede definir una trayectoria hacia el objetivo.';
 
   const summary=state.performance?.activity_summary||perf.details?.activity_performance||{};
-  const thresholdPace=Number(summary.threshold_pace_sec_per_km); $('athleteThresholdPace').textContent=Number.isFinite(thresholdPace)?paceLabel(thresholdPace):'—';
-  const thresholdChange=Number(summary.threshold_pace_change_8w_sec); $('athleteThresholdTrend').textContent=Number.isFinite(thresholdChange)?`${thresholdChange>=0?'Mejorando · ▲':'Cambio · ▼'} ${Math.abs(thresholdChange).toFixed(0)} s/km en 8 semanas`:`${Number(summary.threshold_observations||0)} referencias disponibles`;
-  $('athleteUphillVam').textContent=Number.isFinite(Number(summary.uphill_threshold_vam))?`${Math.round(Number(summary.uphill_threshold_vam))} m+/h`:'—';
-  const uphillChange=Number(summary.uphill_vam_change_pct); $('athleteUphillTrend').textContent=Number.isFinite(uphillChange)?`${uphillChange>=0?'Mejorando · ▲':'Cambio · ▼'} ${Math.abs(uphillChange).toFixed(1)}%`:`${Number(summary.trail_observations||0)} sesiones de subida válidas`;
+  const thresholdPace=numericOrNull(summary.threshold_pace_sec_per_km); $('athleteThresholdPace').textContent=Number.isFinite(thresholdPace)?paceLabel(thresholdPace):'—';
+  const thresholdChange=numericOrNull(summary.threshold_pace_change_8w_sec); $('athleteThresholdTrend').textContent=Number.isFinite(thresholdChange)?`${thresholdChange>=0?'Mejorando · ▲':'Cambio · ▼'} ${Math.abs(thresholdChange).toFixed(0)} s/km en 8 semanas`:`${Number(summary.threshold_observations||0)} referencias disponibles`;
+  const uphillVam=numericOrNull(summary.uphill_threshold_vam); $('athleteUphillVam').textContent=uphillVam!==null?`${Math.round(uphillVam)} m+/h`:'—';
+  const uphillChange=numericOrNull(summary.uphill_vam_change_pct); $('athleteUphillTrend').textContent=Number.isFinite(uphillChange)?`${uphillChange>=0?'Mejorando · ▲':'Cambio · ▼'} ${Math.abs(uphillChange).toFixed(1)}%`:`${Number(summary.trail_observations||0)} sesiones de subida válidas`;
   $('athleteAerobicEfficiency').textContent=Number.isFinite(Number(summary.aerobic_efficiency))?Number(summary.aerobic_efficiency).toFixed(2):'—';
   const effChange=Number(summary.aerobic_efficiency_change_pct); $('athleteAerobicTrend').textContent=Number.isFinite(effChange)?`${effChange>=0?'Mejorando · +':'Cambio · '}${effChange.toFixed(1)}%`:'Esperando sesiones comparables';
   const markerConfidence=summary.threshold_confidence==='Alta'&&summary.trail_confidence==='Alta'?'Alta':summary.threshold_confidence==='Alta'||summary.threshold_confidence==='Media'||summary.trail_confidence==='Media'?'En observación':'Provisional'; $('athleteMarkerConfidence').textContent=markerConfidence;

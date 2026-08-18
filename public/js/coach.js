@@ -1,5 +1,5 @@
 const $ = id => document.getElementById(id);
-const state = { user: null, config: null, athletes: [], athlete: null, editingSession: null, modalBlocks: [], strengthExercises: [], templates: [], pendingImportPackage: null, activities: [], recovery: [], performance: { latest: null, history: [], trajectory: null, activity_summary: null, activity_metrics: [] }, trajectoryDraft: [], messages: [], loadToleranceSnapshot: null, currentActivityId: null, currentActivity: null, calendar: { month: new Date(new Date().getFullYear(), new Date().getMonth(), 1), weeks: new Map(), selectedWeekStart: isoMonday(), loading: false }, seasons: [], plan: null, planTab: 'season', selectedSeasonId: null, selectedMicrocycleId: null, planEditor: null, evaluationEditor: null };
+const state = { user: null, config: null, athletes: [], athlete: null, editingSession: null, modalBlocks: [], strengthExercises: [], templates: [], pendingImportPackage: null, activities: [], recovery: [], performance: { latest: null, history: [], trajectory: null, activity_summary: null, activity_metrics: [] }, trajectoryDraft: [], messages: [], loadToleranceSnapshot: null, currentActivityId: null, currentActivity: null, calendar: { month: new Date(new Date().getFullYear(), new Date().getMonth(), 1), weeks: new Map(), selectedWeekStart: isoMonday(), loading: false }, seasons: [], plan: null, planTab: 'season', selectedSeasonId: null, selectedMicrocycleId: null, planEditor: null, evaluationEditor: null, managedAthletes: [], athleteManagementFilter: 'active' };
 const dayNames = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
 async function api(url, options = {}) {
@@ -60,6 +60,11 @@ function daysUntil(dateString) {
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
 }
+function numericOrNull(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
 function newId() {
   return globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function'
     ? globalThis.crypto.randomUUID()
@@ -69,6 +74,7 @@ function newId() {
 function switchView(name) {
   document.querySelectorAll('.tab').forEach(button => button.classList.toggle('active', button.dataset.view === name));
   document.querySelectorAll('.view').forEach(view => view.classList.toggle('active', view.id === `${name}View`));
+  if (name === 'athletes') loadAthleteManagement().catch(error => showMessage(error.message, 'error'));
   if (name === 'plan' && state.athlete && !state.plan) loadPlan().catch(error => showMessage(error.message, 'error'));
   if (name === 'library' && state.athlete && !state.templates.length) loadTemplates().catch(error => showMessage(error.message, 'error'));
   if (name === 'profile' && state.athlete && !state.loadToleranceSnapshot) loadLoadTolerance(false).catch(error => { const el = $('loadToleranceHistoryStatus'); if (el) el.textContent = error.message; });
@@ -1096,6 +1102,76 @@ async function downloadBinaryFile(endpoint) {
   const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = filename; document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
+function athleteLifecycleLabel(status) { return status === 'inactive' ? 'Inactivo' : 'Activo'; }
+function athleteManagementDate(value) { return value ? dateLabel(String(value).slice(0,10)) : '—'; }
+function athleteConnectionLabel(item) {
+  if (item.intervals_status === 'connected') return 'Intervals conectado';
+  if (item.intervals_status === 'disabled') return 'Intervals desactivado';
+  return 'Intervals pendiente';
+}
+function renderAthleteManagement() {
+  const rows = state.managedAthletes || [];
+  const activeCount = rows.filter(item => item.lifecycle_status !== 'inactive').length;
+  const inactiveCount = rows.filter(item => item.lifecycle_status === 'inactive').length;
+  if ($('athleteCountActive')) $('athleteCountActive').textContent = activeCount;
+  if ($('athleteCountInactive')) $('athleteCountInactive').textContent = inactiveCount;
+  if ($('athleteCountAll')) $('athleteCountAll').textContent = rows.length;
+  document.querySelectorAll('.athlete-filter').forEach(button => {
+    const active = button.dataset.athleteFilter === state.athleteManagementFilter;
+    button.classList.toggle('active', active); button.classList.toggle('soft', active); button.classList.toggle('secondary', !active);
+  });
+  const search = String($('athleteManagementSearch')?.value || '').trim().toLowerCase();
+  const filtered = rows.filter(item => {
+    const matchesStatus = state.athleteManagementFilter === 'all' || (state.athleteManagementFilter === 'inactive' ? item.lifecycle_status === 'inactive' : item.lifecycle_status !== 'inactive');
+    const matchesSearch = !search || `${item.display_name || ''} ${item.email || ''}`.toLowerCase().includes(search);
+    return matchesStatus && matchesSearch;
+  });
+  if ($('athleteManagementSubtitle')) $('athleteManagementSubtitle').textContent = `${activeCount} activos · ${inactiveCount} inactivos · ${rows.length} totales`;
+  const host = $('athleteManagementList'); if (!host) return;
+  if (!filtered.length) { host.innerHTML = '<div class="empty-state">No hay deportistas que coincidan con este filtro.</div>'; return; }
+  host.innerHTML = filtered.map(item => {
+    const inactive = item.lifecycle_status === 'inactive';
+    const goal = item.next_goal ? `${escapeHtml(item.next_goal.name)} · ${athleteManagementDate(item.next_goal.goal_date)}` : 'Sin objetivo activo';
+    return `<article class="athlete-management-card ${inactive ? 'inactive' : ''}">
+      <div class="athlete-management-card-head"><div class="athlete-avatar">${escapeHtml((item.display_name || '?').slice(0,1).toUpperCase())}</div><div><h3>${escapeHtml(item.display_name)}</h3><p>${escapeHtml(item.email || 'Sin correo')}</p></div><span class="badge ${inactive ? 'pending' : ''}">${athleteLifecycleLabel(item.lifecycle_status)}</span></div>
+      <div class="athlete-management-facts">
+        <div><span>Última actividad</span><strong>${athleteManagementDate(item.last_activity_date)}</strong></div>
+        <div><span>Integración</span><strong>${escapeHtml(athleteConnectionLabel(item))}</strong></div>
+        <div><span>App atleta</span><strong>${item.app_access_status === 'active' ? 'Activa' : item.app_access_status === 'suspended' ? 'Suspendida' : 'Pendiente'}</strong></div>
+        <div><span>Próximo objetivo</span><strong>${goal}</strong></div>
+      </div>
+      <div class="athlete-management-actions">
+        ${inactive ? `<button class="btn primary small" data-athlete-action="reactivate" data-athlete-id="${item.id}" type="button">Reactivar</button>` : `<button class="btn secondary small" data-athlete-action="open" data-athlete-id="${item.id}" type="button">Abrir ficha</button><button class="btn danger small" data-athlete-action="deactivate" data-athlete-id="${item.id}" type="button">Dar de baja</button>`}
+      </div>
+      ${inactive && item.archived_at ? `<small class="muted">Baja: ${athleteManagementDate(item.archived_at)}</small>` : ''}
+    </article>`;
+  }).join('');
+}
+async function loadAthleteManagement() {
+  const data = await api('/api/coach/athletes?include_inactive=1&details=1');
+  state.managedAthletes = data.athletes || [];
+  renderAthleteManagement();
+}
+async function changeAthleteLifecycle(id, status) {
+  const item = (state.managedAthletes || []).find(row => row.id === id);
+  if (!item) return;
+  if (status === 'inactive' && !window.confirm(`Dar de baja a ${item.display_name}? Se conservará todo su histórico y podrás reactivarlo.`)) return;
+  await api(`/api/coach/athletes/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
+  await loadAthleteManagement();
+  await refreshAthletes(status === 'active' ? id : null);
+  if (status === 'inactive') switchView('athletes');
+  showMessage(status === 'active' ? `${item.display_name} vuelve a estar activo.` : `${item.display_name} se ha dado de baja sin eliminar su histórico.`, 'success');
+}
+async function handleAthleteManagementClick(event) {
+  const button = event.target.closest('[data-athlete-action]'); if (!button) return;
+  const id = button.dataset.athleteId; const action = button.dataset.athleteAction;
+  if (action === 'deactivate') return changeAthleteLifecycle(id, 'inactive');
+  if (action === 'reactivate') return changeAthleteLifecycle(id, 'active');
+  if (action === 'open') {
+    await refreshAthletes(id); switchView('profile');
+  }
+}
+
 function athleteOption(item) {
   const connection = item.intervals_status === 'connected' ? '' : ' · Intervals pendiente';
   const app = item.app_access_status === 'active' || item.user_id ? '' : ' · sin app';
@@ -1210,6 +1286,10 @@ async function init() {
 }
 
 document.querySelectorAll('.tab').forEach(button => button.addEventListener('click', () => switchView(button.dataset.view)));
+document.querySelectorAll('.athlete-filter').forEach(button => button.addEventListener('click', () => { state.athleteManagementFilter = button.dataset.athleteFilter; renderAthleteManagement(); }));
+if ($('athleteManagementSearch')) $('athleteManagementSearch').addEventListener('input', renderAthleteManagement);
+if ($('athleteManagementList')) $('athleteManagementList').addEventListener('click', event => handleAthleteManagementClick(event).catch(error => showMessage(error.message, 'error')));
+if ($('manageNewAthlete')) $('manageNewAthlete').addEventListener('click', () => $('newAthlete').click());
 if ($('coachMessageForm')) $('coachMessageForm').addEventListener('submit', sendCoachMessage);
 document.querySelectorAll('[data-go]').forEach(button => button.addEventListener('click', () => switchView(button.dataset.go)));
 $('athleteSelect').addEventListener('change', () => loadAthlete($('athleteSelect').value).catch(error => showMessage(error.message, 'error')));
@@ -2131,27 +2211,27 @@ function renderPerformancePanel(){
   $('performanceChart').innerHTML=performanceChartSvg(rows,trajectory); $('performanceStatus').textContent=`Último cálculo: ${dateLabel(perf.snapshot_date)} · calidad de datos ${q}%.`;
   $('performanceTrajectoryStatus').textContent=trajectory?.goal?`${trajectory.goal.name} · ${trajectory.status}${Number.isFinite(Number(trajectory.delta))?` · ${Number(trajectory.delta)>=0?'+':''}${Number(trajectory.delta).toFixed(1)} frente a la línea`:''}`:'No hay un objetivo activo con trayectoria configurada.';
   const summary=state.performance?.activity_summary||perf.details?.activity_performance||{};
-  const thresholdPace=Number(summary.threshold_pace_sec_per_km);
+  const thresholdPace=numericOrNull(summary.threshold_pace_sec_per_km);
   $('performanceThresholdPace').textContent=Number.isFinite(thresholdPace)?paceLabel(thresholdPace):'—';
-  const thresholdChange=Number(summary.threshold_pace_change_8w_sec);
+  const thresholdChange=numericOrNull(summary.threshold_pace_change_8w_sec);
   $('performanceThresholdTrend').textContent=Number.isFinite(thresholdChange)?`${thresholdChange>=0?'▲':'▼'} ${Math.abs(thresholdChange).toFixed(0)} s/km en 8 semanas`:`${Number(summary.threshold_observations||0)} observaciones`;
-  $('performanceThresholdHr').textContent=Number.isFinite(Number(summary.threshold_hr))?`${Math.round(Number(summary.threshold_hr))} ppm`:'—';
-  $('performanceThresholdSource').textContent=summary.threshold_source?`${summary.threshold_source} · ${summary.threshold_confidence||'Provisional'}`:'Sin referencia disponible';
+  const thresholdHr=numericOrNull(summary.threshold_hr); $('performanceThresholdHr').textContent=thresholdHr!==null?`${Math.round(thresholdHr)} ppm`:'—';
+  $('performanceThresholdSource').textContent=summary.threshold_source?`${summary.threshold_source} · ${summary.threshold_confidence||'Provisional'}`:'Sin referencia disponible'; if(summary.zones_source && $('performanceStreamCount')) $('performanceStreamCount').title=`Zonas para métricas: ${summary.zones_source}`;
   $('performanceThresholdConfidence').textContent=summary.threshold_confidence||'Provisional';
   $('performanceThresholdConfidence').className=`badge ${(summary.threshold_confidence==='Alta'||summary.threshold_confidence==='Media')?'':'pending'}`;
-  $('performanceUphillVam').textContent=Number.isFinite(Number(summary.uphill_threshold_vam))?`${Math.round(Number(summary.uphill_threshold_vam))} m+/h`:'—';
-  const uphillChange=Number(summary.uphill_vam_change_pct);
+  const uphillVam=numericOrNull(summary.uphill_threshold_vam); $('performanceUphillVam').textContent=uphillVam!==null?`${Math.round(uphillVam)} m+/h`:'—';
+  const uphillChange=numericOrNull(summary.uphill_vam_change_pct);
   $('performanceUphillTrend').textContent=Number.isFinite(uphillChange)?`${uphillChange>=0?'▲':'▼'} ${Math.abs(uphillChange).toFixed(1)}% · ${summary.trail_confidence||'Provisional'}`:`${Number(summary.trail_observations||0)} sesiones válidas · ${summary.trail_confidence||'Sin datos'}`;
-  $('performanceTrailEfficiency').textContent=Number.isFinite(Number(summary.trail_gap_efficiency))?Number(summary.trail_gap_efficiency).toFixed(2):'—';
-  const trailEffChange=Number(summary.trail_gap_efficiency_change_pct);
+  const trailEfficiency=numericOrNull(summary.trail_gap_efficiency); $('performanceTrailEfficiency').textContent=trailEfficiency!==null?trailEfficiency.toFixed(2):'—';
+  const trailEffChange=numericOrNull(summary.trail_gap_efficiency_change_pct);
   $('performanceTrailEfficiencyTrend').textContent=Number.isFinite(trailEffChange)?`${trailEffChange>=0?'+':''}${trailEffChange.toFixed(1)}% vs bloque anterior`:'GAP / FC en sesiones con desnivel';
-  $('performanceEfficiency').textContent=Number.isFinite(Number(summary.aerobic_efficiency))?Number(summary.aerobic_efficiency).toFixed(2):'—';
-  $('performanceEfficiencyTrend').textContent=Number.isFinite(Number(summary.aerobic_efficiency_change_pct))?`${Number(summary.aerobic_efficiency_change_pct)>=0?'+':''}${Number(summary.aerobic_efficiency_change_pct).toFixed(1)}% vs bloque anterior`:'km/h por 100 ppm';
+  const aerobicEfficiency=numericOrNull(summary.aerobic_efficiency); $('performanceEfficiency').textContent=aerobicEfficiency!==null?aerobicEfficiency.toFixed(2):'—';
+  const aerobicChange=numericOrNull(summary.aerobic_efficiency_change_pct); $('performanceEfficiencyTrend').textContent=aerobicChange!==null?`${aerobicChange>=0?'+':''}${aerobicChange.toFixed(1)}% vs bloque anterior`:'km/h por 100 ppm';
   $('performanceZ2Pace').textContent=paceLabel(summary.z2_pace_sec_per_km);
-  $('performanceZ2Trend').textContent=Number.isFinite(Number(summary.z2_pace_change_pct))?`${Number(summary.z2_pace_change_pct)>=0?'+':''}${Number(summary.z2_pace_change_pct).toFixed(1)}% de mejora`:'sesiones comparables';
-  $('performanceDrift').textContent=Number.isFinite(Number(summary.cardiac_drift_pct))?`${Number(summary.cardiac_drift_pct).toFixed(1)}%`:'—';
-  $('performanceCadence').textContent=Number.isFinite(Number(summary.avg_cadence))?Number(summary.avg_cadence).toFixed(0):'—';
-  $('performanceStreamCount').textContent=`${Number(summary.activities_with_streams||0)} sesiones`; renderZoneDistribution(summary.zone_distribution);
+  const z2Change=numericOrNull(summary.z2_pace_change_pct); $('performanceZ2Trend').textContent=z2Change!==null?`${z2Change>=0?'+':''}${z2Change.toFixed(1)}% de mejora`:'sesiones comparables';
+  const driftValue=numericOrNull(summary.cardiac_drift_pct); $('performanceDrift').textContent=driftValue!==null?`${driftValue.toFixed(1)}%`:'—';
+  const cadenceValue=numericOrNull(summary.avg_cadence); $('performanceCadence').textContent=cadenceValue!==null?cadenceValue.toFixed(0):'—';
+  $('performanceStreamCount').textContent=`${Number(summary.activities_with_streams||0)} sesiones`; if($('performanceZonesSource')) $('performanceZonesSource').textContent=`Zonas: ${summary.zones_source||'Ficha RunFlow / sin referencia de Intervals'}`; renderZoneDistribution(summary.zone_distribution);
   renderTrajectoryEditor();
 }
 
