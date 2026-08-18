@@ -1,0 +1,63 @@
+name: RunFlow Athlete iOS Simulator
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    runs-on: macos-15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Configure Athlete app
+        working-directory: mobile
+        run: |
+          cat > capacitor.config.json <<'EOF'
+          {
+            "appId": "com.runflow.athlete",
+            "appName": "RunFlow Athlete",
+            "webDir": "www",
+            "server": {
+              "url": "https://runflow-online-pilot.onrender.com/login?mode=athlete",
+              "cleartext": false
+            }
+          }
+          EOF
+
+      - name: Prepare Capacitor iOS
+        working-directory: mobile
+        run: |
+          npm install
+          npx cap add ios
+          npx cap sync ios
+
+      - name: Build for iOS Simulator
+        run: |
+          xcodebuild \
+            -project mobile/ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -derivedDataPath mobile/build-ios \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package simulator app
+        run: |
+          cd mobile/build-ios/Build/Products/Debug-iphonesimulator
+          zip -r ../../../../../RunFlow-Athlete-iOS-Simulator.zip App.app
+
+      - name: Upload simulator build
+        uses: actions/upload-artifact@v4
+        with:
+          name: RunFlow-Athlete-iOS-Simulator
+          path: RunFlow-Athlete-iOS-Simulator.zip
+          if-no-files-found: error
