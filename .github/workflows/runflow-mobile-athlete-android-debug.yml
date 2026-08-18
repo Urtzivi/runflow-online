@@ -1,0 +1,65 @@
+name: RunFlow Athlete Android APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 36
+        run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Configure Athlete app
+        working-directory: mobile
+        run: |
+          cat > capacitor.config.json <<'EOF'
+          {
+            "appId": "com.runflow.athlete",
+            "appName": "RunFlow Athlete",
+            "webDir": "www",
+            "server": {
+              "url": "https://runflow-online-pilot.onrender.com/login?mode=athlete",
+              "cleartext": false
+            }
+          }
+          EOF
+
+      - name: Prepare Capacitor Android
+        working-directory: mobile
+        run: |
+          npm install
+          npx cap add android
+          npx cap sync android
+
+      - name: Build debug APK
+        working-directory: mobile/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: RunFlow-Athlete-Android-debug
+          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
