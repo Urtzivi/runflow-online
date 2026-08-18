@@ -7,7 +7,7 @@
   <title>RunFlow Coach · Planificación 2.3</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
-  <link rel="stylesheet" href="/css/app.css?v=2.4">
+  <link rel="stylesheet" href="/css/app.css?v=2.4.2.2">
 </head>
 <body>
   <header class="topbar">
@@ -27,6 +27,7 @@
 
     <nav class="tabs" aria-label="Secciones del coach">
       <button class="tab active" data-view="summary">Resumen</button>
+      <button class="tab" data-view="athletes">Deportistas</button>
       <button class="tab" data-view="plan">Plan</button>
       <button class="tab" data-view="library">Biblioteca</button>
       <button class="tab" data-view="week">Calendario</button>
@@ -70,6 +71,35 @@
             </section>
           </aside>
         </div>
+      </div>
+    </section>
+
+
+    <section id="athletesView" class="view" style="margin-top:18px">
+      <div class="stack">
+        <section class="card">
+          <div class="card-head">
+            <div><p class="eyebrow">Cartera del coach</p><h2>Gestión de deportistas</h2><p>Altas, bajas y estado de los deportistas sin perder su histórico.</p></div>
+            <button id="manageNewAthlete" class="btn primary" type="button">+ Nuevo deportista</button>
+          </div>
+          <div class="card-body athlete-management-toolbar">
+            <div class="athlete-management-filters" role="group" aria-label="Filtrar deportistas">
+              <button class="btn soft small athlete-filter active" data-athlete-filter="active" type="button">Activos <span id="athleteCountActive">0</span></button>
+              <button class="btn secondary small athlete-filter" data-athlete-filter="inactive" type="button">Inactivos <span id="athleteCountInactive">0</span></button>
+              <button class="btn secondary small athlete-filter" data-athlete-filter="all" type="button">Todos <span id="athleteCountAll">0</span></button>
+            </div>
+            <label class="athlete-management-search">Buscar<input id="athleteManagementSearch" type="search" placeholder="Nombre o correo"></label>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head"><div><h2>Deportistas</h2><p id="athleteManagementSubtitle">Cargando cartera…</p></div></div>
+          <div class="card-body"><div id="athleteManagementList" class="athlete-management-grid"></div></div>
+        </section>
+
+        <section class="notice athlete-management-note">
+          <strong>Dar de baja no elimina datos.</strong> El deportista deja de aparecer en la planificación habitual y se suspende su acceso de atleta, pero se conservan actividades, mensajes, objetivos, feedback y evolución. Puedes reactivarlo cuando quieras.
+        </section>
       </div>
     </section>
 
@@ -434,7 +464,7 @@
               <article class="metric"><span>Deriva estimada</span><strong id="performanceDrift">—</strong><small>sesiones ≥30 min y poco desnivel</small></article>
               <article class="metric"><span>Cadencia</span><strong id="performanceCadence">—</strong><small>valor recibido del reloj</small></article>
             </div>
-            <div><div class="card-head compact"><div><h3>Distribución por zonas de FC</h3><p>Acumulado de las actividades con streams procesados.</p></div><span id="performanceStreamCount" class="badge pending">0 sesiones</span></div><div id="performanceZoneDistribution" class="zone-distribution"></div></div>
+            <div><div class="card-head compact"><div><h3>Distribución por zonas de FC</h3><p id="performanceZonesSource" class="muted small">Zonas: esperando referencia</p><p>Acumulado de las actividades con streams procesados.</p></div><span id="performanceStreamCount" class="badge pending">0 sesiones</span></div><div id="performanceZoneDistribution" class="zone-distribution"></div></div>
           </div>
         </section>
       </div>
@@ -632,6 +662,6 @@
     </div>
   </div>
 
-  <script src="/js/coach.js?v=2.4"></script>
-<script src="/js/register-sw.js?v=2.4"></script></body>
+  <script src="/js/coach.js?v=2.4.2.2"></script>
+<script src="/js/register-sw.js?v=2.4.2.2"></script></body>
 </html>
