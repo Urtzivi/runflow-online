@@ -21,7 +21,7 @@ const APP_ENCRYPTION_KEY = String(process.env.APP_ENCRYPTION_KEY || '');
 const OPENAI_API_KEY = String(process.env.OPENAI_API_KEY || '');
 const OPENAI_MODEL = String(process.env.OPENAI_MODEL || 'gpt-5.6-terra');
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
-const APP_VERSION = 'Online Pilot 1.8.2 · Umbral y trail 2.4.2';
+const APP_VERSION = 'Online Pilot 1.8.3 - Metrics 2.4.2.1';
 const INTERVALS_API_BASE = 'https://intervals.icu/api/v1';
 
 const RUNFLOW_PLAN_SCHEMA = 'runflow.plan.v1';
@@ -3377,7 +3377,7 @@ function demoActivitiesFor(athleteId, oldest, newest) {
 
 async function listStoredActivities(athleteId, oldest, newest) {
   if (DEMO_MODE) return demoActivitiesFor(athleteId, oldest, newest);
-  return prodRows('activities', `athlete_id=eq.${encodeURIComponent(athleteId)}&activity_date=gte.${oldest}T00:00:00&activity_date=lte.${newest}T23:59:59&select=id,athlete_id,workout_id,intervals_activity_id,activity_date,sport,name,duration_sec,distance_m,elevation_gain_m,load,avg_hr,max_hr,avg_pace_sec_per_km&order=activity_date.desc`);
+  return prodRows('activities', `athlete_id=eq.${encodeURIComponent(athleteId)}&activity_date=gte.${oldest}T00:00:00&activity_date=lte.${newest}T23:59:59&select=id,athlete_id,workout_id,intervals_activity_id,activity_date,sport,name,duration_sec,distance_m,elevation_gain_m,load,avg_hr,max_hr,avg_pace_sec_per_km,raw_summary&order=activity_date.desc`);
 }
 
 async function syncActivities(athleteId, oldest, newest) {
@@ -3800,33 +3800,54 @@ async function listActivityPerformanceMetrics(athleteId, oldest, newest) {
   return prodRows('activity_performance_metrics', `athlete_id=eq.${encodeURIComponent(athleteId)}&activity_date=gte.${oldest}T00:00:00&activity_date=lte.${newest}T23:59:59&select=*&order=activity_date.asc`).catch(() => []);
 }
 
-async function syncActivityPerformanceMetrics(athleteId, activities, oldest, newest) {
+async function syncActivityPerformanceMetrics(athleteId, activities, oldest, newest, options = {}) {
   if (DEMO_MODE) return [];
   const existing = await listActivityPerformanceMetrics(athleteId, oldest, newest);
   const existingById = new Map(existing.map(item => [String(item.intervals_activity_id), item]));
-  const missing = (activities || []).filter(item => {
+  const candidates = (activities || []).filter(item => {
     const id = String(item.intervals_activity_id || '');
     const sport = String(item.sport || '').toLowerCase();
+    return id && (sport.includes('run') || sport.includes('trail'));
+  });
+  const forceRecent = Boolean(options.forceRecent);
+  const forceIds = new Set(
+    forceRecent
+      ? [...candidates].sort((a, b) => String(b.activity_date).localeCompare(String(a.activity_date))).slice(0, 12).map(item => String(item.intervals_activity_id))
+      : []
+  );
+  const toProcess = candidates.filter(item => {
+    const id = String(item.intervals_activity_id || '');
     const row = existingById.get(id);
-    const needs242 = !row || String(row.details && row.details.metric_version || '') !== '2.4.2';
-    return id && needs242 && (sport.includes('run') || sport.includes('trail'));
-  }).sort((a, b) => String(a.activity_date).localeCompare(String(b.activity_date))).slice(-40);
-  if (!missing.length) return existing;
+    const version = String(row && row.details && row.details.metric_version || '');
+    return forceIds.has(id) || !row || version !== '2.4.2';
+  }).sort((a, b) => String(b.activity_date).localeCompare(String(a.activity_date))).slice(0, 40);
+  if (!toProcess.length) return existing;
   const apiKey = await getIntervalsKey(athleteId);
   if (!apiKey) return existing;
   const hrZones = await prodRows('training_zones', `athlete_id=eq.${encodeURIComponent(athleteId)}&kind=eq.hr&select=*&order=zone_order.asc`).catch(() => []);
-  for (const activity of missing) {
+  let processed = 0;
+  let failed = 0;
+  for (const activity of toProcess) {
     try {
-      const [streams, detail] = await Promise.all([
+      const [streams, detailResponse] = await Promise.all([
         intervalsFetch(apiKey, `/activity/${encodeURIComponent(activity.intervals_activity_id)}/streams.json`),
-        intervalsFetch(apiKey, `/activity/${encodeURIComponent(activity.intervals_activity_id)}?intervals=true`).catch(() => ({})),
+        intervalsFetch(apiKey, `/activity/${encodeURIComponent(activity.intervals_activity_id)}?intervals=true`).catch(() => activity.raw_summary || {}),
       ]);
-      const metric = deriveActivityPerformanceMetric(activity, streams, hrZones, detail || {});
-      if (metric) await prodRows('activity_performance_metrics', 'on_conflict=athlete_id,intervals_activity_id', { method: 'POST', body: metric, prefer: 'resolution=merge-duplicates,return=minimal' });
+      const detail = unwrapIntervalsObject(detailResponse || activity.raw_summary || {});
+      const metric = deriveActivityPerformanceMetric(activity, streams, hrZones, detail);
+      if (!metric) {
+        failed += 1;
+        console.warn(`[activity-performance] ${activity.intervals_activity_id}: metric could not be derived`);
+        continue;
+      }
+      await prodRows('activity_performance_metrics', 'on_conflict=athlete_id,intervals_activity_id', { method: 'POST', body: metric, prefer: 'resolution=merge-duplicates,return=minimal' });
+      processed += 1;
     } catch (error) {
+      failed += 1;
       console.warn(`[activity-performance] ${activity.intervals_activity_id}: ${error.message}`);
     }
   }
+  console.log(`[activity-performance] athlete=${athleteId} processed=${processed} failed=${failed} requested=${toProcess.length} force=${forceRecent ? 1 : 0}`);
   return listActivityPerformanceMetrics(athleteId, oldest, newest);
 }
 
@@ -3850,7 +3871,7 @@ function performanceActivitySummary(rows) {
   const z2Pace = median(z2RecentRows.map(item => item.z2_pace_sec_per_km));
   const z2Prev = median(z2PrevRows.map(item => item.z2_pace_sec_per_km));
   const drift = median(sorted.map(item => item.cardiac_drift_pct).filter(value => optionalNumber(value) !== null).slice(-5));
-  const cadence = median(recent.map(item => item.avg_cadence));
+  const cadence = median(recent.map(item => normaliseRunCadence(item.avg_cadence)));
 
   const thresholdRows = sorted.filter(item => optionalNumber(item.threshold_pace_sec_per_km) !== null);
   const thresholdLatest = thresholdRows.at(-1) || null;
@@ -3980,9 +4001,10 @@ function feedbackAdjustment(logs) {
   return { delta, reasons, latest };
 }
 
-async function dailyPerformanceSnapshot(athleteId, snapshotDate = localDateInTimeZone()) {
+async function dailyPerformanceSnapshot(athleteId, snapshotDate = localDateInTimeZone(), options = {}) {
   const oldest90 = addDays(snapshotDate, -89);
   const oldest42 = addDays(snapshotDate, -41);
+  const oldest84 = addDays(snapshotDate, -83);
   const oldest28 = addDays(snapshotDate, -27);
   const oldest7 = addDays(snapshotDate, -6);
 
@@ -3993,8 +4015,8 @@ async function dailyPerformanceSnapshot(athleteId, snapshotDate = localDateInTim
   try { activities = await syncActivities(athleteId, oldest90, snapshotDate); }
   catch { activities = await listStoredActivities(athleteId, oldest90, snapshotDate); }
   let activityPerformanceRows = [];
-  try { activityPerformanceRows = await syncActivityPerformanceMetrics(athleteId, activities.filter(item => String(item.activity_date || '').slice(0, 10) >= oldest42), oldest42, snapshotDate); }
-  catch { activityPerformanceRows = await listActivityPerformanceMetrics(athleteId, oldest42, snapshotDate); }
+  try { activityPerformanceRows = await syncActivityPerformanceMetrics(athleteId, activities.filter(item => String(item.activity_date || '').slice(0, 10) >= oldest84), oldest84, snapshotDate, { forceRecent: Boolean(options.forceActivityMetrics) }); }
+  catch (error) { console.warn(`[activity-performance] refresh failed: ${error.message}`); activityPerformanceRows = await listActivityPerformanceMetrics(athleteId, oldest84, snapshotDate); }
   const activityPerformance = performanceActivitySummary(activityPerformanceRows);
 
   const calendar = await listCalendarWeeks(athleteId, oldest28, snapshotDate, false).catch(() => []);
@@ -4143,12 +4165,12 @@ async function backfillPerformanceHistory(athleteId, days = 84) {
 
 async function performanceBundle(athleteId, days = 84, refresh = false) {
   const today = localDateInTimeZone();
-  if (refresh && !DEMO_MODE) await dailyPerformanceSnapshot(athleteId, today);
+  if (refresh && !DEMO_MODE) await dailyPerformanceSnapshot(athleteId, today, { forceActivityMetrics: true });
   const oldest = addDays(today, -(Math.max(14, Math.min(180, Number(days) || 84)) - 1));
   let rows = DEMO_MODE ? [] : await listPerformanceSnapshots(athleteId, oldest, today);
   if (!DEMO_MODE && rows.length < 7) {
     await backfillPerformanceHistory(athleteId, Math.max(28, Math.min(120, Number(days) || 84))).catch(() => {});
-    if (refresh) await dailyPerformanceSnapshot(athleteId, today);
+    if (refresh) await dailyPerformanceSnapshot(athleteId, today, { forceActivityMetrics: true });
     rows = await listPerformanceSnapshots(athleteId, oldest, today);
   }
   if (!rows.length && !DEMO_MODE) { const current = await dailyPerformanceSnapshot(athleteId, today); rows = [current]; }
