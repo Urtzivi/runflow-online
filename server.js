@@ -21,7 +21,7 @@ const APP_ENCRYPTION_KEY = String(process.env.APP_ENCRYPTION_KEY || '');
 const OPENAI_API_KEY = String(process.env.OPENAI_API_KEY || '');
 const OPENAI_MODEL = String(process.env.OPENAI_MODEL || 'gpt-5.6-terra');
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
-const APP_VERSION = 'Online Pilot 1.8.3 - Metrics 2.4.2.1';
+const APP_VERSION = 'Online Pilot 1.8.4 - Metrics y deportistas 2.4.2.2';
 const INTERVALS_API_BASE = 'https://intervals.icu/api/v1';
 
 const RUNFLOW_PLAN_SCHEMA = 'runflow.plan.v1';
@@ -493,7 +493,7 @@ async function prodRows(table, query = '', options = {}) {
 
 async function prodUserContext(userId) {
   const roles = await prodRows('user_roles', `user_id=eq.${encodeURIComponent(userId)}&select=role`);
-  const athlete = await prodRows('athletes', `user_id=eq.${encodeURIComponent(userId)}&select=id,display_name,email&limit=1`);
+  const athlete = await prodRows('athletes', `user_id=eq.${encodeURIComponent(userId)}&lifecycle_status=eq.active&select=id,display_name,email,lifecycle_status&limit=1`);
   return { roles: roles.map(item => item.role), athlete_id: athlete[0] ? athlete[0].id : null };
 }
 
@@ -876,19 +876,70 @@ async function prodAthleteBundle(athleteId, weekStart = startOfWeek()) {
   };
 }
 
-async function listCoachAthletes(session) {
+async function listCoachAthletes(session, options = {}) {
+  const includeInactive = Boolean(options.includeInactive);
+  const detailed = Boolean(options.detailed);
   if (DEMO_MODE) {
     const ids = demo.coach_athletes.filter(item => item.coach_user_id === session.user.id).map(item => item.athlete_id);
-    return demo.athletes.filter(item => ids.includes(item.id)).map(item => ({
+    let rows = demo.athletes.filter(item => ids.includes(item.id)).map(item => ({
       id: item.id, display_name: item.display_name, email: item.email, intervals_status: item.intervals_status,
       user_id: item.user_id || null, app_access_status: item.user_id ? 'active' : 'pending',
-    })).sort((a, b) => a.display_name.localeCompare(b.display_name, 'es'));
+      lifecycle_status: item.lifecycle_status || 'active', archived_at: item.archived_at || null,
+      created_at: item.created_at || null, updated_at: item.updated_at || null,
+    }));
+    if (!includeInactive) rows = rows.filter(item => item.lifecycle_status !== 'inactive');
+    if (detailed) rows = rows.map(item => {
+      const athlete = demo.athletes.find(row => row.id === item.id) || {};
+      const activities = (demo.activities || []).filter(row => row.athlete_id === item.id).sort((a,b) => String(b.activity_date).localeCompare(String(a.activity_date)));
+      const goals = (athlete.goals || []).filter(goal => goal.status === 'active').sort((a,b) => String(a.goal_date).localeCompare(String(b.goal_date)));
+      return { ...item, last_activity_date: activities[0]?.activity_date || null, active_goal_count: goals.length, next_goal: goals[0] ? { name: goals[0].name, goal_date: goals[0].goal_date } : null };
+    });
+    return rows.sort((a, b) => a.display_name.localeCompare(b.display_name, 'es'));
   }
   const joins = await prodRows('coach_athletes', `coach_user_id=eq.${encodeURIComponent(session.user.id)}&select=athlete_id`);
   const ids = joins.map(item => item.athlete_id);
   if (!ids.length) return [];
-  const rows = await prodRows('athletes', `id=in.(${ids.join(',')})&select=id,user_id,display_name,email,intervals_status&order=display_name.asc`);
-  return rows.map(item => ({ ...item, app_access_status: item.user_id ? 'active' : 'pending' }));
+  let query = `id=in.(${ids.join(',')})&select=id,user_id,display_name,email,intervals_status,lifecycle_status,archived_at,created_at,updated_at&order=display_name.asc`;
+  if (!includeInactive) query = `id=in.(${ids.join(',')})&lifecycle_status=eq.active&select=id,user_id,display_name,email,intervals_status,lifecycle_status,archived_at,created_at,updated_at&order=display_name.asc`;
+  const rows = await prodRows('athletes', query);
+  let result = rows.map(item => ({ ...item, lifecycle_status: item.lifecycle_status || 'active', app_access_status: item.user_id && item.lifecycle_status !== 'inactive' ? 'active' : item.user_id ? 'suspended' : 'pending' }));
+  if (!detailed || !result.length) return result;
+  const detailedRows = [];
+  for (const item of result) {
+    const [activityRows, goalRows] = await Promise.all([
+      prodRows('activities', `athlete_id=eq.${encodeURIComponent(item.id)}&select=activity_date&order=activity_date.desc&limit=1`).catch(() => []),
+      prodRows('goals', `athlete_id=eq.${encodeURIComponent(item.id)}&status=eq.active&select=name,goal_date,priority_code,priority&order=goal_date.asc`).catch(() => []),
+    ]);
+    detailedRows.push({
+      ...item,
+      last_activity_date: activityRows[0]?.activity_date || null,
+      active_goal_count: goalRows.length,
+      next_goal: goalRows[0] ? { name: goalRows[0].name, goal_date: goalRows[0].goal_date, priority_code: goalRows[0].priority_code || null, priority: goalRows[0].priority || null } : null,
+    });
+  }
+  return detailedRows;
+}
+
+async function setAthleteLifecycle(session, athleteId, status) {
+  await ensureCoachAccess(session, athleteId);
+  const lifecycleStatus = status === 'inactive' ? 'inactive' : status === 'active' ? 'active' : null;
+  if (!lifecycleStatus) throw Object.assign(new Error('Estado de deportista no válido.'), { status: 400 });
+  const now = new Date().toISOString();
+  if (DEMO_MODE) {
+    const athlete = demo.athletes.find(item => item.id === athleteId);
+    if (!athlete) throw Object.assign(new Error('Deportista no encontrado.'), { status: 404 });
+    athlete.lifecycle_status = lifecycleStatus;
+    athlete.archived_at = lifecycleStatus === 'inactive' ? now : null;
+    athlete.updated_at = now;
+    saveDemo();
+    return { id: athlete.id, lifecycle_status: lifecycleStatus, archived_at: athlete.archived_at };
+  }
+  const rows = await prodRows('athletes', `id=eq.${encodeURIComponent(athleteId)}`, {
+    method: 'PATCH',
+    body: { lifecycle_status: lifecycleStatus, archived_at: lifecycleStatus === 'inactive' ? now : null, updated_at: now },
+  });
+  if (!rows.length) throw Object.assign(new Error('Deportista no encontrado.'), { status: 404 });
+  return rows[0];
 }
 
 async function findAuthUserByEmail(email) {
@@ -953,7 +1004,7 @@ async function createCoachAthlete(session, body) {
     if (demo.athletes.some(item => item.email.toLowerCase() === email)) throw Object.assign(new Error('Ya existe un deportista con ese correo.'), { status: 409 });
     const athleteId = `a-${crypto.randomUUID()}`;
     const athlete = {
-      id: athleteId, user_id: null, display_name: displayName, email, intervals_status: intervalsStatus,
+      id: athleteId, user_id: null, display_name: displayName, email, intervals_status: intervalsStatus, lifecycle_status: 'active', archived_at: null,
       profile: {
         birth_date: '', sex: '', weight_kg: '', height_cm: '', phone: sanitiseText(body.phone, 50),
         watch_brand: sanitiseText(body.watch_brand, 80), watch_model: sanitiseText(body.watch_model, 120),
@@ -971,7 +1022,7 @@ async function createCoachAthlete(session, body) {
   }
   const duplicate = await prodRows('athletes', `email=eq.${encodeURIComponent(email)}&select=id&limit=1`);
   if (duplicate.length) throw Object.assign(new Error('Ya existe un deportista con ese correo.'), { status: 409 });
-  const created = await prodRows('athletes', '', { method: 'POST', body: { display_name: displayName, email, intervals_status: intervalsStatus } });
+  const created = await prodRows('athletes', '', { method: 'POST', body: { display_name: displayName, email, intervals_status: intervalsStatus, lifecycle_status: 'active' } });
   const athlete = created[0];
   await Promise.all([
     prodRows('coach_athletes', 'on_conflict=coach_user_id,athlete_id', { method: 'POST', body: { coach_user_id: session.user.id, athlete_id: athlete.id }, prefer: 'resolution=ignore-duplicates,return=minimal' }),
@@ -2808,6 +2859,53 @@ async function intervalsFetch(apiKey, endpoint, options = {}) {
   return data;
 }
 
+
+function intervalsRunSportSettings(athletePayload) {
+  const data = unwrapIntervalsObject(athletePayload || {});
+  const settings = Array.isArray(data.sportSettings) ? data.sportSettings : Array.isArray(data.sport_settings) ? data.sport_settings : [];
+  const hasType = (item, type) => (Array.isArray(item && item.types) ? item.types : []).some(value => String(value).toLowerCase() === String(type).toLowerCase());
+  return settings.find(item => hasType(item, 'Run')) || settings.find(item => hasType(item, 'TrailRun')) || null;
+}
+
+function hrZoneRowsFromIntervalsSettings(settings) {
+  const limits = Array.isArray(settings && settings.hr_zones) ? settings.hr_zones.map(optionalNumber).filter(value => value !== null && value > 0) : [];
+  if (!limits.length) return [];
+  let min = 0;
+  return limits.map((max, index) => {
+    const row = { kind: 'hr', zone_order: index + 1, zone_name: `Z${index + 1}`, min_value: min, max_value: max, source: 'intervals_run_profile' };
+    min = max + 1;
+    return row;
+  });
+}
+
+async function intervalsRunProfile(athleteId) {
+  if (DEMO_MODE) return null;
+  const apiKey = await getIntervalsKey(athleteId);
+  if (!apiKey) return null;
+  try {
+    const athletePayload = await intervalsFetch(apiKey, '/athlete/0');
+    const settings = intervalsRunSportSettings(athletePayload);
+    if (!settings) return null;
+    return {
+      source: 'Intervals.icu · perfil Run',
+      threshold_pace_sec_per_km: roundOrNull(thresholdPaceSecondsFromIntervals(settings.threshold_pace), 1),
+      threshold_pace_mps: roundOrNull(optionalNumber(settings.threshold_pace), 4),
+      lthr: roundOrNull(optionalNumber(settings.lthr), 0),
+      max_hr: roundOrNull(optionalNumber(settings.max_hr), 0),
+      hr_zones: hrZoneRowsFromIntervalsSettings(settings),
+      hr_zone_limits: Array.isArray(settings.hr_zones) ? settings.hr_zones : [],
+      pace_zones: Array.isArray(settings.pace_zones) ? settings.pace_zones : [],
+      pace_units: settings.pace_units || null,
+      settings_id: settings.id || null,
+      types: Array.isArray(settings.types) ? settings.types : [],
+      fetched_at: new Date().toISOString(),
+    };
+  } catch (error) {
+    console.warn(`[intervals-run-profile] athlete=${athleteId}: ${error.message}`);
+    return null;
+  }
+}
+
 function intervalsEventTypeForSport(sport) {
   const value = String(sport || 'Run');
   if (value === 'Strength') return 'WeightTraining';
@@ -3661,7 +3759,7 @@ function rollingUphillBenchmark(time, altitude, hr, distance, windowSec, minNetG
   return best;
 }
 
-function deriveActivityPerformanceMetric(activity, streams, hrZones = [], intervalsDetail = {}) {
+function deriveActivityPerformanceMetric(activity, streams, hrZones = [], intervalsDetail = {}, runProfile = null) {
   const time = streamByType(streams, 'time');
   const hr = streamByType(streams, 'heartrate');
   const speed = streamByType(streams, 'velocity_smooth');
@@ -3741,6 +3839,8 @@ function deriveActivityPerformanceMetric(activity, streams, hrZones = [], interv
 
   const thresholdPaceSec = thresholdPaceSecondsFromIntervals(intervalsDetail && intervalsDetail.threshold_pace);
   const thresholdHr = optionalNumber(intervalsDetail && intervalsDetail.lthr);
+  const currentProfileThreshold = optionalNumber(runProfile && runProfile.threshold_pace_sec_per_km);
+  const currentProfileLthr = optionalNumber(runProfile && runProfile.lthr);
   const gapSpeed = optionalNumber(intervalsDetail && intervalsDetail.gap);
   const sportText = String(activity.sport || '').toLowerCase();
   const trailCandidate = sportText.includes('trail') || (elevationPerKm !== null && elevationPerKm >= 20);
@@ -3787,7 +3887,9 @@ function deriveActivityPerformanceMetric(activity, streams, hrZones = [], interv
       elevation_per_km: roundOrNull(elevationPerKm, 1),
       cadence_raw: roundOrNull(avgCadenceRaw, 1),
       cadence_normalised_to_steps_per_min: avgCadenceRaw !== null && avgCadence !== null && Math.abs(avgCadence - avgCadenceRaw) > 1,
-      threshold_note: thresholdPaceSec !== null ? 'Valor de threshold_pace asociado a la actividad en Intervals.icu; se usa como estimación de campo, no como prueba de laboratorio.' : 'Intervals no aportó threshold_pace para esta actividad.',
+      threshold_note: thresholdPaceSec !== null ? 'Valor de threshold_pace asociado a la actividad en Intervals.icu; se usa como estimación de campo, no como prueba de laboratorio.' : currentProfileThreshold !== null ? 'La actividad no trae threshold_pace histórico; el perfil Run actual de Intervals se conserva como referencia actual, sin atribuirlo retrospectivamente a esta fecha.' : 'Intervals no aportó threshold_pace para esta actividad.',
+      current_run_profile_threshold: roundOrNull(currentProfileThreshold, 1),
+      current_run_profile_lthr: roundOrNull(currentProfileLthr, 0),
       uphill_note: uphillWindow ? `Referencia de subida basada en el mejor tramo sostenido de ${uphillWindow} min con ascenso continuo suficiente.` : 'Sin tramo sostenido suficiente para estimar rendimiento de subida.',
       cardiac_drift_note: cardiacDrift === null ? 'Solo se estima en sesiones de al menos 30 min y con poco desnivel.' : 'Estimación comparando eficiencia FC/velocidad entre mitades de una sesión relativamente llana.',
     },
@@ -3824,7 +3926,10 @@ async function syncActivityPerformanceMetrics(athleteId, activities, oldest, new
   if (!toProcess.length) return existing;
   const apiKey = await getIntervalsKey(athleteId);
   if (!apiKey) return existing;
-  const hrZones = await prodRows('training_zones', `athlete_id=eq.${encodeURIComponent(athleteId)}&kind=eq.hr&select=*&order=zone_order.asc`).catch(() => []);
+  const runProfile = await intervalsRunProfile(athleteId);
+  const configuredHrZones = await prodRows('training_zones', `athlete_id=eq.${encodeURIComponent(athleteId)}&kind=eq.hr&select=*&order=zone_order.asc`).catch(() => []);
+  const profileHrZones = runProfile && Array.isArray(runProfile.hr_zones) ? runProfile.hr_zones : [];
+  const hrZones = profileHrZones.length ? profileHrZones : configuredHrZones;
   let processed = 0;
   let failed = 0;
   for (const activity of toProcess) {
@@ -3834,7 +3939,9 @@ async function syncActivityPerformanceMetrics(athleteId, activities, oldest, new
         intervalsFetch(apiKey, `/activity/${encodeURIComponent(activity.intervals_activity_id)}?intervals=true`).catch(() => activity.raw_summary || {}),
       ]);
       const detail = unwrapIntervalsObject(detailResponse || activity.raw_summary || {});
-      const metric = deriveActivityPerformanceMetric(activity, streams, hrZones, detail);
+      const activityHrLimits = Array.isArray(detail && detail.icu_hr_zones) ? detail.icu_hr_zones : [];
+      const activityHrZones = activityHrLimits.length ? hrZoneRowsFromIntervalsSettings({ hr_zones: activityHrLimits }) : hrZones;
+      const metric = deriveActivityPerformanceMetric(activity, streams, activityHrZones, detail, runProfile);
       if (!metric) {
         failed += 1;
         console.warn(`[activity-performance] ${activity.intervals_activity_id}: metric could not be derived`);
@@ -3860,7 +3967,7 @@ function aggregateZoneDistribution(rows) {
   return Object.fromEntries(Object.entries(totals).sort(([a],[b]) => a.localeCompare(b)).map(([zone, seconds]) => [zone, { seconds: Math.round(seconds), pct: total ? roundOrNull((seconds / total) * 100, 1) : 0 }]));
 }
 
-function performanceActivitySummary(rows) {
+function performanceActivitySummary(rows, runProfile = null) {
   const sorted = [...(rows || [])].sort((a, b) => String(a.activity_date).localeCompare(String(b.activity_date)));
   const recent = sorted.slice(-6);
   const previous = sorted.slice(-12, -6);
@@ -3884,9 +3991,12 @@ function performanceActivitySummary(rows) {
     thresholdPrevious = optionalNumber((candidates.at(-1) || thresholdRows[0]).threshold_pace_sec_per_km);
   }
   const thresholdChangeSec = thresholdCurrent !== null && thresholdPrevious !== null ? thresholdPrevious - thresholdCurrent : null;
-  const thresholdHr = optionalNumber(thresholdLatest && thresholdLatest.threshold_hr);
+  const profileThreshold = optionalNumber(runProfile && runProfile.threshold_pace_sec_per_km);
+  const profileLthr = optionalNumber(runProfile && runProfile.lthr);
+  const displayThreshold = profileThreshold !== null ? profileThreshold : thresholdCurrent;
+  const thresholdHr = profileLthr !== null ? profileLthr : optionalNumber(thresholdLatest && thresholdLatest.threshold_hr);
   const thresholdAgeDays = thresholdLatest ? Math.max(0, Math.round((new Date(`${localDateInTimeZone()}T12:00:00Z`) - new Date(`${String(thresholdLatest.activity_date).slice(0,10)}T12:00:00Z`)) / 86400000)) : null;
-  const thresholdConfidence = thresholdCurrent === null ? 'Sin datos' : thresholdAgeDays !== null && thresholdAgeDays <= 21 ? (thresholdRows.length >= 3 ? 'Alta' : 'Media') : 'Provisional';
+  const thresholdConfidence = profileThreshold !== null ? 'Actual' : thresholdCurrent === null ? 'Sin datos' : thresholdAgeDays !== null && thresholdAgeDays <= 21 ? (thresholdRows.length >= 3 ? 'Alta' : 'Media') : 'Provisional';
 
   const trailRows = sorted.filter(item => item.trail_candidate);
   const uphillRows = trailRows.filter(item => optionalNumber(item.uphill_threshold_vam) !== null);
@@ -3910,12 +4020,14 @@ function performanceActivitySummary(rows) {
     cardiac_drift_pct: roundOrNull(drift, 1),
     avg_cadence: roundOrNull(cadence, 1),
     zone_distribution: aggregateZoneDistribution(sorted),
-    threshold_pace_sec_per_km: roundOrNull(thresholdCurrent, 1),
+    threshold_pace_sec_per_km: roundOrNull(displayThreshold, 1),
     threshold_pace_change_8w_sec: roundOrNull(thresholdChangeSec, 1),
     threshold_hr: roundOrNull(thresholdHr, 0),
-    threshold_source: thresholdLatest && thresholdLatest.threshold_source || null,
+    threshold_source: profileThreshold !== null ? (runProfile && runProfile.source || 'Intervals.icu · perfil Run') : thresholdLatest && thresholdLatest.threshold_source || null,
     threshold_confidence: thresholdConfidence,
     threshold_observations: thresholdRows.length,
+    intervals_run_profile: runProfile || null,
+    zones_source: runProfile && runProfile.hr_zones && runProfile.hr_zones.length ? 'Intervals.icu · perfil Run' : null,
     uphill_threshold_vam: roundOrNull(uphillVam, 0),
     uphill_vam_change_pct: roundOrNull(uphillChangePct, 1),
     uphill_avg_hr: roundOrNull(uphillHr, 0),
@@ -4014,10 +4126,11 @@ async function dailyPerformanceSnapshot(athleteId, snapshotDate = localDateInTim
   catch { wellness = await listRecoveryRows(athleteId, oldest90, snapshotDate); }
   try { activities = await syncActivities(athleteId, oldest90, snapshotDate); }
   catch { activities = await listStoredActivities(athleteId, oldest90, snapshotDate); }
+  const runProfile = await intervalsRunProfile(athleteId);
   let activityPerformanceRows = [];
   try { activityPerformanceRows = await syncActivityPerformanceMetrics(athleteId, activities.filter(item => String(item.activity_date || '').slice(0, 10) >= oldest84), oldest84, snapshotDate, { forceRecent: Boolean(options.forceActivityMetrics) }); }
   catch (error) { console.warn(`[activity-performance] refresh failed: ${error.message}`); activityPerformanceRows = await listActivityPerformanceMetrics(athleteId, oldest84, snapshotDate); }
-  const activityPerformance = performanceActivitySummary(activityPerformanceRows);
+  const activityPerformance = performanceActivitySummary(activityPerformanceRows, runProfile);
 
   const calendar = await listCalendarWeeks(athleteId, oldest28, snapshotDate, false).catch(() => []);
   const published = (calendar || []).filter(week => week.status === 'published');
@@ -4093,6 +4206,7 @@ async function dailyPerformanceSnapshot(athleteId, snapshotDate = localDateInTim
       consistency_days: plannedDays,
       consistency_minimum: '14 días o 6 sesiones planificadas',
       activity_performance: activityPerformance,
+      intervals_run_profile: runProfile,
       wellness_days: wellness.length,
       activity_count_90d: activities.length,
       feedback_count_7d: recentLogs.length,
@@ -4177,7 +4291,8 @@ async function performanceBundle(athleteId, days = 84, refresh = false) {
   const latest = rows.at(-1) || null;
   const trajectory = await performanceTrajectoryForAthlete(athleteId, latest?.raw_fitness, today).catch(() => ({ goal: null, points: [], today_target: null, delta: null, status: 'Trayectoria no disponible' }));
   const activityMetrics = DEMO_MODE ? [] : await listActivityPerformanceMetrics(athleteId, addDays(today, -83), today).catch(() => []);
-  return { latest, history: rows, trajectory, activity_metrics: activityMetrics, activity_summary: performanceActivitySummary(activityMetrics) };
+  const runProfile = DEMO_MODE ? null : await intervalsRunProfile(athleteId);
+  return { latest, history: rows, trajectory, activity_metrics: activityMetrics, activity_summary: performanceActivitySummary(activityMetrics, runProfile), intervals_run_profile: runProfile };
 }
 
 let dailyPerformanceLastDate = '';
@@ -4188,7 +4303,7 @@ async function refreshAllPerformanceSnapshots(reason = 'timer') {
   if (dailyPerformanceLastDate === today) return;
   dailyPerformanceRunning = true;
   try {
-    const athletes = await prodRows('athletes', 'intervals_status=eq.connected&select=id,display_name&order=display_name.asc');
+    const athletes = await prodRows('athletes', 'intervals_status=eq.connected&lifecycle_status=eq.active&select=id,display_name&order=display_name.asc');
     for (const athlete of athletes) {
       try { await dailyPerformanceSnapshot(athlete.id, today); }
       catch (error) { console.error(`[daily-performance] ${athlete.display_name || athlete.id}: ${error.message}`); }
@@ -4482,7 +4597,7 @@ async function api(req, res, url) {
 
   if (pathname === '/api/coach/athletes' && method === 'GET') {
     requireRole(session, 'coach');
-    return sendJson(res, 200, { athletes: await listCoachAthletes(session) });
+    return sendJson(res, 200, { athletes: await listCoachAthletes(session, { includeInactive: url.searchParams.get('include_inactive') === '1', detailed: url.searchParams.get('details') === '1' }) });
   }
 
   if (pathname === '/api/coach/athletes' && method === 'POST') {
@@ -4493,6 +4608,13 @@ async function api(req, res, url) {
   const inviteAthleteMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/invite$/);
   if (inviteAthleteMatch && method === 'POST') {
     return sendJson(res, 200, await inviteAthleteUser(session, inviteAthleteMatch[1]));
+  }
+
+  const athleteStatusMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/status$/);
+  if (athleteStatusMatch && method === 'PATCH') {
+    requireRole(session, 'coach');
+    const body = await readJson(req);
+    return sendJson(res, 200, { athlete: await setAthleteLifecycle(session, athleteStatusMatch[1], body.status) });
   }
 
   const athleteMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)$/);
