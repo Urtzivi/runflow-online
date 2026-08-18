@@ -399,3 +399,15 @@ textarea { resize: vertical; min-height: 96px; line-height: 1.45; }
 .performance-chart svg{width:100%;height:220px;display:block;overflow:visible}
 .performance-chart .axis{stroke:rgba(33,63,57,.16);stroke-width:2}.performance-chart text{fill:var(--muted);font-size:13px}
 @media(max-width:800px){.performance-hero-grid{grid-template-columns:1fr}.athlete-fitness-foot{display:grid;gap:4px}}
+
+/* RunFlow 2.4.1 · Performance foundation */
+.performance-line-real{stroke:var(--green);stroke-width:6;stroke-linecap:round;stroke-linejoin:round}
+.performance-line-target{stroke:#7b61a8;stroke-width:5;stroke-dasharray:12 10;stroke-linecap:round;stroke-linejoin:round;opacity:.9}
+.performance-today-line{stroke:rgba(33,63,57,.22);stroke-width:2;stroke-dasharray:4 6}
+.performance-legend-real{fill:var(--green)!important;font-weight:800}.performance-legend-target{fill:#7b61a8!important;font-weight:800}
+.trajectory-status{margin-top:8px;padding-top:10px;border-top:1px solid var(--line)}
+.trajectory-points{display:grid;gap:9px;margin-top:14px}
+.trajectory-point-row{display:grid;grid-template-columns:minmax(170px,1fr) minmax(170px,1fr) auto;gap:10px;align-items:end;padding:10px;border:1px solid var(--line);border-radius:14px;background:var(--soft)}
+.zone-distribution{display:grid;gap:8px;margin-top:10px}.zone-distribution-row{display:grid;grid-template-columns:42px 1fr 46px;align-items:center;gap:10px;font-size:.85rem}.zone-distribution-row i{display:block;height:10px;border-radius:999px;background:rgba(33,63,57,.09);overflow:hidden}.zone-distribution-row em{display:block;height:100%;border-radius:inherit;background:var(--green)}.zone-distribution-row span{text-align:right;color:var(--muted);font-weight:800}
+.athlete-fitness-real{stroke:currentColor;stroke-width:6;stroke-linecap:round;stroke-linejoin:round}.athlete-fitness-target{stroke:#8066ad;stroke-width:4;stroke-dasharray:10 8;stroke-linecap:round;stroke-linejoin:round;opacity:.9}.athlete-trajectory-status{margin-top:8px;padding:9px 11px;border-radius:12px;background:rgba(128,102,173,.09);color:#5e4b80;font-size:.78rem;font-weight:800}
+@media(max-width:720px){.trajectory-point-row{grid-template-columns:1fr 1fr}.trajectory-point-row button{grid-column:1/-1}}
