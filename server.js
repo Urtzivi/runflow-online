@@ -21,7 +21,7 @@ const APP_ENCRYPTION_KEY = String(process.env.APP_ENCRYPTION_KEY || '');
 const OPENAI_API_KEY = String(process.env.OPENAI_API_KEY || '');
 const OPENAI_MODEL = String(process.env.OPENAI_MODEL || 'gpt-5.6-terra');
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
-const APP_VERSION = 'Online Pilot 1.8.0 · Rendimiento diario';
+const APP_VERSION = 'Online Pilot 1.8.1 · Rendimiento 2.4.1';
 const INTERVALS_API_BASE = 'https://intervals.icu/api/v1';
 
 const RUNFLOW_PLAN_SCHEMA = 'runflow.plan.v1';
@@ -3272,19 +3272,27 @@ function unwrapIntervalsObject(value) {
 
 function firstFinite(object, keys) {
   for (const key of keys) {
-    const value = Number(object && object[key]);
+    const raw = object && object[key];
+    if (raw === null || raw === undefined || raw === '') continue;
+    const value = Number(raw);
     if (Number.isFinite(value)) return value;
   }
   return null;
 }
 
+function optionalNumber(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
 function average(values) {
-  const valid = values.map(Number).filter(Number.isFinite);
+  const valid = (values || []).filter(value => value !== null && value !== undefined && value !== '').map(Number).filter(Number.isFinite);
   return valid.length ? valid.reduce((sum, value) => sum + value, 0) / valid.length : null;
 }
 
 function standardDeviation(values) {
-  const valid = values.map(Number).filter(Number.isFinite);
+  const valid = (values || []).filter(value => value !== null && value !== undefined && value !== '').map(Number).filter(Number.isFinite);
   if (valid.length < 2) return null;
   const mean = average(valid);
   return Math.sqrt(valid.reduce((sum, value) => sum + ((value - mean) ** 2), 0) / valid.length);
@@ -3303,6 +3311,7 @@ function secondsToPace(seconds) {
 }
 
 function roundOrNull(value, decimals = 1) {
+  if (value === null || value === undefined || value === '') return null;
   const number = Number(value);
   if (!Number.isFinite(number)) return null;
   const factor = 10 ** decimals;
@@ -3455,7 +3464,7 @@ function normaliseWellnessRow(athleteId, item) {
     load: roundOrNull(firstFinite(item || {}, ['icu_training_load', 'training_load', 'load']), 2),
     sleep_sec: roundOrNull(firstFinite(item || {}, ['sleepSecs', 'sleep_seconds', 'sleep']), 0),
     resting_hr: roundOrNull(firstFinite(item || {}, ['restingHR', 'resting_hr', 'restingHeartRate']), 1),
-    hrv: roundOrNull(firstFinite(item || {}, ['hrv', 'hrvRMSSD', 'rmssd']), 2),
+    hrv: roundOrNull(firstFinite(item || {}, ['hrv', 'hrvRMSSD', 'hrvRmssd', 'hrv_rmssd', 'rmssd', 'rmssd_ms']), 2),
     source: 'intervals',
     updated_at: new Date().toISOString(),
   };
@@ -3463,12 +3472,13 @@ function normaliseWellnessRow(athleteId, item) {
 
 function readinessForRow(row, previousRows) {
   const baseline = previousRows.slice(-21);
-  const sleepBase = average(baseline.map(item => Number(item.sleep_sec) / 3600));
+  const sleepBase = average(baseline.map(item => { const sec = optionalNumber(item.sleep_sec); return sec === null ? null : sec / 3600; }));
   const rhrBase = average(baseline.map(item => item.resting_hr));
   const hrvBase = average(baseline.map(item => item.hrv));
-  const sleep = Number(row.sleep_sec) / 3600;
-  const rhr = Number(row.resting_hr);
-  const hrv = Number(row.hrv);
+  const sleepSec = optionalNumber(row.sleep_sec);
+  const sleep = sleepSec === null ? null : sleepSec / 3600;
+  const rhr = optionalNumber(row.resting_hr);
+  const hrv = optionalNumber(row.hrv);
   let score = 75;
   const reasons = [];
   if (Number.isFinite(sleep) && Number.isFinite(sleepBase)) {
@@ -3565,25 +3575,250 @@ function nearestMetricRow(rows, targetDate) {
   return best;
 }
 
-function fitnessIndexForRows(current, wellnessRows, consistencyPct) {
-  const fitnessValues = (wellnessRows || []).map(item => Number(item.fitness)).filter(Number.isFinite);
-  if (!current || !Number.isFinite(Number(current.fitness)) || fitnessValues.length < 7) {
-    return { index: null, label: 'En construcción', trend: 'Sin datos suficientes', change28: null };
+function fitnessIndexForRows(current, wellnessRows) {
+  const currentFitness = optionalNumber(current && current.fitness);
+  const fitnessValues = (wellnessRows || []).map(item => optionalNumber(item.fitness)).filter(Number.isFinite);
+  if (currentFitness === null || fitnessValues.length < 2) {
+    return { index: currentFitness, label: 'Aptitud todavía sin tendencia', trend: 'En construcción', change28: null };
   }
-  const currentFitness = Number(current.fitness);
-  const p20 = percentile(fitnessValues, 0.20);
-  const p80 = percentile(fitnessValues, 0.80);
-  const span = Math.max(5, Number(p80 || 0) - Number(p20 || 0));
-  const relative = clampNumber((currentFitness - Number(p20 || currentFitness)) / span, 0, 1);
   const row28 = nearestMetricRow(wellnessRows, addDays(current.metric_date, -28));
-  const change28 = row28 && Number.isFinite(Number(row28.fitness)) ? currentFitness - Number(row28.fitness) : null;
-  const trendBonus = Number.isFinite(change28) ? clampNumber(change28 * 2, -10, 10) : 0;
-  const consistency = Number.isFinite(Number(consistencyPct)) ? Number(consistencyPct) / 100 : 0.7;
-  const consistencyBonus = clampNumber((consistency - 0.70) * 20, -6, 6);
-  const index = Math.round(clampNumber(40 + relative * 40 + trendBonus + consistencyBonus, 20, 95));
-  const trend = !Number.isFinite(change28) ? 'En construcción' : change28 >= 3 ? 'Mejorando' : change28 <= -3 ? 'Bajando' : 'Estable';
-  const label = index >= 85 ? 'Nivel muy alto reciente' : index >= 70 ? 'Buen nivel' : index >= 55 ? 'En construcción' : 'Base';
-  return { index, label, trend, change28: roundOrNull(change28, 1) };
+  const fitness28 = optionalNumber(row28 && row28.fitness);
+  const change28 = fitness28 === null ? null : currentFitness - fitness28;
+  const trend = change28 === null ? 'En construcción' : change28 >= 1.5 ? 'Subiendo' : change28 <= -1.5 ? 'Bajando' : 'Estable';
+  const label = change28 === null ? 'Aptitud actual' : change28 >= 1.5 ? 'Carga acumulada creciendo' : change28 <= -1.5 ? 'Carga acumulada descendiendo' : 'Carga acumulada estable';
+  // 2.4.1: fitness_index conserva compatibilidad con la tabla, pero ya no es un índice 0–100.
+  // Representa la Aptitud/CTL real recibida de Intervals.
+  return { index: roundOrNull(currentFitness, 2), label, trend, change28: roundOrNull(change28, 1) };
+}
+
+
+function streamByType(streams, type) {
+  return (Array.isArray(streams) ? streams : []).find(item => String(item && item.type || '').toLowerCase() === String(type).toLowerCase())?.data || [];
+}
+
+function median(values) {
+  return percentile((values || []).map(Number).filter(Number.isFinite), 0.5);
+}
+
+function meanForIndexes(values, indexes) {
+  const valid = (indexes || []).map(index => optionalNumber(values[index])).filter(Number.isFinite);
+  return valid.length ? valid.reduce((sum, value) => sum + value, 0) / valid.length : null;
+}
+
+function deriveActivityPerformanceMetric(activity, streams, hrZones = []) {
+  const time = streamByType(streams, 'time');
+  const hr = streamByType(streams, 'heartrate');
+  const speed = streamByType(streams, 'velocity_smooth');
+  const cadence = streamByType(streams, 'cadence');
+  const points = Math.max(time.length, hr.length, speed.length, cadence.length);
+  if (!points || hr.length < 30 || speed.length < 30) return null;
+  const validIndexes = [];
+  for (let i = 0; i < Math.min(hr.length, speed.length); i += 1) {
+    const h = optionalNumber(hr[i]);
+    const v = optionalNumber(speed[i]);
+    if (h !== null && h >= 70 && v !== null && v > 0.8) validIndexes.push(i);
+  }
+  if (validIndexes.length < 120) return null;
+  const avgHr = meanForIndexes(hr, validIndexes);
+  const avgSpeedMs = meanForIndexes(speed, validIndexes);
+  const aerobicEfficiency = avgHr && avgSpeedMs ? ((avgSpeedMs * 3.6) / avgHr) * 100 : null;
+  const avgCadence = meanForIndexes(cadence, validIndexes);
+
+  const z2 = [...(hrZones || [])].sort((a, b) => Number(a.zone_order || 0) - Number(b.zone_order || 0))[1] || null;
+  let z2Indexes = [];
+  if (z2) {
+    const minHr = optionalNumber(z2.min_value);
+    const maxHr = optionalNumber(z2.max_value);
+    if (minHr !== null && maxHr !== null) {
+      z2Indexes = validIndexes.filter(index => {
+        const value = optionalNumber(hr[index]);
+        return value !== null && value >= minHr && value <= maxHr;
+      });
+    }
+  }
+  const z2Speed = z2Indexes.length >= 180 ? meanForIndexes(speed, z2Indexes) : null;
+  const z2Hr = z2Indexes.length >= 180 ? meanForIndexes(hr, z2Indexes) : null;
+  const z2Pace = z2Speed && z2Speed > 0 ? 1000 / z2Speed : null;
+  const z2Efficiency = z2Speed && z2Hr ? ((z2Speed * 3.6) / z2Hr) * 100 : null;
+
+  const distanceKm = optionalNumber(activity.distance_m) ? Number(activity.distance_m) / 1000 : null;
+  const elevationPerKm = distanceKm && distanceKm > 0 ? Number(activity.elevation_gain_m || 0) / distanceKm : null;
+  let cardiacDrift = null;
+  const duration = optionalNumber(activity.duration_sec) || (time.length ? optionalNumber(time.at(-1)) : null);
+  if (duration && duration >= 1800 && (elevationPerKm === null || elevationPerKm <= 12)) {
+    const startCut = Math.floor(validIndexes.length * 0.10);
+    const endCut = Math.ceil(validIndexes.length * 0.90);
+    const core = validIndexes.slice(startCut, endCut);
+    const half = Math.floor(core.length / 2);
+    const first = core.slice(0, half);
+    const second = core.slice(half);
+    const hr1 = meanForIndexes(hr, first), hr2 = meanForIndexes(hr, second);
+    const sp1 = meanForIndexes(speed, first), sp2 = meanForIndexes(speed, second);
+    const eff1 = hr1 && sp1 ? sp1 / hr1 : null;
+    const eff2 = hr2 && sp2 ? sp2 / hr2 : null;
+    if (eff1 && eff2) cardiacDrift = ((eff1 - eff2) / eff1) * 100;
+  }
+
+  const zoneDistribution = {};
+  const orderedZones = [...(hrZones || [])].sort((a, b) => Number(a.zone_order || 0) - Number(b.zone_order || 0));
+  if (orderedZones.length) {
+    const seconds = Object.fromEntries(orderedZones.map(zone => [`Z${zone.zone_order}`, 0]));
+    for (let i = 0; i < hr.length; i += 1) {
+      const value = optionalNumber(hr[i]);
+      if (value === null) continue;
+      const zone = orderedZones.find(item => {
+        const min = optionalNumber(item.min_value), max = optionalNumber(item.max_value);
+        return min !== null && max !== null && value >= min && value <= max;
+      });
+      if (!zone) continue;
+      const currentTime = optionalNumber(time[i]);
+      const nextTime = optionalNumber(time[i + 1]);
+      const step = currentTime !== null && nextTime !== null ? clampNumber(nextTime - currentTime, 0, 10) : 1;
+      seconds[`Z${zone.zone_order}`] = (seconds[`Z${zone.zone_order}`] || 0) + (step || 1);
+    }
+    const total = Object.values(seconds).reduce((sum, value) => sum + Number(value || 0), 0);
+    for (const [zone, sec] of Object.entries(seconds)) zoneDistribution[zone] = { seconds: Math.round(sec), pct: total ? roundOrNull((sec / total) * 100, 1) : 0 };
+  }
+
+  return {
+    athlete_id: activity.athlete_id,
+    activity_id: activity.id || null,
+    intervals_activity_id: String(activity.intervals_activity_id),
+    activity_date: activity.activity_date,
+    sport: activity.sport || null,
+    aerobic_efficiency: roundOrNull(aerobicEfficiency, 3),
+    z2_efficiency: roundOrNull(z2Efficiency, 3),
+    z2_pace_sec_per_km: roundOrNull(z2Pace, 1),
+    z2_avg_hr: roundOrNull(z2Hr, 1),
+    cardiac_drift_pct: roundOrNull(cardiacDrift, 1),
+    avg_cadence: roundOrNull(avgCadence, 1),
+    moving_time_sec: roundOrNull(duration, 0),
+    zone_distribution: zoneDistribution,
+    details: {
+      stream_points: points,
+      valid_moving_points: validIndexes.length,
+      z2_points: z2Indexes.length,
+      elevation_per_km: roundOrNull(elevationPerKm, 1),
+      cardiac_drift_note: cardiacDrift === null ? 'Solo se estima en sesiones de al menos 30 min y con poco desnivel.' : 'Estimación comparando eficiencia FC/velocidad entre mitades de una sesión relativamente llana.',
+    },
+    calculated_at: new Date().toISOString(),
+  };
+}
+
+async function listActivityPerformanceMetrics(athleteId, oldest, newest) {
+  if (DEMO_MODE) return [];
+  return prodRows('activity_performance_metrics', `athlete_id=eq.${encodeURIComponent(athleteId)}&activity_date=gte.${oldest}T00:00:00&activity_date=lte.${newest}T23:59:59&select=*&order=activity_date.asc`).catch(() => []);
+}
+
+async function syncActivityPerformanceMetrics(athleteId, activities, oldest, newest) {
+  if (DEMO_MODE) return [];
+  const existing = await listActivityPerformanceMetrics(athleteId, oldest, newest);
+  const known = new Set(existing.map(item => String(item.intervals_activity_id)));
+  const missing = (activities || []).filter(item => {
+    const id = String(item.intervals_activity_id || '');
+    const sport = String(item.sport || '').toLowerCase();
+    return id && !known.has(id) && (sport.includes('run') || sport.includes('trail'));
+  }).sort((a, b) => String(a.activity_date).localeCompare(String(b.activity_date))).slice(-30);
+  if (!missing.length) return existing;
+  const apiKey = await getIntervalsKey(athleteId);
+  if (!apiKey) return existing;
+  const hrZones = await prodRows('training_zones', `athlete_id=eq.${encodeURIComponent(athleteId)}&kind=eq.hr&select=*&order=zone_order.asc`).catch(() => []);
+  for (const activity of missing) {
+    try {
+      const streams = await intervalsFetch(apiKey, `/activity/${encodeURIComponent(activity.intervals_activity_id)}/streams.json`);
+      const metric = deriveActivityPerformanceMetric(activity, streams, hrZones);
+      if (metric) await prodRows('activity_performance_metrics', 'on_conflict=athlete_id,intervals_activity_id', { method: 'POST', body: metric, prefer: 'resolution=merge-duplicates,return=minimal' });
+    } catch (error) {
+      console.warn(`[activity-performance] ${activity.intervals_activity_id}: ${error.message}`);
+    }
+  }
+  return listActivityPerformanceMetrics(athleteId, oldest, newest);
+}
+
+function aggregateZoneDistribution(rows) {
+  const totals = {};
+  for (const row of rows || []) {
+    for (const [zone, value] of Object.entries(row.zone_distribution || {})) totals[zone] = (totals[zone] || 0) + Number(value && value.seconds || 0);
+  }
+  const total = Object.values(totals).reduce((sum, value) => sum + value, 0);
+  return Object.fromEntries(Object.entries(totals).sort(([a],[b]) => a.localeCompare(b)).map(([zone, seconds]) => [zone, { seconds: Math.round(seconds), pct: total ? roundOrNull((seconds / total) * 100, 1) : 0 }]));
+}
+
+function performanceActivitySummary(rows) {
+  const sorted = [...(rows || [])].sort((a, b) => String(a.activity_date).localeCompare(String(b.activity_date)));
+  const recent = sorted.slice(-6);
+  const previous = sorted.slice(-12, -6);
+  const effRecent = median(recent.map(item => item.aerobic_efficiency));
+  const effPrevious = median(previous.map(item => item.aerobic_efficiency));
+  const z2RecentRows = sorted.filter(item => optionalNumber(item.z2_pace_sec_per_km) !== null).slice(-3);
+  const z2PrevRows = sorted.filter(item => optionalNumber(item.z2_pace_sec_per_km) !== null).slice(-6, -3);
+  const z2Pace = median(z2RecentRows.map(item => item.z2_pace_sec_per_km));
+  const z2Prev = median(z2PrevRows.map(item => item.z2_pace_sec_per_km));
+  const drift = median(sorted.map(item => item.cardiac_drift_pct).filter(value => optionalNumber(value) !== null).slice(-5));
+  const cadence = median(recent.map(item => item.avg_cadence));
+  return {
+    activities_with_streams: sorted.length,
+    aerobic_efficiency: roundOrNull(effRecent, 3),
+    aerobic_efficiency_change_pct: effRecent && effPrevious ? roundOrNull(((effRecent - effPrevious) / effPrevious) * 100, 1) : null,
+    z2_pace_sec_per_km: roundOrNull(z2Pace, 1),
+    z2_pace_change_pct: z2Pace && z2Prev ? roundOrNull(((z2Prev - z2Pace) / z2Prev) * 100, 1) : null,
+    cardiac_drift_pct: roundOrNull(drift, 1),
+    avg_cadence: roundOrNull(cadence, 1),
+    zone_distribution: aggregateZoneDistribution(sorted),
+  };
+}
+
+function trajectoryPointsFromGoal(goal) {
+  const metric = safeObject(goal && goal.target_metric);
+  const raw = Array.isArray(metric.runflow_fitness_trajectory) ? metric.runflow_fitness_trajectory : [];
+  return raw.map(item => ({ date: validDate(item && item.date), value: roundOrNull(item && item.value, 2) })).filter(item => item.date && item.value !== null).sort((a, b) => itemDateSort(a.date, b.date));
+}
+
+function itemDateSort(a, b) { return String(a).localeCompare(String(b)); }
+
+function interpolateTrajectory(points, date) {
+  const sorted = [...(points || [])].sort((a, b) => itemDateSort(a.date, b.date));
+  if (!sorted.length) return null;
+  if (date <= sorted[0].date) return Number(sorted[0].value);
+  if (date >= sorted.at(-1).date) return Number(sorted.at(-1).value);
+  for (let i = 0; i < sorted.length - 1; i += 1) {
+    const a = sorted[i], b = sorted[i + 1];
+    if (date < a.date || date > b.date) continue;
+    const start = new Date(`${a.date}T12:00:00Z`).getTime();
+    const end = new Date(`${b.date}T12:00:00Z`).getTime();
+    const current = new Date(`${date}T12:00:00Z`).getTime();
+    const ratio = end === start ? 0 : (current - start) / (end - start);
+    return Number(a.value) + (Number(b.value) - Number(a.value)) * ratio;
+  }
+  return null;
+}
+
+async function performanceTrajectoryForAthlete(athleteId, currentFitness = null, today = localDateInTimeZone()) {
+  const goals = (await listGoals(athleteId)).filter(goal => goal.status === 'active' && String(goal.goal_date || '') >= today);
+  const ordered = goals.sort((a, b) => {
+    const pa = String(a.priority_code || a.priority || '').toUpperCase() === 'A' || a.priority === 'Principal' ? 0 : 1;
+    const pb = String(b.priority_code || b.priority || '').toUpperCase() === 'A' || b.priority === 'Principal' ? 0 : 1;
+    return pa - pb || String(a.goal_date).localeCompare(String(b.goal_date));
+  });
+  const configured = ordered.find(goal => trajectoryPointsFromGoal(goal).length >= 2);
+  const goal = configured || ordered[0] || null;
+  if (!goal) return { goal: null, points: [], today_target: null, delta: null, status: 'Sin objetivo activo' };
+  const points = trajectoryPointsFromGoal(goal);
+  const todayTarget = points.length >= 2 ? interpolateTrajectory(points, today) : null;
+  const fitness = optionalNumber(currentFitness);
+  const delta = todayTarget !== null && fitness !== null ? fitness - todayTarget : null;
+  const status = delta === null ? 'Trayectoria sin configurar' : delta >= 1.5 ? 'Por encima de la trayectoria' : delta >= -1 ? 'En trayectoria' : delta >= -2.5 ? 'Ligeramente por debajo' : 'Por debajo de la trayectoria';
+  return { goal: { id: goal.id, name: goal.name, goal_date: goal.goal_date, priority_code: goal.priority_code || null, priority: goal.priority || null }, points, today_target: roundOrNull(todayTarget, 2), delta: roundOrNull(delta, 2), status };
+}
+
+async function savePerformanceTrajectory(athleteId, body) {
+  const goalId = sanitiseText(body && body.goal_id, 80);
+  if (!goalId) throw Object.assign(new Error('Selecciona un objetivo.'), { status: 400 });
+  const goal = await getGoalForAthlete(athleteId, goalId);
+  const points = (Array.isArray(body && body.points) ? body.points : []).map(item => ({ date: validDate(item && item.date), value: roundOrNull(item && item.value, 2) })).filter(item => item.date && item.value !== null).sort((a, b) => itemDateSort(a.date, b.date));
+  if (points.length < 2) throw Object.assign(new Error('La trayectoria necesita al menos dos puntos.'), { status: 400 });
+  const targetMetric = { ...safeObject(goal.target_metric), runflow_fitness_trajectory: points };
+  return updateGoal(goal.id, athleteId, { target_metric: targetMetric });
 }
 
 function feedbackAdjustment(logs) {
@@ -3620,12 +3855,19 @@ async function dailyPerformanceSnapshot(athleteId, snapshotDate = localDateInTim
   catch { wellness = await listRecoveryRows(athleteId, oldest90, snapshotDate); }
   try { activities = await syncActivities(athleteId, oldest90, snapshotDate); }
   catch { activities = await listStoredActivities(athleteId, oldest90, snapshotDate); }
+  let activityPerformanceRows = [];
+  try { activityPerformanceRows = await syncActivityPerformanceMetrics(athleteId, activities.filter(item => String(item.activity_date || '').slice(0, 10) >= oldest42), oldest42, snapshotDate); }
+  catch { activityPerformanceRows = await listActivityPerformanceMetrics(athleteId, oldest42, snapshotDate); }
+  const activityPerformance = performanceActivitySummary(activityPerformanceRows);
 
   const calendar = await listCalendarWeeks(athleteId, oldest28, snapshotDate, false).catch(() => []);
   const published = (calendar || []).filter(week => week.status === 'published');
   const plannedWorkouts = published.flatMap(week => week.workouts || []).filter(workout => String(workout.workout_date || '').slice(0, 10) <= snapshotDate);
   const completedPoints = plannedWorkouts.reduce((sum, workout) => sum + (workout.execution_status === 'completed' ? 1 : workout.execution_status === 'partial' ? 0.5 : 0), 0);
-  const consistency = plannedWorkouts.length ? (completedPoints / plannedWorkouts.length) * 100 : null;
+  const firstPlannedDate = plannedWorkouts.length ? [...plannedWorkouts].map(item => String(item.workout_date || '').slice(0, 10)).sort()[0] : null;
+  const plannedDays = firstPlannedDate ? Math.max(1, Math.round((new Date(`${snapshotDate}T12:00:00Z`) - new Date(`${firstPlannedDate}T12:00:00Z`)) / 86400000) + 1) : 0;
+  const consistencyReady = plannedWorkouts.length >= 6 || plannedDays >= 14;
+  const consistency = consistencyReady && plannedWorkouts.length ? (completedPoints / plannedWorkouts.length) * 100 : null;
 
   let recentLogs = [];
   if (!DEMO_MODE) {
@@ -3644,15 +3886,16 @@ async function dailyPerformanceSnapshot(athleteId, snapshotDate = localDateInTim
   readinessReasons.push(...feedback.reasons);
   const readinessExplanation = readinessReasons.length ? `Factores principales: ${readinessReasons.join(', ')}.` : 'Los indicadores están cerca de la línea base individual.';
 
-  const fit = fitnessIndexForRows(currentWellness, wellness, consistency);
+  const fit = fitnessIndexForRows(currentWellness, wellness);
   const avgRpe = average(recentLogs.map(item => item.rpe));
   const maxPainValues = recentLogs.map(item => Number(item.pain)).filter(Number.isFinite);
   const maxPain = maxPainValues.length ? Math.max(...maxPainValues) : null;
   const latestPain = [...recentLogs].reverse().find(item => Number(item.pain) > 0 && item.pain_area) || null;
 
-  const sleepHours = currentWellness && Number.isFinite(Number(currentWellness.sleep_sec)) ? Number(currentWellness.sleep_sec) / 3600 : null;
+  const currentSleepSec = optionalNumber(currentWellness?.sleep_sec);
+  const sleepHours = currentSleepSec === null ? null : currentSleepSec / 3600;
   const baseline = baseReadiness.baseline || {};
-  const dataSignals = [currentWellness, wellness.length >= 14, Number.isFinite(Number(currentWellness?.hrv)), Number.isFinite(Number(currentWellness?.resting_hr)), Number.isFinite(sleepHours), activities.length >= 6, plannedWorkouts.length >= 3, recentLogs.length > 0];
+  const dataSignals = [currentWellness, wellness.length >= 14, optionalNumber(currentWellness?.hrv) !== null, optionalNumber(currentWellness?.resting_hr) !== null, optionalNumber(sleepHours) !== null, activities.length >= 6, plannedWorkouts.length >= 3, recentLogs.length > 0];
   const quality = Math.round((dataSignals.filter(Boolean).length / dataSignals.length) * 100);
 
   const snapshot = {
@@ -3685,9 +3928,12 @@ async function dailyPerformanceSnapshot(athleteId, snapshotDate = localDateInTim
     sleep_baseline_hours: roundOrNull(baseline.sleep_hours, 2),
     data_quality: quality,
     details: {
-      method: 'runflow-performance-v1',
-      relative_index: true,
-      note: 'El índice de forma es una estimación relativa al histórico reciente; no es una medición clínica.',
+      method: 'runflow-performance-v2',
+      fitness_metric: 'Intervals Aptitud/CTL; no es un porcentaje ni una medición clínica.',
+      consistency_status: consistencyReady ? 'ready' : 'building',
+      consistency_days: plannedDays,
+      consistency_minimum: '14 días o 6 sesiones planificadas',
+      activity_performance: activityPerformance,
       wellness_days: wellness.length,
       activity_count_90d: activities.length,
       feedback_count_7d: recentLogs.length,
@@ -3718,9 +3964,10 @@ async function backfillPerformanceHistory(athleteId, days = 84) {
   for (const row of targetRows) {
     const prior = wellness.filter(item => item.metric_date < row.metric_date);
     const readiness = readinessForRow(row, prior.slice(-21));
-    const fit = fitnessIndexForRows(row, wellness.filter(item => item.metric_date <= row.metric_date).slice(-90), null);
-    const sleepHours = Number.isFinite(Number(row.sleep_sec)) ? Number(row.sleep_sec) / 3600 : null;
-    const signals = [prior.length >= 14, Number.isFinite(Number(row.hrv)), Number.isFinite(Number(row.resting_hr)), Number.isFinite(sleepHours), activities.some(item => String(item.activity_date || '').slice(0, 10) <= row.metric_date)];
+    const fit = fitnessIndexForRows(row, wellness.filter(item => item.metric_date <= row.metric_date).slice(-90));
+    const rowSleepSec = optionalNumber(row.sleep_sec);
+    const sleepHours = rowSleepSec === null ? null : rowSleepSec / 3600;
+    const signals = [prior.length >= 14, optionalNumber(row.hrv) !== null, optionalNumber(row.resting_hr) !== null, optionalNumber(sleepHours) !== null, activities.some(item => String(item.activity_date || '').slice(0, 10) <= row.metric_date)];
     payload.push({
       athlete_id: athleteId,
       snapshot_date: row.metric_date,
@@ -3750,7 +3997,7 @@ async function backfillPerformanceHistory(athleteId, days = 84) {
       sleep_hours: roundOrNull(sleepHours, 2),
       sleep_baseline_hours: roundOrNull(readiness.baseline?.sleep_hours, 2),
       data_quality: Math.round((signals.filter(Boolean).length / signals.length) * 75),
-      details: { method: 'runflow-performance-v1-backfill', relative_index: true, historical_backfill: true },
+      details: { method: 'runflow-performance-v2-backfill', fitness_metric: 'Intervals Aptitud/CTL', historical_backfill: true },
       calculated_at: new Date().toISOString(),
     });
   }
@@ -3768,7 +4015,10 @@ async function performanceBundle(athleteId, days = 84, refresh = false) {
     rows = await listPerformanceSnapshots(athleteId, oldest, today);
   }
   if (!rows.length && !DEMO_MODE) { const current = await dailyPerformanceSnapshot(athleteId, today); rows = [current]; }
-  return { latest: rows.at(-1) || null, history: rows };
+  const latest = rows.at(-1) || null;
+  const trajectory = await performanceTrajectoryForAthlete(athleteId, latest?.raw_fitness, today).catch(() => ({ goal: null, points: [], today_target: null, delta: null, status: 'Trayectoria no disponible' }));
+  const activityMetrics = DEMO_MODE ? [] : await listActivityPerformanceMetrics(athleteId, addDays(today, -83), today).catch(() => []);
+  return { latest, history: rows, trajectory, activity_metrics: activityMetrics, activity_summary: performanceActivitySummary(activityMetrics) };
 }
 
 let dailyPerformanceLastDate = '';
@@ -4384,6 +4634,13 @@ async function api(req, res, url) {
     await ensureCoachAccess(session, athleteId);
     const refresh = url.searchParams.get('refresh') === '1';
     return sendJson(res, 200, await performanceBundle(athleteId, url.searchParams.get('days') || 84, refresh));
+  }
+  const performanceTrajectoryMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/performance-trajectory$/);
+  if (performanceTrajectoryMatch && method === 'PUT') {
+    const athleteId = performanceTrajectoryMatch[1];
+    await ensureCoachAccess(session, athleteId);
+    const goal = await savePerformanceTrajectory(athleteId, await readJson(req));
+    return sendJson(res, 200, { goal, trajectory: await performanceTrajectoryForAthlete(athleteId, null) });
   }
 
   const activityOriginalMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/activities\/([^/]+)\/original-file$/);
