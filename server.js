@@ -21,7 +21,7 @@ const APP_ENCRYPTION_KEY = String(process.env.APP_ENCRYPTION_KEY || '');
 const OPENAI_API_KEY = String(process.env.OPENAI_API_KEY || '');
 const OPENAI_MODEL = String(process.env.OPENAI_MODEL || 'gpt-5.6-terra');
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
-const APP_VERSION = 'Online Pilot 1.7.0 · Athlete 2.0';
+const APP_VERSION = 'Online Pilot 1.8.0 · Rendimiento diario';
 const INTERVALS_API_BASE = 'https://intervals.icu/api/v1';
 
 const RUNFLOW_PLAN_SCHEMA = 'runflow.plan.v1';
@@ -854,12 +854,13 @@ async function demoAthleteBundle(athleteId) {
 async function prodAthleteBundle(athleteId, weekStart = startOfWeek()) {
   const athleteRows = await prodRows('athletes', `id=eq.${encodeURIComponent(athleteId)}&select=*&limit=1`);
   if (!athleteRows.length) throw Object.assign(new Error('Deportista no encontrado.'), { status: 404 });
-  const [profiles, zones, goals, weeks, metrics] = await Promise.all([
+  const [profiles, zones, goals, weeks, metrics, performance] = await Promise.all([
     prodRows('athlete_profiles', `athlete_id=eq.${encodeURIComponent(athleteId)}&select=*&limit=1`),
     prodRows('training_zones', `athlete_id=eq.${encodeURIComponent(athleteId)}&select=*&order=kind.asc,zone_order.asc`),
     prodRows('goals', `athlete_id=eq.${encodeURIComponent(athleteId)}&status=eq.active&select=*&order=goal_date.asc`),
     prodRows('training_weeks', `athlete_id=eq.${encodeURIComponent(athleteId)}&week_start=eq.${weekStart}&select=*&limit=1`),
     prodRows('daily_metrics', `athlete_id=eq.${encodeURIComponent(athleteId)}&select=*&order=metric_date.desc&limit=1`),
+    prodRows('performance_snapshots', `athlete_id=eq.${encodeURIComponent(athleteId)}&select=*&order=snapshot_date.desc&limit=1`).catch(() => []),
   ]);
   const week = weeks[0] || { week_start: weekStart, week_type: '', title: '', coach_comment: '', target_load: 0, status: 'draft' };
   const workouts = week.id ? await prodRows('workouts', `training_week_id=eq.${encodeURIComponent(week.id)}&select=*&order=workout_date.asc`) : [];
@@ -870,6 +871,7 @@ async function prodAthleteBundle(athleteId, weekStart = startOfWeek()) {
     zones: { hr: zones.filter(item => item.kind === 'hr'), pace: zones.filter(item => item.kind === 'pace') },
     goals,
     metrics: metrics[0] || { fitness: 0, fatigue: 0, form: 0, week_load: 0, planned_load: week.target_load || 0, readiness_score: 50, readiness_label: 'Sin datos suficientes' },
+    performance: performance[0] || null,
     week: { ...week, workouts },
   };
 }
@@ -3518,6 +3520,284 @@ async function syncRecovery(athleteId, oldest, newest) {
   return listRecoveryRows(athleteId, oldest, newest);
 }
 
+
+
+function clampNumber(value, min, max) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return min;
+  return Math.min(max, Math.max(min, number));
+}
+
+function localDateInTimeZone(timeZone = process.env.RUNFLOW_TIMEZONE || 'Europe/Madrid', date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function localHourInTimeZone(timeZone = process.env.RUNFLOW_TIMEZONE || 'Europe/Madrid', date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', hour12: false }).formatToParts(date);
+  const hour = Number(parts.find(part => part.type === 'hour')?.value);
+  return Number.isFinite(hour) ? hour : 0;
+}
+
+async function listPerformanceSnapshots(athleteId, oldest, newest) {
+  if (DEMO_MODE) return [];
+  return prodRows('performance_snapshots', `athlete_id=eq.${encodeURIComponent(athleteId)}&snapshot_date=gte.${oldest}&snapshot_date=lte.${newest}&select=*&order=snapshot_date.asc`);
+}
+
+function sumActivityLoad(rows, oldest, newest) {
+  return roundOrNull((rows || []).filter(item => {
+    const date = String(item.activity_date || '').slice(0, 10);
+    return date >= oldest && date <= newest;
+  }).reduce((sum, item) => sum + Number(item.load || 0), 0), 1) || 0;
+}
+
+function nearestMetricRow(rows, targetDate) {
+  const target = new Date(`${targetDate}T12:00:00Z`).getTime();
+  let best = null;
+  let bestDiff = Infinity;
+  for (const row of rows || []) {
+    if (!Number.isFinite(Number(row.fitness))) continue;
+    const time = new Date(`${row.metric_date}T12:00:00Z`).getTime();
+    const diff = Math.abs(time - target);
+    if (diff < bestDiff) { best = row; bestDiff = diff; }
+  }
+  return best;
+}
+
+function fitnessIndexForRows(current, wellnessRows, consistencyPct) {
+  const fitnessValues = (wellnessRows || []).map(item => Number(item.fitness)).filter(Number.isFinite);
+  if (!current || !Number.isFinite(Number(current.fitness)) || fitnessValues.length < 7) {
+    return { index: null, label: 'En construcción', trend: 'Sin datos suficientes', change28: null };
+  }
+  const currentFitness = Number(current.fitness);
+  const p20 = percentile(fitnessValues, 0.20);
+  const p80 = percentile(fitnessValues, 0.80);
+  const span = Math.max(5, Number(p80 || 0) - Number(p20 || 0));
+  const relative = clampNumber((currentFitness - Number(p20 || currentFitness)) / span, 0, 1);
+  const row28 = nearestMetricRow(wellnessRows, addDays(current.metric_date, -28));
+  const change28 = row28 && Number.isFinite(Number(row28.fitness)) ? currentFitness - Number(row28.fitness) : null;
+  const trendBonus = Number.isFinite(change28) ? clampNumber(change28 * 2, -10, 10) : 0;
+  const consistency = Number.isFinite(Number(consistencyPct)) ? Number(consistencyPct) / 100 : 0.7;
+  const consistencyBonus = clampNumber((consistency - 0.70) * 20, -6, 6);
+  const index = Math.round(clampNumber(40 + relative * 40 + trendBonus + consistencyBonus, 20, 95));
+  const trend = !Number.isFinite(change28) ? 'En construcción' : change28 >= 3 ? 'Mejorando' : change28 <= -3 ? 'Bajando' : 'Estable';
+  const label = index >= 85 ? 'Nivel muy alto reciente' : index >= 70 ? 'Buen nivel' : index >= 55 ? 'En construcción' : 'Base';
+  return { index, label, trend, change28: roundOrNull(change28, 1) };
+}
+
+function feedbackAdjustment(logs) {
+  const ordered = [...(logs || [])].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+  const latest = ordered[0] || null;
+  let delta = 0;
+  const reasons = [];
+  if (latest) {
+    const pain = Number(latest.pain);
+    const rpe = Number(latest.rpe);
+    if (Number.isFinite(pain)) {
+      if (pain >= 6) { delta -= 20; reasons.push('molestia elevada en la última sesión'); }
+      else if (pain >= 3) { delta -= 10; reasons.push('molestia moderada en la última sesión'); }
+      else if (pain >= 1) { delta -= 3; reasons.push('molestia leve registrada'); }
+    }
+    if (Number.isFinite(rpe)) {
+      if (rpe >= 9) { delta -= 10; reasons.push('RPE muy alto en la última sesión'); }
+      else if (rpe >= 8) { delta -= 6; reasons.push('RPE alto en la última sesión'); }
+    }
+    if (latest.feeling === 'mal') { delta -= 8; reasons.push('malas sensaciones registradas'); }
+  }
+  return { delta, reasons, latest };
+}
+
+async function dailyPerformanceSnapshot(athleteId, snapshotDate = localDateInTimeZone()) {
+  const oldest90 = addDays(snapshotDate, -89);
+  const oldest42 = addDays(snapshotDate, -41);
+  const oldest28 = addDays(snapshotDate, -27);
+  const oldest7 = addDays(snapshotDate, -6);
+
+  let wellness = [];
+  let activities = [];
+  try { wellness = await syncRecovery(athleteId, oldest90, snapshotDate); }
+  catch { wellness = await listRecoveryRows(athleteId, oldest90, snapshotDate); }
+  try { activities = await syncActivities(athleteId, oldest90, snapshotDate); }
+  catch { activities = await listStoredActivities(athleteId, oldest90, snapshotDate); }
+
+  const calendar = await listCalendarWeeks(athleteId, oldest28, snapshotDate, false).catch(() => []);
+  const published = (calendar || []).filter(week => week.status === 'published');
+  const plannedWorkouts = published.flatMap(week => week.workouts || []).filter(workout => String(workout.workout_date || '').slice(0, 10) <= snapshotDate);
+  const completedPoints = plannedWorkouts.reduce((sum, workout) => sum + (workout.execution_status === 'completed' ? 1 : workout.execution_status === 'partial' ? 0.5 : 0), 0);
+  const consistency = plannedWorkouts.length ? (completedPoints / plannedWorkouts.length) * 100 : null;
+
+  let recentLogs = [];
+  if (!DEMO_MODE) {
+    const from = `${oldest7}T00:00:00Z`;
+    recentLogs = await prodRows('manual_session_logs', `athlete_id=eq.${encodeURIComponent(athleteId)}&created_at=gte.${encodeURIComponent(from)}&select=*&order=created_at.asc`).catch(() => []);
+  } else recentLogs = (demo.manual_logs || []).filter(item => item.athlete_id === athleteId && String(item.created_at || '').slice(0, 10) >= oldest7);
+
+  const currentWellness = [...wellness].filter(item => item.metric_date <= snapshotDate).sort((a, b) => String(a.metric_date).localeCompare(String(b.metric_date))).at(-1) || null;
+  const baselineRows = currentWellness ? wellness.filter(item => item.metric_date < currentWellness.metric_date).slice(-21) : wellness.slice(-21);
+  const baseReadiness = currentWellness ? readinessForRow(currentWellness, baselineRows) : { score: 50, label: 'Sin datos suficientes', explanation: 'Faltan datos de recuperación.', baseline: {} };
+  const feedback = feedbackAdjustment(recentLogs);
+  const readinessScore = Math.round(clampNumber(Number(baseReadiness.score || 50) + feedback.delta, 0, 100));
+  const readinessLabel = readinessScore >= 80 ? 'Muy buena disposición' : readinessScore >= 65 ? 'Buena, con control de carga' : readinessScore >= 45 ? 'Conviene revisar antes de entrenar' : 'Recuperación comprometida';
+  const readinessReasons = [];
+  if (baseReadiness.explanation && !String(baseReadiness.explanation).startsWith('Los indicadores')) readinessReasons.push(String(baseReadiness.explanation).replace(/^Factores principales:\s*/i, '').replace(/\.$/, ''));
+  readinessReasons.push(...feedback.reasons);
+  const readinessExplanation = readinessReasons.length ? `Factores principales: ${readinessReasons.join(', ')}.` : 'Los indicadores están cerca de la línea base individual.';
+
+  const fit = fitnessIndexForRows(currentWellness, wellness, consistency);
+  const avgRpe = average(recentLogs.map(item => item.rpe));
+  const maxPainValues = recentLogs.map(item => Number(item.pain)).filter(Number.isFinite);
+  const maxPain = maxPainValues.length ? Math.max(...maxPainValues) : null;
+  const latestPain = [...recentLogs].reverse().find(item => Number(item.pain) > 0 && item.pain_area) || null;
+
+  const sleepHours = currentWellness && Number.isFinite(Number(currentWellness.sleep_sec)) ? Number(currentWellness.sleep_sec) / 3600 : null;
+  const baseline = baseReadiness.baseline || {};
+  const dataSignals = [currentWellness, wellness.length >= 14, Number.isFinite(Number(currentWellness?.hrv)), Number.isFinite(Number(currentWellness?.resting_hr)), Number.isFinite(sleepHours), activities.length >= 6, plannedWorkouts.length >= 3, recentLogs.length > 0];
+  const quality = Math.round((dataSignals.filter(Boolean).length / dataSignals.length) * 100);
+
+  const snapshot = {
+    athlete_id: athleteId,
+    snapshot_date: snapshotDate,
+    readiness_score: readinessScore,
+    readiness_label: readinessLabel,
+    readiness_explanation: readinessExplanation,
+    fitness_index: fit.index,
+    fitness_label: fit.label,
+    fitness_trend: fit.trend,
+    fitness_change_28d: fit.change28,
+    raw_fitness: roundOrNull(currentWellness?.fitness, 2),
+    raw_fatigue: roundOrNull(currentWellness?.fatigue, 2),
+    raw_form: roundOrNull(currentWellness?.form, 2),
+    load_7d: sumActivityLoad(activities, oldest7, snapshotDate),
+    load_28d: sumActivityLoad(activities, oldest28, snapshotDate),
+    load_42d: sumActivityLoad(activities, oldest42, snapshotDate),
+    planned_sessions_28d: plannedWorkouts.length,
+    completed_sessions_28d: roundOrNull(completedPoints, 1) || 0,
+    consistency_28d: roundOrNull(consistency, 1),
+    avg_rpe_7d: roundOrNull(avgRpe, 1),
+    max_pain_7d: roundOrNull(maxPain, 1),
+    latest_pain_area: latestPain?.pain_area || null,
+    hrv_current: roundOrNull(currentWellness?.hrv, 2),
+    hrv_baseline: roundOrNull(baseline.hrv, 2),
+    resting_hr_current: roundOrNull(currentWellness?.resting_hr, 1),
+    resting_hr_baseline: roundOrNull(baseline.resting_hr, 1),
+    sleep_hours: roundOrNull(sleepHours, 2),
+    sleep_baseline_hours: roundOrNull(baseline.sleep_hours, 2),
+    data_quality: quality,
+    details: {
+      method: 'runflow-performance-v1',
+      relative_index: true,
+      note: 'El índice de forma es una estimación relativa al histórico reciente; no es una medición clínica.',
+      wellness_days: wellness.length,
+      activity_count_90d: activities.length,
+      feedback_count_7d: recentLogs.length,
+    },
+    calculated_at: new Date().toISOString(),
+  };
+
+  if (!DEMO_MODE) {
+    await prodRows('performance_snapshots', 'on_conflict=athlete_id,snapshot_date', { method: 'POST', body: snapshot, prefer: 'resolution=merge-duplicates,return=minimal' });
+  }
+  return snapshot;
+}
+
+
+async function backfillPerformanceHistory(athleteId, days = 84) {
+  if (DEMO_MODE) return;
+  const today = localDateInTimeZone();
+  const oldest = addDays(today, -(Math.max(28, Math.min(120, Number(days) || 84)) - 1));
+  const wellnessOldest = addDays(oldest, -35);
+  let wellness = [];
+  let activities = [];
+  try { wellness = await syncRecovery(athleteId, wellnessOldest, today); }
+  catch { wellness = await listRecoveryRows(athleteId, wellnessOldest, today); }
+  try { activities = await syncActivities(athleteId, wellnessOldest, today); }
+  catch { activities = await listStoredActivities(athleteId, wellnessOldest, today); }
+  const targetRows = wellness.filter(row => row.metric_date >= oldest && row.metric_date <= today);
+  const payload = [];
+  for (const row of targetRows) {
+    const prior = wellness.filter(item => item.metric_date < row.metric_date);
+    const readiness = readinessForRow(row, prior.slice(-21));
+    const fit = fitnessIndexForRows(row, wellness.filter(item => item.metric_date <= row.metric_date).slice(-90), null);
+    const sleepHours = Number.isFinite(Number(row.sleep_sec)) ? Number(row.sleep_sec) / 3600 : null;
+    const signals = [prior.length >= 14, Number.isFinite(Number(row.hrv)), Number.isFinite(Number(row.resting_hr)), Number.isFinite(sleepHours), activities.some(item => String(item.activity_date || '').slice(0, 10) <= row.metric_date)];
+    payload.push({
+      athlete_id: athleteId,
+      snapshot_date: row.metric_date,
+      readiness_score: readiness.score,
+      readiness_label: readiness.label,
+      readiness_explanation: readiness.explanation,
+      fitness_index: fit.index,
+      fitness_label: fit.label,
+      fitness_trend: fit.trend,
+      fitness_change_28d: fit.change28,
+      raw_fitness: roundOrNull(row.fitness, 2),
+      raw_fatigue: roundOrNull(row.fatigue, 2),
+      raw_form: roundOrNull(row.form, 2),
+      load_7d: sumActivityLoad(activities, addDays(row.metric_date, -6), row.metric_date),
+      load_28d: sumActivityLoad(activities, addDays(row.metric_date, -27), row.metric_date),
+      load_42d: sumActivityLoad(activities, addDays(row.metric_date, -41), row.metric_date),
+      planned_sessions_28d: 0,
+      completed_sessions_28d: 0,
+      consistency_28d: null,
+      avg_rpe_7d: null,
+      max_pain_7d: null,
+      latest_pain_area: null,
+      hrv_current: roundOrNull(row.hrv, 2),
+      hrv_baseline: roundOrNull(readiness.baseline?.hrv, 2),
+      resting_hr_current: roundOrNull(row.resting_hr, 1),
+      resting_hr_baseline: roundOrNull(readiness.baseline?.resting_hr, 1),
+      sleep_hours: roundOrNull(sleepHours, 2),
+      sleep_baseline_hours: roundOrNull(readiness.baseline?.sleep_hours, 2),
+      data_quality: Math.round((signals.filter(Boolean).length / signals.length) * 75),
+      details: { method: 'runflow-performance-v1-backfill', relative_index: true, historical_backfill: true },
+      calculated_at: new Date().toISOString(),
+    });
+  }
+  if (payload.length) await prodRows('performance_snapshots', 'on_conflict=athlete_id,snapshot_date', { method: 'POST', body: payload, prefer: 'resolution=merge-duplicates,return=minimal' });
+}
+
+async function performanceBundle(athleteId, days = 84, refresh = false) {
+  const today = localDateInTimeZone();
+  if (refresh && !DEMO_MODE) await dailyPerformanceSnapshot(athleteId, today);
+  const oldest = addDays(today, -(Math.max(14, Math.min(180, Number(days) || 84)) - 1));
+  let rows = DEMO_MODE ? [] : await listPerformanceSnapshots(athleteId, oldest, today);
+  if (!DEMO_MODE && rows.length < 7) {
+    await backfillPerformanceHistory(athleteId, Math.max(28, Math.min(120, Number(days) || 84))).catch(() => {});
+    if (refresh) await dailyPerformanceSnapshot(athleteId, today);
+    rows = await listPerformanceSnapshots(athleteId, oldest, today);
+  }
+  if (!rows.length && !DEMO_MODE) { const current = await dailyPerformanceSnapshot(athleteId, today); rows = [current]; }
+  return { latest: rows.at(-1) || null, history: rows };
+}
+
+let dailyPerformanceLastDate = '';
+let dailyPerformanceRunning = false;
+async function refreshAllPerformanceSnapshots(reason = 'timer') {
+  if (DEMO_MODE || dailyPerformanceRunning) return;
+  const today = localDateInTimeZone();
+  if (dailyPerformanceLastDate === today) return;
+  dailyPerformanceRunning = true;
+  try {
+    const athletes = await prodRows('athletes', 'intervals_status=eq.connected&select=id,display_name&order=display_name.asc');
+    for (const athlete of athletes) {
+      try { await dailyPerformanceSnapshot(athlete.id, today); }
+      catch (error) { console.error(`[daily-performance] ${athlete.display_name || athlete.id}: ${error.message}`); }
+    }
+    dailyPerformanceLastDate = today;
+    console.log(`[daily-performance] ${today} actualizado (${reason})`);
+  } finally { dailyPerformanceRunning = false; }
+}
+
+function maybeRefreshDailyPerformance(reason = 'request') {
+  if (DEMO_MODE) return;
+  const hour = localHourInTimeZone();
+  const today = localDateInTimeZone();
+  if (dailyPerformanceLastDate !== today && (hour >= Number(process.env.RUNFLOW_DAILY_REFRESH_HOUR || 5) || reason === 'request')) {
+    refreshAllPerformanceSnapshots(reason).catch(error => console.error(`[daily-performance] ${error.message}`));
+  }
+}
+
 async function activityRowByExternalId(athleteId, externalId) {
   if (DEMO_MODE) return demo.activities.find(item => item.athlete_id === athleteId && item.intervals_activity_id === externalId) || null;
   const rows = await prodRows('activities', `athlete_id=eq.${encodeURIComponent(athleteId)}&intervals_activity_id=eq.${encodeURIComponent(externalId)}&select=*&limit=1`);
@@ -4097,6 +4377,15 @@ async function api(req, res, url) {
   }
 
 
+
+  const performanceMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/performance$/);
+  if (performanceMatch && method === 'GET') {
+    const athleteId = performanceMatch[1];
+    await ensureCoachAccess(session, athleteId);
+    const refresh = url.searchParams.get('refresh') === '1';
+    return sendJson(res, 200, await performanceBundle(athleteId, url.searchParams.get('days') || 84, refresh));
+  }
+
   const activityOriginalMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/activities\/([^/]+)\/original-file$/);
   if (activityOriginalMatch && method === 'GET') {
     const athleteId = activityOriginalMatch[1];
@@ -4256,8 +4545,16 @@ async function api(req, res, url) {
     return sendJson(res, 200, { activity: detail.activity, planned: detail.planned, recovery: detail.recovery });
   }
 
+
+  if (pathname === '/api/athlete/performance' && method === 'GET') {
+    requireRole(session, 'athlete');
+    if (!session.athlete_id) throw Object.assign(new Error('Tu usuario todavía no está vinculado a una ficha de deportista.'), { status: 409 });
+    return sendJson(res, 200, await performanceBundle(session.athlete_id, url.searchParams.get('days') || 84, url.searchParams.get('refresh') === '1'));
+  }
+
   if (pathname === '/api/athlete/dashboard' && method === 'GET') {
     requireRole(session, 'athlete');
+    maybeRefreshDailyPerformance('request');
     if (!session.athlete_id) throw Object.assign(new Error('Tu usuario todavía no está vinculado a una ficha de deportista.'), { status: 409 });
     const weekStart = url.searchParams.get('week_start') || startOfWeek();
     const athlete = DEMO_MODE ? await demoAthleteBundle(session.athlete_id) : await prodAthleteBundle(session.athlete_id, weekStart);
@@ -4281,6 +4578,7 @@ async function api(req, res, url) {
     };
     if (DEMO_MODE) { demo.manual_logs.push(log); saveDemo(); }
     else await prodRows('manual_session_logs', '', { method: 'POST', body: log });
+    if (!DEMO_MODE) dailyPerformanceSnapshot(session.athlete_id, localDateInTimeZone()).catch(() => {});
     return sendJson(res, 201, { log });
   }
 
@@ -4332,6 +4630,9 @@ const server = http.createServer(async (req, res) => {
 });
 
 validateRuntimeConfig();
+
+setTimeout(() => maybeRefreshDailyPerformance('startup'), 12000);
+setInterval(() => maybeRefreshDailyPerformance('timer'), 30 * 60 * 1000);
 
 server.listen(PORT, HOST, () => {
   console.log(`RunFlow ${APP_VERSION} · ${DEMO_MODE ? 'MODO DEMO' : 'ONLINE'} · ${APP_BASE_URL}`);
