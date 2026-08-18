@@ -369,8 +369,8 @@
 
         <div class="performance-hero-grid">
           <section class="performance-hero-card fitness">
-            <p class="eyebrow">ÍNDICE RUNFLOW DE FORMA</p><div class="performance-score-line"><strong id="performanceFitnessIndex">—</strong><span id="performanceFitnessTrend">En construcción</span></div>
-            <h3 id="performanceFitnessLabel">Sin datos suficientes</h3><p id="performanceFitnessChange">Estimación relativa al histórico reciente.</p>
+            <p class="eyebrow">ESTADO DE FORMA</p><div class="performance-score-line"><strong id="performanceFitnessIndex">Aptitud —</strong><span id="performanceFitnessTrend">En construcción</span></div>
+            <h3 id="performanceFitnessLabel">Evolución de la carga acumulada</h3><p id="performanceFitnessChange">Todavía no hay histórico suficiente.</p>
           </section>
           <section class="performance-hero-card readiness">
             <p class="eyebrow">PREPARACIÓN PARA ENTRENAR</p><div class="performance-score-line"><strong id="performanceReadiness">—</strong><span id="performanceReadinessLabel">Sin datos</span></div>
@@ -382,7 +382,7 @@
           <article class="metric"><span>Aptitud</span><strong id="performanceRawFitness">—</strong><small>carga acumulada</small></article>
           <article class="metric"><span>Fatiga</span><strong id="performanceRawFatigue">—</strong><small>carga reciente</small></article>
           <article class="metric"><span>Forma</span><strong id="performanceRawForm">—</strong><small>aptitud − fatiga</small></article>
-          <article class="metric"><span>Consistencia 28 d</span><strong id="performanceConsistency">—</strong><small id="performanceSessions">— sesiones</small></article>
+          <article class="metric"><span>Consistencia</span><strong id="performanceConsistency">—</strong><small id="performanceSessions">Empieza a medirse con suficiente planificación</small></article>
         </div>
 
         <div class="grid grid-3">
@@ -399,8 +399,30 @@
         </div>
 
         <section class="card">
-          <div class="card-head"><div><h2>Evolución del estado de forma</h2><p>Índice relativo al histórico del propio deportista. No es una medición clínica.</p></div><span id="performanceQuality" class="badge pending">Provisional</span></div>
-          <div class="card-body"><div id="performanceChart" class="performance-chart"></div></div>
+          <div class="card-head"><div><h2>Evolución de la aptitud</h2><p>Línea real de Aptitud/CTL de Intervals frente a la trayectoria definida por el coach.</p></div><span id="performanceQuality" class="badge pending">Provisional</span></div>
+          <div class="card-body"><div id="performanceChart" class="performance-chart"></div><div id="performanceTrajectoryStatus" class="trajectory-status muted small">Trayectoria todavía sin configurar.</div></div>
+        </section>
+
+        <section class="card">
+          <div class="card-head"><div><h2>Trayectoria hacia el objetivo</h2><p>Define los puntos de Aptitud que quieres buscar. RunFlow unirá los puntos y comparará cada día Real vs Objetivo.</p></div><button id="addTrajectoryPoint" class="btn soft small" type="button">+ Punto</button></div>
+          <div class="card-body">
+            <div class="field-row"><label>Objetivo<select id="trajectoryGoal"></select></label><label>Estado actual<input id="trajectoryCurrentFitness" disabled value="—"></label></div>
+            <div id="trajectoryPoints" class="trajectory-points"></div>
+            <div class="actions" style="margin-top:14px"><button id="prepareTrajectory" class="btn secondary" type="button">Preparar línea</button><button id="saveTrajectory" class="btn primary" type="button">Guardar trayectoria</button><span id="trajectorySaveStatus" class="muted small"></span></div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head"><div><h2>Métricas de carrera</h2><p>Calculadas automáticamente desde los streams de Intervals. Algunas necesitan varias sesiones comparables.</p></div></div>
+          <div class="card-body stack">
+            <div class="grid grid-4">
+              <article class="metric"><span>Eficiencia aeróbica</span><strong id="performanceEfficiency">—</strong><small id="performanceEfficiencyTrend">km/h por 100 ppm</small></article>
+              <article class="metric"><span>Ritmo en Z2</span><strong id="performanceZ2Pace">—</strong><small id="performanceZ2Trend">sesiones comparables</small></article>
+              <article class="metric"><span>Deriva estimada</span><strong id="performanceDrift">—</strong><small>sesiones ≥30 min y poco desnivel</small></article>
+              <article class="metric"><span>Cadencia</span><strong id="performanceCadence">—</strong><small>valor recibido del reloj</small></article>
+            </div>
+            <div><div class="card-head compact"><div><h3>Distribución por zonas de FC</h3><p>Acumulado de las actividades con streams procesados.</p></div><span id="performanceStreamCount" class="badge pending">0 sesiones</span></div><div id="performanceZoneDistribution" class="zone-distribution"></div></div>
+          </div>
         </section>
       </div>
     </section>
