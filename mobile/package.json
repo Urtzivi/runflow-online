@@ -1,0 +1,24 @@
+{
+  "name": "runflow-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "RunFlow Athlete native shell for Android and iOS",
+  "scripts": {
+    "add:android": "npx cap add android",
+    "add:ios": "npx cap add ios",
+    "sync": "npx cap sync",
+    "sync:android": "npx cap sync android",
+    "sync:ios": "npx cap sync ios",
+    "open:android": "npx cap open android",
+    "open:ios": "npx cap open ios",
+    "doctor": "npx cap doctor"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.0",
+    "@capacitor/core": "8.5.0",
+    "@capacitor/ios": "8.5.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.0"
+  }
+}
