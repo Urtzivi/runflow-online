@@ -1,0 +1,9 @@
+{
+  "appId": "com.runflow.athlete",
+  "appName": "RunFlow",
+  "webDir": "www",
+  "server": {
+    "url": "https://runflow-online-pilot.onrender.com/athlete",
+    "cleartext": false
+  }
+}
