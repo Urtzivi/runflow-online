@@ -95,6 +95,7 @@ function renderPerformance() {
   if(!perf){
     $('athleteFitnessIndex').textContent='Aptitud —'; $('athleteFitnessTrend').textContent='En construcción'; $('athleteFitnessQuality').textContent='Provisional';
     $('athleteFitnessSpark').innerHTML=fitnessSparkline([],trajectory); $('athleteFitnessChange').textContent='Necesitamos más datos para estimar tu evolución.'; $('athleteConsistency').textContent='Consistencia en construcción'; $('athleteTrajectoryStatus').textContent='Trayectoria objetivo todavía sin configurar.';
+    $('athleteThresholdPace').textContent='—'; $('athleteThresholdTrend').textContent='Se actualizará con tus entrenamientos'; $('athleteUphillVam').textContent='—'; $('athleteUphillTrend').textContent='Necesitamos subidas comparables'; $('athleteAerobicEfficiency').textContent='—'; $('athleteAerobicTrend').textContent='Evolución de sesiones comparables'; $('athleteMarkerConfidence').textContent='Provisional';
     return;
   }
   const rawFitness=Number(perf.raw_fitness); $('athleteFitnessIndex').textContent=Number.isFinite(rawFitness)?`Aptitud ${rawFitness.toFixed(1)}`:'Aptitud —';
@@ -104,6 +105,15 @@ function renderPerformance() {
   const change=Number(perf.fitness_change_28d); $('athleteFitnessChange').textContent=Number.isFinite(change)?`${change>=0?'+':''}${change.toFixed(1)} de aptitud en 28 días`:'Histórico de 28 días todavía insuficiente.';
   const consistency=Number(perf.consistency_28d), ready=perf.details?.consistency_status==='ready'; $('athleteConsistency').textContent=ready&&Number.isFinite(consistency)?`Consistencia ${Math.round(consistency)}%`:'Consistencia en construcción';
   $('athleteTrajectoryStatus').textContent=trajectory?.goal?`${trajectory.status} · objetivo ${trajectory.goal.name}${Number.isFinite(Number(trajectory.delta))?` · ${Number(trajectory.delta)>=0?'+':''}${Number(trajectory.delta).toFixed(1)}`:''}`:'Tu entrenador puede definir una trayectoria hacia el objetivo.';
+
+  const summary=state.performance?.activity_summary||perf.details?.activity_performance||{};
+  const thresholdPace=Number(summary.threshold_pace_sec_per_km); $('athleteThresholdPace').textContent=Number.isFinite(thresholdPace)?paceLabel(thresholdPace):'—';
+  const thresholdChange=Number(summary.threshold_pace_change_8w_sec); $('athleteThresholdTrend').textContent=Number.isFinite(thresholdChange)?`${thresholdChange>=0?'Mejorando · ▲':'Cambio · ▼'} ${Math.abs(thresholdChange).toFixed(0)} s/km en 8 semanas`:`${Number(summary.threshold_observations||0)} referencias disponibles`;
+  $('athleteUphillVam').textContent=Number.isFinite(Number(summary.uphill_threshold_vam))?`${Math.round(Number(summary.uphill_threshold_vam))} m+/h`:'—';
+  const uphillChange=Number(summary.uphill_vam_change_pct); $('athleteUphillTrend').textContent=Number.isFinite(uphillChange)?`${uphillChange>=0?'Mejorando · ▲':'Cambio · ▼'} ${Math.abs(uphillChange).toFixed(1)}%`:`${Number(summary.trail_observations||0)} sesiones de subida válidas`;
+  $('athleteAerobicEfficiency').textContent=Number.isFinite(Number(summary.aerobic_efficiency))?Number(summary.aerobic_efficiency).toFixed(2):'—';
+  const effChange=Number(summary.aerobic_efficiency_change_pct); $('athleteAerobicTrend').textContent=Number.isFinite(effChange)?`${effChange>=0?'Mejorando · +':'Cambio · '}${effChange.toFixed(1)}%`:'Esperando sesiones comparables';
+  const markerConfidence=summary.threshold_confidence==='Alta'&&summary.trail_confidence==='Alta'?'Alta':summary.threshold_confidence==='Alta'||summary.threshold_confidence==='Media'||summary.trail_confidence==='Media'?'En observación':'Provisional'; $('athleteMarkerConfidence').textContent=markerConfidence;
 
   if(Number.isFinite(Number(perf.readiness_score))){
     const metrics=state.athlete.metrics||{}; metrics.readiness_score=Number(perf.readiness_score); metrics.readiness_label=perf.readiness_label||metrics.readiness_label; state.athlete.metrics=metrics;
