@@ -21,7 +21,7 @@ const APP_ENCRYPTION_KEY = String(process.env.APP_ENCRYPTION_KEY || '');
 const OPENAI_API_KEY = String(process.env.OPENAI_API_KEY || '');
 const OPENAI_MODEL = String(process.env.OPENAI_MODEL || 'gpt-5.6-terra');
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
-const APP_VERSION = 'Online Pilot 1.8.1 · Rendimiento 2.4.1';
+const APP_VERSION = 'Online Pilot 1.8.2 · Umbral y trail 2.4.2';
 const INTERVALS_API_BASE = 'https://intervals.icu/api/v1';
 
 const RUNFLOW_PLAN_SCHEMA = 'runflow.plan.v1';
@@ -3605,12 +3605,70 @@ function meanForIndexes(values, indexes) {
   return valid.length ? valid.reduce((sum, value) => sum + value, 0) / valid.length : null;
 }
 
-function deriveActivityPerformanceMetric(activity, streams, hrZones = []) {
+function thresholdPaceSecondsFromIntervals(value) {
+  const number = optionalNumber(value);
+  if (number === null || number <= 0) return null;
+  // Intervals.icu expone threshold_pace en m/s en la API, aunque la UI lo muestre como min/km.
+  if (number >= 2 && number <= 8) return 1000 / number;
+  // Fallback defensivo por si una integración futura ya entrega segundos/km.
+  if (number >= 120 && number <= 600) return number;
+  return null;
+}
+
+function normaliseRunCadence(value) {
+  const number = optionalNumber(value);
+  if (number === null) return null;
+  // Algunos Garmin/Intervals entregan zancadas por minuto (una pierna). Mostramos pasos/min totales.
+  return number >= 55 && number <= 110 ? number * 2 : number;
+}
+
+function rollingUphillBenchmark(time, altitude, hr, distance, windowSec, minNetGain) {
+  const n = Math.min(time.length, altitude.length);
+  if (n < 60) return null;
+  let start = 0;
+  let best = null;
+  for (let end = 1; end < n; end += 1) {
+    const endTime = optionalNumber(time[end]);
+    if (endTime === null) continue;
+    while (start < end && optionalNumber(time[start]) !== null && endTime - Number(time[start]) > windowSec) start += 1;
+    const startTime = optionalNumber(time[start]);
+    const startAlt = optionalNumber(altitude[start]);
+    const endAlt = optionalNumber(altitude[end]);
+    if (startTime === null || startAlt === null || endAlt === null) continue;
+    const elapsed = endTime - startTime;
+    if (elapsed < windowSec * 0.92) continue;
+    const netGain = endAlt - startAlt;
+    if (netGain < minNetGain) continue;
+    let positiveGain = 0;
+    for (let i = start + 1; i <= end; i += 1) {
+      const a = optionalNumber(altitude[i - 1]), b = optionalNumber(altitude[i]);
+      if (a === null || b === null) continue;
+      const delta = b - a;
+      if (delta > 0 && delta <= 8) positiveGain += delta;
+    }
+    if (positiveGain <= 0 || netGain / positiveGain < 0.68) continue;
+    const startDist = optionalNumber(distance[start]);
+    const endDist = optionalNumber(distance[end]);
+    const distM = startDist !== null && endDist !== null ? endDist - startDist : null;
+    if (distM !== null && distM < 600) continue;
+    const vam = (netGain / elapsed) * 3600;
+    if (!Number.isFinite(vam) || vam < 150 || vam > 2500) continue;
+    const indexes = [];
+    for (let i = start; i <= end; i += 1) indexes.push(i);
+    const avgHr = meanForIndexes(hr, indexes);
+    if (!best || vam > best.vam) best = { vam, avg_hr: avgHr, net_gain: netGain, positive_gain: positiveGain, elapsed, distance_m: distM };
+  }
+  return best;
+}
+
+function deriveActivityPerformanceMetric(activity, streams, hrZones = [], intervalsDetail = {}) {
   const time = streamByType(streams, 'time');
   const hr = streamByType(streams, 'heartrate');
   const speed = streamByType(streams, 'velocity_smooth');
   const cadence = streamByType(streams, 'cadence');
-  const points = Math.max(time.length, hr.length, speed.length, cadence.length);
+  const distance = streamByType(streams, 'distance');
+  const altitude = streamByType(streams, 'fixed_altitude').length ? streamByType(streams, 'fixed_altitude') : streamByType(streams, 'altitude');
+  const points = Math.max(time.length, hr.length, speed.length, cadence.length, altitude.length);
   if (!points || hr.length < 30 || speed.length < 30) return null;
   const validIndexes = [];
   for (let i = 0; i < Math.min(hr.length, speed.length); i += 1) {
@@ -3622,7 +3680,8 @@ function deriveActivityPerformanceMetric(activity, streams, hrZones = []) {
   const avgHr = meanForIndexes(hr, validIndexes);
   const avgSpeedMs = meanForIndexes(speed, validIndexes);
   const aerobicEfficiency = avgHr && avgSpeedMs ? ((avgSpeedMs * 3.6) / avgHr) * 100 : null;
-  const avgCadence = meanForIndexes(cadence, validIndexes);
+  const avgCadenceRaw = meanForIndexes(cadence, validIndexes);
+  const avgCadence = normaliseRunCadence(avgCadenceRaw);
 
   const z2 = [...(hrZones || [])].sort((a, b) => Number(a.zone_order || 0) - Number(b.zone_order || 0))[1] || null;
   let z2Indexes = [];
@@ -3680,6 +3739,20 @@ function deriveActivityPerformanceMetric(activity, streams, hrZones = []) {
     for (const [zone, sec] of Object.entries(seconds)) zoneDistribution[zone] = { seconds: Math.round(sec), pct: total ? roundOrNull((sec / total) * 100, 1) : 0 };
   }
 
+  const thresholdPaceSec = thresholdPaceSecondsFromIntervals(intervalsDetail && intervalsDetail.threshold_pace);
+  const thresholdHr = optionalNumber(intervalsDetail && intervalsDetail.lthr);
+  const gapSpeed = optionalNumber(intervalsDetail && intervalsDetail.gap);
+  const sportText = String(activity.sport || '').toLowerCase();
+  const trailCandidate = sportText.includes('trail') || (elevationPerKm !== null && elevationPerKm >= 20);
+  const trailGapEfficiency = trailCandidate && gapSpeed && avgHr ? ((gapSpeed * 3.6) / avgHr) * 100 : null;
+
+  const best20 = trailCandidate && altitude.length && time.length ? rollingUphillBenchmark(time, altitude, hr, distance, 1200, 60) : null;
+  const best30 = trailCandidate && altitude.length && time.length ? rollingUphillBenchmark(time, altitude, hr, distance, 1800, 90) : null;
+  const uphillThresholdVam = best30 ? best30.vam : best20 ? best20.vam * 0.95 : null;
+  const uphillWindow = best30 ? 30 : best20 ? 20 : null;
+  const uphillHr = best30 ? best30.avg_hr : best20 ? best20.avg_hr : null;
+  const markerConfidence = best30 ? 'Media' : best20 ? 'Provisional' : thresholdPaceSec !== null ? 'Media' : 'Provisional';
+
   return {
     athlete_id: activity.athlete_id,
     activity_id: activity.id || null,
@@ -3694,11 +3767,28 @@ function deriveActivityPerformanceMetric(activity, streams, hrZones = []) {
     avg_cadence: roundOrNull(avgCadence, 1),
     moving_time_sec: roundOrNull(duration, 0),
     zone_distribution: zoneDistribution,
+    threshold_pace_sec_per_km: roundOrNull(thresholdPaceSec, 1),
+    threshold_hr: roundOrNull(thresholdHr, 0),
+    threshold_source: thresholdPaceSec !== null ? 'Intervals.icu' : null,
+    gap_speed_mps: roundOrNull(gapSpeed, 4),
+    trail_gap_efficiency: roundOrNull(trailGapEfficiency, 3),
+    uphill_vam_20m: roundOrNull(best20 && best20.vam, 0),
+    uphill_vam_30m: roundOrNull(best30 && best30.vam, 0),
+    uphill_threshold_vam: roundOrNull(uphillThresholdVam, 0),
+    uphill_avg_hr: roundOrNull(uphillHr, 0),
+    uphill_window_min: uphillWindow,
+    trail_candidate: Boolean(trailCandidate),
+    marker_confidence: markerConfidence,
     details: {
+      metric_version: '2.4.2',
       stream_points: points,
       valid_moving_points: validIndexes.length,
       z2_points: z2Indexes.length,
       elevation_per_km: roundOrNull(elevationPerKm, 1),
+      cadence_raw: roundOrNull(avgCadenceRaw, 1),
+      cadence_normalised_to_steps_per_min: avgCadenceRaw !== null && avgCadence !== null && Math.abs(avgCadence - avgCadenceRaw) > 1,
+      threshold_note: thresholdPaceSec !== null ? 'Valor de threshold_pace asociado a la actividad en Intervals.icu; se usa como estimación de campo, no como prueba de laboratorio.' : 'Intervals no aportó threshold_pace para esta actividad.',
+      uphill_note: uphillWindow ? `Referencia de subida basada en el mejor tramo sostenido de ${uphillWindow} min con ascenso continuo suficiente.` : 'Sin tramo sostenido suficiente para estimar rendimiento de subida.',
       cardiac_drift_note: cardiacDrift === null ? 'Solo se estima en sesiones de al menos 30 min y con poco desnivel.' : 'Estimación comparando eficiencia FC/velocidad entre mitades de una sesión relativamente llana.',
     },
     calculated_at: new Date().toISOString(),
@@ -3713,20 +3803,25 @@ async function listActivityPerformanceMetrics(athleteId, oldest, newest) {
 async function syncActivityPerformanceMetrics(athleteId, activities, oldest, newest) {
   if (DEMO_MODE) return [];
   const existing = await listActivityPerformanceMetrics(athleteId, oldest, newest);
-  const known = new Set(existing.map(item => String(item.intervals_activity_id)));
+  const existingById = new Map(existing.map(item => [String(item.intervals_activity_id), item]));
   const missing = (activities || []).filter(item => {
     const id = String(item.intervals_activity_id || '');
     const sport = String(item.sport || '').toLowerCase();
-    return id && !known.has(id) && (sport.includes('run') || sport.includes('trail'));
-  }).sort((a, b) => String(a.activity_date).localeCompare(String(b.activity_date))).slice(-30);
+    const row = existingById.get(id);
+    const needs242 = !row || String(row.details && row.details.metric_version || '') !== '2.4.2';
+    return id && needs242 && (sport.includes('run') || sport.includes('trail'));
+  }).sort((a, b) => String(a.activity_date).localeCompare(String(b.activity_date))).slice(-40);
   if (!missing.length) return existing;
   const apiKey = await getIntervalsKey(athleteId);
   if (!apiKey) return existing;
   const hrZones = await prodRows('training_zones', `athlete_id=eq.${encodeURIComponent(athleteId)}&kind=eq.hr&select=*&order=zone_order.asc`).catch(() => []);
   for (const activity of missing) {
     try {
-      const streams = await intervalsFetch(apiKey, `/activity/${encodeURIComponent(activity.intervals_activity_id)}/streams.json`);
-      const metric = deriveActivityPerformanceMetric(activity, streams, hrZones);
+      const [streams, detail] = await Promise.all([
+        intervalsFetch(apiKey, `/activity/${encodeURIComponent(activity.intervals_activity_id)}/streams.json`),
+        intervalsFetch(apiKey, `/activity/${encodeURIComponent(activity.intervals_activity_id)}?intervals=true`).catch(() => ({})),
+      ]);
+      const metric = deriveActivityPerformanceMetric(activity, streams, hrZones, detail || {});
       if (metric) await prodRows('activity_performance_metrics', 'on_conflict=athlete_id,intervals_activity_id', { method: 'POST', body: metric, prefer: 'resolution=merge-duplicates,return=minimal' });
     } catch (error) {
       console.warn(`[activity-performance] ${activity.intervals_activity_id}: ${error.message}`);
@@ -3756,6 +3851,35 @@ function performanceActivitySummary(rows) {
   const z2Prev = median(z2PrevRows.map(item => item.z2_pace_sec_per_km));
   const drift = median(sorted.map(item => item.cardiac_drift_pct).filter(value => optionalNumber(value) !== null).slice(-5));
   const cadence = median(recent.map(item => item.avg_cadence));
+
+  const thresholdRows = sorted.filter(item => optionalNumber(item.threshold_pace_sec_per_km) !== null);
+  const thresholdLatest = thresholdRows.at(-1) || null;
+  const thresholdCurrent = optionalNumber(thresholdLatest && thresholdLatest.threshold_pace_sec_per_km);
+  let thresholdPrevious = null;
+  if (thresholdRows.length >= 2) {
+    const latestDate = String(thresholdLatest.activity_date || '').slice(0, 10);
+    const targetDate = addDays(latestDate, -56);
+    const candidates = thresholdRows.filter(item => String(item.activity_date || '').slice(0, 10) <= targetDate);
+    thresholdPrevious = optionalNumber((candidates.at(-1) || thresholdRows[0]).threshold_pace_sec_per_km);
+  }
+  const thresholdChangeSec = thresholdCurrent !== null && thresholdPrevious !== null ? thresholdPrevious - thresholdCurrent : null;
+  const thresholdHr = optionalNumber(thresholdLatest && thresholdLatest.threshold_hr);
+  const thresholdAgeDays = thresholdLatest ? Math.max(0, Math.round((new Date(`${localDateInTimeZone()}T12:00:00Z`) - new Date(`${String(thresholdLatest.activity_date).slice(0,10)}T12:00:00Z`)) / 86400000)) : null;
+  const thresholdConfidence = thresholdCurrent === null ? 'Sin datos' : thresholdAgeDays !== null && thresholdAgeDays <= 21 ? (thresholdRows.length >= 3 ? 'Alta' : 'Media') : 'Provisional';
+
+  const trailRows = sorted.filter(item => item.trail_candidate);
+  const uphillRows = trailRows.filter(item => optionalNumber(item.uphill_threshold_vam) !== null);
+  const uphillRecentRows = uphillRows.slice(-3);
+  const uphillPrevRows = uphillRows.slice(-6, -3);
+  const uphillVam = median(uphillRecentRows.map(item => item.uphill_threshold_vam));
+  const uphillPrev = median(uphillPrevRows.map(item => item.uphill_threshold_vam));
+  const uphillChangePct = uphillVam && uphillPrev ? ((uphillVam - uphillPrev) / uphillPrev) * 100 : null;
+  const uphillHr = median(uphillRecentRows.map(item => item.uphill_avg_hr));
+  const trailEffRecent = median(trailRows.slice(-3).map(item => item.trail_gap_efficiency));
+  const trailEffPrev = median(trailRows.slice(-6, -3).map(item => item.trail_gap_efficiency));
+  const trailEffChangePct = trailEffRecent && trailEffPrev ? ((trailEffRecent - trailEffPrev) / trailEffPrev) * 100 : null;
+  const trailConfidence = uphillRows.length >= 6 ? 'Alta' : uphillRows.length >= 3 ? 'Media' : uphillRows.length ? 'Provisional' : 'Sin datos';
+
   return {
     activities_with_streams: sorted.length,
     aerobic_efficiency: roundOrNull(effRecent, 3),
@@ -3765,6 +3889,19 @@ function performanceActivitySummary(rows) {
     cardiac_drift_pct: roundOrNull(drift, 1),
     avg_cadence: roundOrNull(cadence, 1),
     zone_distribution: aggregateZoneDistribution(sorted),
+    threshold_pace_sec_per_km: roundOrNull(thresholdCurrent, 1),
+    threshold_pace_change_8w_sec: roundOrNull(thresholdChangeSec, 1),
+    threshold_hr: roundOrNull(thresholdHr, 0),
+    threshold_source: thresholdLatest && thresholdLatest.threshold_source || null,
+    threshold_confidence: thresholdConfidence,
+    threshold_observations: thresholdRows.length,
+    uphill_threshold_vam: roundOrNull(uphillVam, 0),
+    uphill_vam_change_pct: roundOrNull(uphillChangePct, 1),
+    uphill_avg_hr: roundOrNull(uphillHr, 0),
+    trail_gap_efficiency: roundOrNull(trailEffRecent, 3),
+    trail_gap_efficiency_change_pct: roundOrNull(trailEffChangePct, 1),
+    trail_confidence: trailConfidence,
+    trail_observations: uphillRows.length,
   };
 }
 
