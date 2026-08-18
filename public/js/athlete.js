@@ -6,6 +6,7 @@ const state = {
   selectedWeekStart: isoMonday(),
   activities: [],
   messages: [],
+  performance: { latest: null, history: [] },
   activeView: 'today',
   messageWorkoutId: '',
 };
@@ -71,6 +72,47 @@ function switchView(name) {
   if(name==='messages') loadMessages(true).catch(error=>message(error.message,'error'));
   if(name==='activities' && !state.activities.length) loadActivities(false);
   window.scrollTo({top:0,behavior:'smooth'});
+}
+
+
+function fitnessSparkline(rows) {
+  const values=(rows||[]).map(item=>Number(item.fitness_index)).filter(Number.isFinite);
+  if(values.length<2)return '<div class="athlete-fitness-empty">La evolución aparecerá aquí cuando haya varios días calculados.</div>';
+  const recent=(rows||[]).filter(item=>Number.isFinite(Number(item.fitness_index))).slice(-56);
+  const nums=recent.map(item=>Number(item.fitness_index));
+  const min=Math.min(...nums,40), max=Math.max(...nums,80), span=Math.max(1,max-min);
+  const width=600,height=92,pad=8;
+  const points=nums.map((value,index)=>{
+    const x=pad+(index/Math.max(1,nums.length-1))*(width-pad*2);
+    const y=height-pad-((value-min)/span)*(height-pad*2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  return `<svg viewBox="0 0 ${width} ${height}" role="img"><polyline points="${points}" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/><line x1="${pad}" y1="${height-pad}" x2="${width-pad}" y2="${height-pad}" class="baseline"/></svg>`;
+}
+
+function renderPerformance() {
+  const perf=state.performance?.latest || state.athlete?.performance || null;
+  const history=state.performance?.history || [];
+  if(!perf){
+    $('athleteFitnessIndex').textContent='—'; $('athleteFitnessTrend').textContent='En construcción'; $('athleteFitnessQuality').textContent='Provisional';
+    $('athleteFitnessSpark').innerHTML=fitnessSparkline([]); $('athleteFitnessChange').textContent='Necesitamos más datos para estimar tu evolución.'; $('athleteConsistency').textContent='Consistencia —';
+    return;
+  }
+  $('athleteFitnessIndex').textContent=Number.isFinite(Number(perf.fitness_index))?`${Math.round(Number(perf.fitness_index))}/100`:'—';
+  const trend=perf.fitness_trend||'En construcción'; $('athleteFitnessTrend').textContent=`· ${trend}${trend==='Mejorando'?' ↗':trend==='Bajando'?' ↘':' →'}`;
+  const quality=Number(perf.data_quality||0); $('athleteFitnessQuality').textContent=quality>=80?'Consolidado':quality>=55?'En observación':'Provisional';
+  $('athleteFitnessSpark').innerHTML=fitnessSparkline(history);
+  const change=Number(perf.fitness_change_28d); $('athleteFitnessChange').textContent=Number.isFinite(change)?`${change>=0?'+':''}${change.toFixed(1)} de aptitud en 28 días · ${perf.fitness_label||''}`:'Histórico de 28 días todavía insuficiente.';
+  const consistency=Number(perf.consistency_28d); $('athleteConsistency').textContent=Number.isFinite(consistency)?`Consistencia ${Math.round(consistency)}%`:'Consistencia —';
+
+  if(Number.isFinite(Number(perf.readiness_score))){
+    const metrics=state.athlete.metrics||{}; metrics.readiness_score=Number(perf.readiness_score); metrics.readiness_label=perf.readiness_label||metrics.readiness_label; state.athlete.metrics=metrics;
+  }
+}
+
+async function loadPerformance(refresh=false){
+  try{state.performance=await api(`/api/athlete/performance?days=84${refresh?'&refresh=1':''}`); renderPerformance(); renderToday();}
+  catch(error){console.warn('performance',error.message); renderPerformance();}
 }
 
 function renderToday() {
@@ -308,7 +350,7 @@ function populateMessageWorkoutOptions(){
   if(state.messageWorkoutId)$('athleteMessageWorkout').value=state.messageWorkoutId;
 }
 
-function renderAll(){renderToday();renderWeek();renderProfile();populateMessageWorkoutOptions();}
+function renderAll(){renderToday();renderWeek();renderProfile();renderPerformance();populateMessageWorkoutOptions();}
 async function loadDashboard(weekStart=state.selectedWeekStart){
   const data=await api(`/api/athlete/dashboard?week_start=${weekStart}`); state.athlete=data.athlete; state.selectedWeekStart=weekStart; renderAll();
 }
@@ -317,7 +359,7 @@ async function init(){
     const me=await api('/api/auth/me'); state.user=me.user; if(!state.user.roles.includes('athlete'))return location.href='/coach';
     state.selectedWeekStart=isoMonday();
     await loadDashboard(state.selectedWeekStart);
-    await Promise.allSettled([loadActivities(false),loadMessages(false)]);
+    await Promise.allSettled([loadActivities(false),loadMessages(false),loadPerformance(true)]);
   }catch(error){message(error.message,'error');}
 }
 

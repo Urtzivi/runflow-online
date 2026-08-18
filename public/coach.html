@@ -7,7 +7,7 @@
   <title>RunFlow Coach · Planificación 2.3</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
-  <link rel="stylesheet" href="/css/app.css?v=2.3">
+  <link rel="stylesheet" href="/css/app.css?v=2.4">
 </head>
 <body>
   <header class="topbar">
@@ -31,8 +31,9 @@
       <button class="tab" data-view="library">Biblioteca</button>
       <button class="tab" data-view="week">Calendario</button>
       <button class="tab" data-view="activities">Actividades</button>
-      <button class="tab" data-view="messages">Mensajes</button>
+      <button class="tab tab-with-badge" data-view="messages">Mensajes <span id="coachMessagesTabUnread" class="coach-tab-unread hidden" aria-label="Mensajes sin leer">0</span></button>
       <button class="tab" data-view="recovery">Recuperación</button>
+      <button class="tab" data-view="performance">Rendimiento</button>
       <button class="tab" data-view="profile">Ficha y zonas</button>
       <button class="tab" data-view="goals">Objetivos</button>
       <button class="tab" data-view="connections">Conexiones</button>
@@ -359,6 +360,51 @@
       </div>
     </section>
 
+    <section id="performanceView" class="view" style="margin-top:18px">
+      <div class="stack">
+        <section class="card">
+          <div class="card-head"><div><h2>Rendimiento y estado diario</h2><p>Estimaciones automáticas a partir de Intervals, la planificación y el feedback del deportista.</p></div><button id="refreshPerformance" class="btn primary" type="button">Actualizar ahora</button></div>
+          <div class="card-body"><p id="performanceStatus" class="muted small">Los cálculos se actualizan automáticamente cada día.</p></div>
+        </section>
+
+        <div class="performance-hero-grid">
+          <section class="performance-hero-card fitness">
+            <p class="eyebrow">ÍNDICE RUNFLOW DE FORMA</p><div class="performance-score-line"><strong id="performanceFitnessIndex">—</strong><span id="performanceFitnessTrend">En construcción</span></div>
+            <h3 id="performanceFitnessLabel">Sin datos suficientes</h3><p id="performanceFitnessChange">Estimación relativa al histórico reciente.</p>
+          </section>
+          <section class="performance-hero-card readiness">
+            <p class="eyebrow">PREPARACIÓN PARA ENTRENAR</p><div class="performance-score-line"><strong id="performanceReadiness">—</strong><span id="performanceReadinessLabel">Sin datos</span></div>
+            <p id="performanceReadinessText">Sueño, HRV, pulso en reposo, fatiga y feedback reciente.</p>
+          </section>
+        </div>
+
+        <div class="grid grid-4">
+          <article class="metric"><span>Aptitud</span><strong id="performanceRawFitness">—</strong><small>carga acumulada</small></article>
+          <article class="metric"><span>Fatiga</span><strong id="performanceRawFatigue">—</strong><small>carga reciente</small></article>
+          <article class="metric"><span>Forma</span><strong id="performanceRawForm">—</strong><small>aptitud − fatiga</small></article>
+          <article class="metric"><span>Consistencia 28 d</span><strong id="performanceConsistency">—</strong><small id="performanceSessions">— sesiones</small></article>
+        </div>
+
+        <div class="grid grid-3">
+          <article class="metric"><span>Carga 7 días</span><strong id="performanceLoad7">—</strong><small>real</small></article>
+          <article class="metric"><span>Carga 28 días</span><strong id="performanceLoad28">—</strong><small>real</small></article>
+          <article class="metric"><span>Carga 42 días</span><strong id="performanceLoad42">—</strong><small>real</small></article>
+        </div>
+
+        <div class="grid grid-4">
+          <article class="metric"><span>HRV</span><strong id="performanceHrv">—</strong><small id="performanceHrvBase">Base —</small></article>
+          <article class="metric"><span>FC reposo</span><strong id="performanceRhr">—</strong><small id="performanceRhrBase">Base —</small></article>
+          <article class="metric"><span>Sueño</span><strong id="performanceSleep">—</strong><small id="performanceSleepBase">Base —</small></article>
+          <article class="metric"><span>Feedback 7 d</span><strong id="performanceRpe">RPE —</strong><small id="performancePain">Molestia —</small></article>
+        </div>
+
+        <section class="card">
+          <div class="card-head"><div><h2>Evolución del estado de forma</h2><p>Índice relativo al histórico del propio deportista. No es una medición clínica.</p></div><span id="performanceQuality" class="badge pending">Provisional</span></div>
+          <div class="card-body"><div id="performanceChart" class="performance-chart"></div></div>
+        </section>
+      </div>
+    </section>
+
     <section id="profileView" class="view" style="margin-top:18px">
       <div class="layout">
         <section class="card">
@@ -551,6 +597,6 @@
     </div>
   </div>
 
-  <script src="/js/coach.js?v=athlete-2.0"></script>
-<script src="/js/register-sw.js?v=athlete-2.0"></script></body>
+  <script src="/js/coach.js?v=2.4"></script>
+<script src="/js/register-sw.js?v=2.4"></script></body>
 </html>
