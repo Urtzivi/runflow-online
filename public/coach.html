@@ -31,6 +31,7 @@
       <button class="tab" data-view="library">Biblioteca</button>
       <button class="tab" data-view="week">Calendario</button>
       <button class="tab" data-view="activities">Actividades</button>
+      <button class="tab" data-view="messages">Mensajes</button>
       <button class="tab" data-view="recovery">Recuperación</button>
       <button class="tab" data-view="profile">Ficha y zonas</button>
       <button class="tab" data-view="goals">Objetivos</button>
@@ -303,6 +304,22 @@
       </div>
     </section>
 
+
+    <section id="messagesView" class="view" style="margin-top:18px">
+      <section class="card">
+        <div class="card-head"><div><h2>Mensajes con el deportista</h2><p id="coachMessagesSubtitle">Conversación privada dentro de RunFlow.</p></div><span id="coachMessagesUnread" class="badge pending hidden">0 sin leer</span></div>
+        <div class="card-body">
+          <div class="coach-chat-shell">
+            <div id="coachConversation" class="coach-conversation"><div class="empty-state">Abre esta sección para cargar la conversación.</div></div>
+            <form id="coachMessageForm" class="coach-message-composer">
+              <label>Contexto de sesión<select id="coachMessageWorkout"><option value="">Mensaje general</option></select></label>
+              <div><textarea id="coachMessageText" maxlength="2000" placeholder="Escribe al deportista…"></textarea><button class="btn primary" type="submit">Enviar</button></div>
+            </form>
+          </div>
+        </div>
+      </section>
+    </section>
+
     <section id="recoveryView" class="view" style="margin-top:18px">
       <div class="stack">
         <section class="card">
@@ -517,6 +534,7 @@
         <label style="margin-top:12px">Objetivo de la sesión<input id="modalSessionObjective" placeholder="Qué adaptación queremos provocar"></label>
         <div class="field-row" style="margin-top:12px"><label>Adaptación objetivo<input id="modalAdaptationTarget" placeholder="Ej.: LT2, base aeróbica, fuerza máxima"></label><label>Por qué está aquí<input id="modalPurpose" placeholder="Papel de esta sesión dentro del bloque"></label></div>
         <label style="margin-top:12px">Resumen visible para el deportista<textarea id="modalSummary"></textarea></label>
+        <div id="athleteFeedbackBox" class="coach-feedback-card hidden"></div>
         <div class="form-section" style="margin-top:14px"><h3>Calentamiento</h3><div class="field-row"><label>Duración (min)<input id="warmupMinutes" type="number" min="0"></label><label>Objetivo<input id="warmupTarget" placeholder="Z2 Pace / Z2 HR"></label></div></div>
         <div class="form-section"><h3>Activación opcional</h3><div class="field-row-3"><label>Repeticiones<input id="activationReps" type="number" min="0"></label><label>Trabajo (s)<input id="activationWork" type="number" min="0"></label><label>Recuperación (s)<input id="activationRecovery" type="number" min="0"></label></div><div class="field-row" style="margin-top:10px"><label>Objetivo trabajo<input id="activationTarget" placeholder="Z4 Pace"></label><label>Objetivo recuperación<input id="activationRecoveryTarget" placeholder="Z1 Pace"></label></div></div>
         <div id="strengthBuilder" class="form-section hidden">
@@ -533,6 +551,6 @@
     </div>
   </div>
 
-  <script src="/js/coach.js?v=2.3.2"></script>
-<script src="/js/register-sw.js?v=2.3.2"></script></body>
+  <script src="/js/coach.js?v=athlete-2.0"></script>
+<script src="/js/register-sw.js?v=athlete-2.0"></script></body>
 </html>
