@@ -1,4 +1,4 @@
-name: RunFlow Coach Android APK
+name: RunFlow Athlete Android APK
 
 on:
   workflow_dispatch:
@@ -29,16 +29,16 @@ jobs:
       - name: Install Android SDK 36
         run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
 
-      - name: Configure Coach app
+      - name: Configure Athlete app
         working-directory: mobile
         run: |
           cat > capacitor.config.json <<'EOF'
           {
-            "appId": "com.runflow.coach",
-            "appName": "RunFlow Coach",
+            "appId": "com.runflow.athlete",
+            "appName": "RunFlow Athlete",
             "webDir": "www",
             "server": {
-              "url": "https://runflow-online-pilot.onrender.com/login",
+              "url": "https://runflow-online-pilot.onrender.com/login?mode=athlete",
               "cleartext": false
             }
           }
@@ -60,6 +60,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: RunFlow-Coach-Android-debug
+          name: RunFlow-Athlete-Android-debug
           path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
