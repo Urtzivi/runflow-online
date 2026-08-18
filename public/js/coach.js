@@ -1,5 +1,5 @@
 const $ = id => document.getElementById(id);
-const state = { user: null, config: null, athletes: [], athlete: null, editingSession: null, modalBlocks: [], strengthExercises: [], templates: [], pendingImportPackage: null, activities: [], recovery: [], loadToleranceSnapshot: null, currentActivityId: null, currentActivity: null, calendar: { month: new Date(new Date().getFullYear(), new Date().getMonth(), 1), weeks: new Map(), selectedWeekStart: isoMonday(), loading: false }, seasons: [], plan: null, planTab: 'season', selectedSeasonId: null, selectedMicrocycleId: null, planEditor: null, evaluationEditor: null };
+const state = { user: null, config: null, athletes: [], athlete: null, editingSession: null, modalBlocks: [], strengthExercises: [], templates: [], pendingImportPackage: null, activities: [], recovery: [], messages: [], loadToleranceSnapshot: null, currentActivityId: null, currentActivity: null, calendar: { month: new Date(new Date().getFullYear(), new Date().getMonth(), 1), weeks: new Map(), selectedWeekStart: isoMonday(), loading: false }, seasons: [], plan: null, planTab: 'season', selectedSeasonId: null, selectedMicrocycleId: null, planEditor: null, evaluationEditor: null };
 const dayNames = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
 async function api(url, options = {}) {
@@ -72,6 +72,7 @@ function switchView(name) {
   if (name === 'plan' && state.athlete && !state.plan) loadPlan().catch(error => showMessage(error.message, 'error'));
   if (name === 'library' && state.athlete && !state.templates.length) loadTemplates().catch(error => showMessage(error.message, 'error'));
   if (name === 'profile' && state.athlete && !state.loadToleranceSnapshot) loadLoadTolerance(false).catch(error => { const el = $('loadToleranceHistoryStatus'); if (el) el.textContent = error.message; });
+  if (name === 'messages' && state.athlete) loadCoachMessages(true).catch(error => showMessage(error.message, 'error'));
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -564,6 +565,7 @@ async function loadAthlete(id) {
   state.athlete = data.athlete;
   state.loadToleranceSnapshot = null;
   state.templates = [];
+  state.messages = [];
   state.pendingImportPackage = null;
   if (!state.athlete.zones) state.athlete.zones = { hr: [], pace: [] };
   state.calendar.month = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
@@ -572,7 +574,7 @@ async function loadAthlete(id) {
   renderAll();
   resetActivityViews();
   state.plan = null; state.seasons = []; state.selectedSeasonId = null; state.selectedMicrocycleId = null;
-  await Promise.allSettled([loadCalendarMonth(), loadActivities(false), loadRecovery(false), loadPlan(), loadLoadTolerance(false), loadTemplates()]);
+  await Promise.allSettled([loadCalendarMonth(), loadActivities(false), loadRecovery(false), loadPlan(), loadLoadTolerance(false), loadTemplates(), loadCoachMessages(false)]);
 }
 
 function weekPayload(status, weekStart = state.calendar.selectedWeekStart) {
@@ -672,6 +674,11 @@ function openSessionModal(workoutId = null, date = null) {
   $('activationRecoveryTarget').value = activation.recovery_target || 'Z1 Pace';
   $('cooldownMinutes').value = cooldown.duration_min ?? 10;
   $('cooldownTarget').value = cooldown.target || 'Z1 Pace';
+  const feedback = workout.manual_log || null;
+  if ($('athleteFeedbackBox')) {
+    $('athleteFeedbackBox').classList.toggle('hidden', !feedback);
+    $('athleteFeedbackBox').innerHTML = feedback ? `<strong>Feedback del deportista</strong><div class="coach-feedback-grid"><div><span>Resultado</span><strong>${escapeHtml(({ completed: 'Completada', partial: 'Parcial', skipped: 'No realizada' })[feedback.status] || feedback.status || '—')}</strong></div><div><span>RPE</span><strong>${feedback.rpe ?? '—'}/10</strong></div><div><span>Sensaciones</span><strong>${escapeHtml(({ muy_bien: 'Muy buenas', bien: 'Buenas', normal: 'Normales', mal: 'Malas' })[feedback.feeling] || '—')}</strong></div><div><span>Molestia</span><strong>${feedback.pain ?? '—'}/10</strong></div></div>${feedback.pain_area ? `<p><b>Zona:</b> ${escapeHtml(feedback.pain_area)}</p>` : ''}${feedback.comment ? `<p>${escapeHtml(feedback.comment)}</p>` : ''}` : '';
+  }
   $('deleteSessionModal').classList.toggle('hidden', !existing);
   renderCentralBlocks();
   renderStrengthExercises();
@@ -1106,6 +1113,74 @@ async function refreshAthletes(selectId = null) {
   await loadAthlete(id);
 }
 
+function coachMessageWorkoutTitle(item) {
+  if (item.workout_title) return item.workout_title;
+  if (!item.workout_id) return '';
+  for (const week of state.calendar.weeks.values()) {
+    const workout = (week.workouts || []).find(row => String(row.id) === String(item.workout_id));
+    if (workout) return workout.title;
+  }
+  const fallback = (state.athlete?.week?.workouts || []).find(row => String(row.id) === String(item.workout_id));
+  return fallback?.title || 'Sesión';
+}
+
+function coachMessageWorkoutOptions() {
+  const seen = new Set();
+  const rows = [];
+  for (const week of state.calendar.weeks.values()) {
+    for (const workout of week.workouts || []) {
+      if (seen.has(String(workout.id))) continue;
+      seen.add(String(workout.id)); rows.push(workout);
+    }
+  }
+  for (const workout of state.athlete?.week?.workouts || []) {
+    if (seen.has(String(workout.id))) continue;
+    seen.add(String(workout.id)); rows.push(workout);
+  }
+  return rows.sort((a,b) => String(a.workout_date).localeCompare(String(b.workout_date)));
+}
+
+function populateCoachMessageWorkoutOptions() {
+  if (!$('coachMessageWorkout')) return;
+  $('coachMessageWorkout').innerHTML = '<option value="">Mensaje general</option>' + coachMessageWorkoutOptions().map(item => `<option value="${item.id}">${dateLabel(item.workout_date)} · ${escapeHtml(item.title)}</option>`).join('');
+}
+
+function renderCoachMessages() {
+  if (!$('coachConversation')) return;
+  const rows = state.messages || [];
+  $('coachMessagesSubtitle').textContent = state.athlete ? `Conversación con ${state.athlete.display_name}.` : 'Conversación privada dentro de RunFlow.';
+  if (!rows.length) {
+    $('coachConversation').innerHTML = '<div class="empty-state">Todavía no hay mensajes. Puedes iniciar la conversación desde aquí.</div>';
+    return;
+  }
+  $('coachConversation').innerHTML = rows.map(item => `<article class="coach-chat-bubble ${item.sender_role === 'coach' ? 'mine' : ''}">${item.workout_id ? `<span class="coach-chat-context">${escapeHtml(coachMessageWorkoutTitle(item))}</span>` : ''}<p>${escapeHtml(item.message)}</p><small>${new Intl.DateTimeFormat('es-ES',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}).format(new Date(item.created_at))}</small></article>`).join('');
+  $('coachConversation').scrollTop = $('coachConversation').scrollHeight;
+}
+
+async function loadCoachMessages(markRead = false) {
+  if (!state.athlete || !$('coachConversation')) return;
+  const data = await api(`/api/coach/athletes/${state.athlete.id}/messages?limit=100${markRead ? '&mark_read=1' : ''}`);
+  state.messages = data.messages || [];
+  const unread = Number(data.unread || 0);
+  $('coachMessagesUnread').classList.toggle('hidden', !unread);
+  $('coachMessagesUnread').textContent = `${unread} sin leer`;
+  populateCoachMessageWorkoutOptions();
+  renderCoachMessages();
+}
+
+async function sendCoachMessage(event) {
+  event.preventDefault();
+  if (!state.athlete) return;
+  const text = $('coachMessageText').value.trim();
+  if (!text) return;
+  try {
+    await api(`/api/coach/athletes/${state.athlete.id}/messages`, { method: 'POST', body: JSON.stringify({ message: text, workout_id: $('coachMessageWorkout').value || null }) });
+    $('coachMessageText').value = '';
+    $('coachMessageWorkout').value = '';
+    await loadCoachMessages(true);
+  } catch (error) { showMessage(error.message, 'error'); }
+}
+
 async function init() {
   try {
     const [me, config] = await Promise.all([api('/api/auth/me'), api('/api/config')]);
@@ -1127,6 +1202,7 @@ async function init() {
 }
 
 document.querySelectorAll('.tab').forEach(button => button.addEventListener('click', () => switchView(button.dataset.view)));
+if ($('coachMessageForm')) $('coachMessageForm').addEventListener('submit', sendCoachMessage);
 document.querySelectorAll('[data-go]').forEach(button => button.addEventListener('click', () => switchView(button.dataset.go)));
 $('athleteSelect').addEventListener('change', () => loadAthlete($('athleteSelect').value).catch(error => showMessage(error.message, 'error')));
 $('logout').addEventListener('click', async () => { await api('/api/auth/logout', { method: 'POST' }); location.href = '/login'; });
@@ -2067,4 +2143,5 @@ $('analyzeActivity').addEventListener('click', analyzeCurrentActivity);
 $('saveActivityReview').addEventListener('click', saveCurrentReview);
 
 
+setInterval(() => { if (state.athlete) loadCoachMessages(false).catch(() => {}); }, 30000);
 init();
