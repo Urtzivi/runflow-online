@@ -75,35 +75,35 @@ function switchView(name) {
 }
 
 
-function fitnessSparkline(rows) {
-  const values=(rows||[]).map(item=>Number(item.fitness_index)).filter(Number.isFinite);
-  if(values.length<2)return '<div class="athlete-fitness-empty">La evolución aparecerá aquí cuando haya varios días calculados.</div>';
-  const recent=(rows||[]).filter(item=>Number.isFinite(Number(item.fitness_index))).slice(-56);
-  const nums=recent.map(item=>Number(item.fitness_index));
-  const min=Math.min(...nums,40), max=Math.max(...nums,80), span=Math.max(1,max-min);
-  const width=600,height=92,pad=8;
-  const points=nums.map((value,index)=>{
-    const x=pad+(index/Math.max(1,nums.length-1))*(width-pad*2);
-    const y=height-pad-((value-min)/span)*(height-pad*2);
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(' ');
-  return `<svg viewBox="0 0 ${width} ${height}" role="img"><polyline points="${points}" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/><line x1="${pad}" y1="${height-pad}" x2="${width-pad}" y2="${height-pad}" class="baseline"/></svg>`;
+function fitnessSparkline(rows, trajectory=null) {
+  const actual=(rows||[]).filter(item=>item.snapshot_date&&Number.isFinite(Number(item.raw_fitness))).slice(-56).map(item=>({date:item.snapshot_date,value:Number(item.raw_fitness)}));
+  const target=(trajectory?.points||[]).filter(item=>item.date&&Number.isFinite(Number(item.value))).map(item=>({date:item.date,value:Number(item.value)}));
+  if(actual.length<2&&target.length<2)return '<div class="athlete-fitness-empty">La evolución aparecerá aquí cuando haya varios días calculados o una trayectoria objetivo.</div>';
+  const all=[...actual,...target]; const dates=all.map(item=>new Date(`${item.date}T12:00:00Z`).getTime()).filter(Number.isFinite); const values=all.map(item=>item.value).filter(Number.isFinite);
+  if(!dates.length||!values.length)return '<div class="athlete-fitness-empty">Todavía no hay datos suficientes.</div>';
+  const width=600,height=110,pad=10,minDate=Math.min(...dates),maxDate=Math.max(...dates),dateSpan=Math.max(86400000,maxDate-minDate);
+  let min=Math.min(...values),max=Math.max(...values); const extra=Math.max(0.8,(max-min)*0.18); min-=extra; max+=extra; const span=Math.max(1,max-min);
+  const x=date=>pad+((new Date(`${date}T12:00:00Z`).getTime()-minDate)/dateSpan)*(width-pad*2); const y=value=>height-pad-((value-min)/span)*(height-pad*2);
+  const pts=items=>items.map(item=>`${x(item.date).toFixed(1)},${y(item.value).toFixed(1)}`).join(' ');
+  return `<svg viewBox="0 0 ${width} ${height}" role="img">${target.length>=2?`<polyline points="${pts(target)}" fill="none" class="athlete-fitness-target"/>`:''}${actual.length>=2?`<polyline points="${pts(actual)}" fill="none" class="athlete-fitness-real"/>`:''}<line x1="${pad}" y1="${height-pad}" x2="${width-pad}" y2="${height-pad}" class="baseline"/></svg>`;
 }
 
 function renderPerformance() {
   const perf=state.performance?.latest || state.athlete?.performance || null;
   const history=state.performance?.history || [];
+  const trajectory=state.performance?.trajectory || null;
   if(!perf){
-    $('athleteFitnessIndex').textContent='—'; $('athleteFitnessTrend').textContent='En construcción'; $('athleteFitnessQuality').textContent='Provisional';
-    $('athleteFitnessSpark').innerHTML=fitnessSparkline([]); $('athleteFitnessChange').textContent='Necesitamos más datos para estimar tu evolución.'; $('athleteConsistency').textContent='Consistencia —';
+    $('athleteFitnessIndex').textContent='Aptitud —'; $('athleteFitnessTrend').textContent='En construcción'; $('athleteFitnessQuality').textContent='Provisional';
+    $('athleteFitnessSpark').innerHTML=fitnessSparkline([],trajectory); $('athleteFitnessChange').textContent='Necesitamos más datos para estimar tu evolución.'; $('athleteConsistency').textContent='Consistencia en construcción'; $('athleteTrajectoryStatus').textContent='Trayectoria objetivo todavía sin configurar.';
     return;
   }
-  $('athleteFitnessIndex').textContent=Number.isFinite(Number(perf.fitness_index))?`${Math.round(Number(perf.fitness_index))}/100`:'—';
-  const trend=perf.fitness_trend||'En construcción'; $('athleteFitnessTrend').textContent=`· ${trend}${trend==='Mejorando'?' ↗':trend==='Bajando'?' ↘':' →'}`;
+  const rawFitness=Number(perf.raw_fitness); $('athleteFitnessIndex').textContent=Number.isFinite(rawFitness)?`Aptitud ${rawFitness.toFixed(1)}`:'Aptitud —';
+  const trend=perf.fitness_trend||'En construcción'; $('athleteFitnessTrend').textContent=`· ${trend}${trend==='Subiendo'?' ↗':trend==='Bajando'?' ↘':' →'}`;
   const quality=Number(perf.data_quality||0); $('athleteFitnessQuality').textContent=quality>=80?'Consolidado':quality>=55?'En observación':'Provisional';
-  $('athleteFitnessSpark').innerHTML=fitnessSparkline(history);
-  const change=Number(perf.fitness_change_28d); $('athleteFitnessChange').textContent=Number.isFinite(change)?`${change>=0?'+':''}${change.toFixed(1)} de aptitud en 28 días · ${perf.fitness_label||''}`:'Histórico de 28 días todavía insuficiente.';
-  const consistency=Number(perf.consistency_28d); $('athleteConsistency').textContent=Number.isFinite(consistency)?`Consistencia ${Math.round(consistency)}%`:'Consistencia —';
+  $('athleteFitnessSpark').innerHTML=fitnessSparkline(history,trajectory);
+  const change=Number(perf.fitness_change_28d); $('athleteFitnessChange').textContent=Number.isFinite(change)?`${change>=0?'+':''}${change.toFixed(1)} de aptitud en 28 días`:'Histórico de 28 días todavía insuficiente.';
+  const consistency=Number(perf.consistency_28d), ready=perf.details?.consistency_status==='ready'; $('athleteConsistency').textContent=ready&&Number.isFinite(consistency)?`Consistencia ${Math.round(consistency)}%`:'Consistencia en construcción';
+  $('athleteTrajectoryStatus').textContent=trajectory?.goal?`${trajectory.status} · objetivo ${trajectory.goal.name}${Number.isFinite(Number(trajectory.delta))?` · ${Number(trajectory.delta)>=0?'+':''}${Number(trajectory.delta).toFixed(1)}`:''}`:'Tu entrenador puede definir una trayectoria hacia el objetivo.';
 
   if(Number.isFinite(Number(perf.readiness_score))){
     const metrics=state.athlete.metrics||{}; metrics.readiness_score=Number(perf.readiness_score); metrics.readiness_label=perf.readiness_label||metrics.readiness_label; state.athlete.metrics=metrics;

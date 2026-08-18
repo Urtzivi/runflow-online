@@ -1,5 +1,5 @@
 const $ = id => document.getElementById(id);
-const state = { user: null, config: null, athletes: [], athlete: null, editingSession: null, modalBlocks: [], strengthExercises: [], templates: [], pendingImportPackage: null, activities: [], recovery: [], performance: { latest: null, history: [] }, messages: [], loadToleranceSnapshot: null, currentActivityId: null, currentActivity: null, calendar: { month: new Date(new Date().getFullYear(), new Date().getMonth(), 1), weeks: new Map(), selectedWeekStart: isoMonday(), loading: false }, seasons: [], plan: null, planTab: 'season', selectedSeasonId: null, selectedMicrocycleId: null, planEditor: null, evaluationEditor: null };
+const state = { user: null, config: null, athletes: [], athlete: null, editingSession: null, modalBlocks: [], strengthExercises: [], templates: [], pendingImportPackage: null, activities: [], recovery: [], performance: { latest: null, history: [], trajectory: null, activity_summary: null, activity_metrics: [] }, trajectoryDraft: [], messages: [], loadToleranceSnapshot: null, currentActivityId: null, currentActivity: null, calendar: { month: new Date(new Date().getFullYear(), new Date().getMonth(), 1), weeks: new Map(), selectedWeekStart: isoMonday(), loading: false }, seasons: [], plan: null, planTab: 'season', selectedSeasonId: null, selectedMicrocycleId: null, planEditor: null, evaluationEditor: null };
 const dayNames = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
 async function api(url, options = {}) {
@@ -2019,48 +2019,131 @@ async function saveCurrentReview() {
 }
 
 function sleepHours(value) {
+  if (value === null || value === undefined || value === '') return null;
   const seconds = Number(value);
   if (!Number.isFinite(seconds)) return null;
   return seconds / 3600;
 }
 
+
 function avgRows(rows, getter) {
-  const values = rows.map(getter).map(Number).filter(Number.isFinite);
+  const values = rows.map(getter).filter(value => value !== null && value !== undefined && value !== '').map(Number).filter(Number.isFinite);
   return values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
 }
 
 
-function performanceChartSvg(rows) {
-  const recent=(rows||[]).filter(item=>Number.isFinite(Number(item.fitness_index))).slice(-84);
-  if(recent.length<2)return '<div class="empty-state">Necesitamos varios días calculados para dibujar la evolución.</div>';
-  const values=recent.map(item=>Number(item.fitness_index));
-  const width=820,height=220,pad=28,min=Math.min(...values,35),max=Math.max(...values,85),span=Math.max(1,max-min);
-  const points=values.map((value,index)=>{const x=pad+(index/Math.max(1,values.length-1))*(width-pad*2);const y=height-pad-((value-min)/span)*(height-pad*2);return `${x.toFixed(1)},${y.toFixed(1)}`;}).join(' ');
-  const last=recent.at(-1); const first=recent[0];
-  return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Evolución del índice RunFlow de forma"><line x1="${pad}" y1="${height-pad}" x2="${width-pad}" y2="${height-pad}" class="axis"/><polyline points="${points}" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/><text x="${pad}" y="${height-5}">${dateLabel(first.snapshot_date)}</text><text x="${width-pad}" y="${height-5}" text-anchor="end">${dateLabel(last.snapshot_date)}</text></svg>`;
+function performanceChartSvg(rows, trajectory = null) {
+  const actual=(rows||[]).filter(item=>Number.isFinite(Number(item.raw_fitness)) && item.snapshot_date).slice(-84).map(item=>({date:item.snapshot_date,value:Number(item.raw_fitness)}));
+  const target=(trajectory?.points||[]).filter(item=>item.date && Number.isFinite(Number(item.value))).map(item=>({date:item.date,value:Number(item.value)}));
+  if(actual.length<2 && target.length<2)return '<div class="empty-state">Necesitamos varios días de Aptitud o una trayectoria configurada para dibujar la evolución.</div>';
+  const all=[...actual,...target];
+  const dates=all.map(item=>new Date(`${item.date}T12:00:00Z`).getTime()).filter(Number.isFinite);
+  const values=all.map(item=>item.value).filter(Number.isFinite);
+  if(!dates.length||!values.length)return '<div class="empty-state">No hay datos suficientes para dibujar la evolución.</div>';
+  const width=920,height=260,padX=42,padTop=24,padBottom=42;
+  const minDate=Math.min(...dates),maxDate=Math.max(...dates); const dateSpan=Math.max(86400000,maxDate-minDate);
+  let minVal=Math.min(...values),maxVal=Math.max(...values); const valuePad=Math.max(1,(maxVal-minVal)*0.15); minVal-=valuePad; maxVal+=valuePad; const valueSpan=Math.max(1,maxVal-minVal);
+  const x=date=>padX+((new Date(`${date}T12:00:00Z`).getTime()-minDate)/dateSpan)*(width-padX*2);
+  const y=value=>height-padBottom-((value-minVal)/valueSpan)*(height-padTop-padBottom);
+  const line=items=>items.map(item=>`${x(item.date).toFixed(1)},${y(item.value).toFixed(1)}`).join(' ');
+  const actualLine=actual.length>=2?`<polyline points="${line(actual)}" class="performance-line-real" fill="none"/>`:'';
+  const targetLine=target.length>=2?`<polyline points="${line(target)}" class="performance-line-target" fill="none"/>`:'';
+  const today=new Date().toISOString().slice(0,10); const todayMs=new Date(`${today}T12:00:00Z`).getTime();
+  const todayLine=todayMs>=minDate&&todayMs<=maxDate?`<line x1="${x(today).toFixed(1)}" y1="${padTop}" x2="${x(today).toFixed(1)}" y2="${height-padBottom}" class="performance-today-line"/><text x="${x(today).toFixed(1)}" y="${padTop-6}" text-anchor="middle" class="chart-label">Hoy</text>`:'';
+  const firstDate=new Date(minDate).toISOString().slice(0,10), lastDate=new Date(maxDate).toISOString().slice(0,10);
+  return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Evolución de Aptitud y trayectoria objetivo"><line x1="${padX}" y1="${height-padBottom}" x2="${width-padX}" y2="${height-padBottom}" class="axis"/>${todayLine}${targetLine}${actualLine}<text x="${padX}" y="${height-10}" class="chart-label">${dateLabel(firstDate)}</text><text x="${width-padX}" y="${height-10}" text-anchor="end" class="chart-label">${dateLabel(lastDate)}</text><text x="${padX}" y="18" class="performance-legend-real">━━ Real</text><text x="${padX+100}" y="18" class="performance-legend-target">┄┄ Objetivo</text></svg>`;
+}
+
+function trajectoryForGoal(goal){
+  const points=goal?.target_metric?.runflow_fitness_trajectory;
+  return Array.isArray(points)?points.filter(item=>item?.date&&Number.isFinite(Number(item.value))).map(item=>({date:item.date,value:Number(item.value)})).sort((a,b)=>String(a.date).localeCompare(String(b.date))):[];
+}
+
+function renderTrajectoryPoints(){
+  const host=$('trajectoryPoints');
+  const rows=state.trajectoryDraft||[];
+  host.innerHTML=rows.length?rows.map((item,index)=>`<div class="trajectory-point-row"><label>Fecha<input type="date" data-trajectory-date="${index}" value="${escapeHtml(item.date||'')}"></label><label>Aptitud objetivo<input type="number" step="0.1" min="0" data-trajectory-value="${index}" value="${item.value!==''&&item.value!==null&&item.value!==undefined&&Number.isFinite(Number(item.value))?Number(item.value):''}"></label><button class="btn danger small" type="button" data-remove-trajectory="${index}">Quitar</button></div>`).join(''):'<p class="muted small">Añade al menos dos puntos. Puedes definir tantos como necesites para representar base, desarrollo, pico y taper.</p>';
+}
+
+function renderTrajectoryEditor(){
+  const goals=(state.athlete?.goals||[]).filter(goal=>goal.status==='active');
+  const select=$('trajectoryGoal'); const currentSelected=select.value;
+  select.innerHTML=goals.length?goals.map(goal=>`<option value="${goal.id}">${escapeHtml(goal.name)} · ${dateLabel(goal.goal_date)}</option>`).join(''):'<option value="">Sin objetivos activos</option>';
+  const preferred=state.performance?.trajectory?.goal?.id||currentSelected||goals[0]?.id||'';
+  if(preferred && goals.some(goal=>goal.id===preferred)) select.value=preferred;
+  $('trajectoryCurrentFitness').value=Number.isFinite(Number(state.performance?.latest?.raw_fitness))?Number(state.performance.latest.raw_fitness).toFixed(1):'—';
+  const selectedGoal=goals.find(goal=>goal.id===select.value);
+  const apiGoal=state.performance?.trajectory?.goal;
+  const apiPoints=apiGoal?.id===select.value?(state.performance?.trajectory?.points||[]):[];
+  state.trajectoryDraft=apiPoints.length?apiPoints.map(item=>({...item})):trajectoryForGoal(selectedGoal);
+  renderTrajectoryPoints();
+}
+
+function addTrajectoryPoint(date='',value=''){
+  state.trajectoryDraft=[...(state.trajectoryDraft||[]),{date,value}].sort((a,b)=>String(a.date||'9999').localeCompare(String(b.date||'9999')));
+  renderTrajectoryPoints();
+}
+
+function prepareTrajectory(){
+  const goal=(state.athlete?.goals||[]).find(item=>item.id===$('trajectoryGoal').value);
+  if(!goal)return showMessage('Selecciona un objetivo activo.','error');
+  const today=new Date().toISOString().slice(0,10); const fitness=Number(state.performance?.latest?.raw_fitness);
+  state.trajectoryDraft=[{date:today,value:Number.isFinite(fitness)?Number(fitness.toFixed(1)):''},{date:goal.goal_date,value:Number.isFinite(fitness)?Number(fitness.toFixed(1)):''}];
+  renderTrajectoryPoints();
+  $('trajectorySaveStatus').textContent='Edita el valor final y añade puntos intermedios si quieres modelar fases o taper.';
+}
+
+async function saveTrajectory(){
+  const goalId=$('trajectoryGoal').value; if(!goalId)return showMessage('Selecciona un objetivo.','error');
+  const points=(state.trajectoryDraft||[]).map((_,index)=>{const date=document.querySelector(`[data-trajectory-date="${index}"]`)?.value||'';const raw=document.querySelector(`[data-trajectory-value="${index}"]`)?.value;return {date,value:raw===null||raw===undefined||raw===''?null:Number(raw)};}).filter(item=>item.date&&Number.isFinite(item.value));
+  if(points.length<2)return showMessage('La trayectoria necesita al menos dos puntos.','error');
+  try{
+    $('trajectorySaveStatus').textContent='Guardando…';
+    const data=await api(`/api/coach/athletes/${state.athlete.id}/performance-trajectory`,{method:'PUT',body:JSON.stringify({goal_id:goalId,points})});
+    const index=(state.athlete.goals||[]).findIndex(goal=>goal.id===goalId); if(index>=0)state.athlete.goals[index]=data.goal;
+    $('trajectorySaveStatus').textContent='Trayectoria guardada.'; await loadPerformance(false); showMessage('Trayectoria de Aptitud guardada.','success');
+  }catch(error){$('trajectorySaveStatus').textContent=error.message;showMessage(error.message,'error');}
+}
+
+function renderZoneDistribution(distribution){
+  const host=$('performanceZoneDistribution'); const entries=Object.entries(distribution||{});
+  if(!entries.length){host.innerHTML='<p class="muted small">Todavía no hay suficientes streams con zonas de FC configuradas.</p>';return;}
+  host.innerHTML=entries.map(([zone,value])=>`<div class="zone-distribution-row"><strong>${escapeHtml(zone)}</strong><i><em style="width:${Math.max(0,Math.min(100,Number(value?.pct||0)))}%"></em></i><span>${Number(value?.pct||0).toFixed(0)}%</span></div>`).join('');
 }
 
 function renderPerformancePanel(){
-  const perf=state.performance?.latest; const rows=state.performance?.history||[];
-  if(!perf){$('performanceStatus').textContent='Todavía no hay un cálculo diario disponible.'; $('performanceChart').innerHTML=performanceChartSvg([]); return;}
-  const q=Number(perf.data_quality||0);
-  $('performanceFitnessIndex').textContent=Number.isFinite(Number(perf.fitness_index))?`${Math.round(Number(perf.fitness_index))}/100`:'—';
+  const perf=state.performance?.latest; const rows=state.performance?.history||[]; const trajectory=state.performance?.trajectory||null;
+  if(!perf){$('performanceStatus').textContent='Todavía no hay un cálculo diario disponible.'; $('performanceChart').innerHTML=performanceChartSvg([],trajectory); return;}
+  const q=Number(perf.data_quality||0); const rawFitness=Number(perf.raw_fitness);
+  $('performanceFitnessIndex').textContent=Number.isFinite(rawFitness)?`Aptitud ${rawFitness.toFixed(1)}`:'Aptitud —';
   $('performanceFitnessTrend').textContent=perf.fitness_trend||'En construcción'; $('performanceFitnessLabel').textContent=perf.fitness_label||'Sin datos suficientes';
   const change=Number(perf.fitness_change_28d); $('performanceFitnessChange').textContent=Number.isFinite(change)?`${change>=0?'+':''}${change.toFixed(1)} de aptitud en 28 días.`:'Histórico de 28 días todavía insuficiente.';
   $('performanceReadiness').textContent=Number.isFinite(Number(perf.readiness_score))?`${Math.round(Number(perf.readiness_score))}/100`:'—'; $('performanceReadinessLabel').textContent=perf.readiness_label||'Sin datos'; $('performanceReadinessText').textContent=perf.readiness_explanation||'—';
   $('performanceRawFitness').textContent=perf.raw_fitness??'—'; $('performanceRawFatigue').textContent=perf.raw_fatigue??'—'; $('performanceRawForm').textContent=perf.raw_form??'—';
-  $('performanceConsistency').textContent=Number.isFinite(Number(perf.consistency_28d))?`${Math.round(Number(perf.consistency_28d))}%`:'—'; $('performanceSessions').textContent=`${perf.completed_sessions_28d??0} / ${perf.planned_sessions_28d??0} sesiones equivalentes`;
+  const consistencyReady=perf.details?.consistency_status==='ready';
+  $('performanceConsistency').textContent=consistencyReady&&Number.isFinite(Number(perf.consistency_28d))?`${Math.round(Number(perf.consistency_28d))}%`:'En construcción';
+  $('performanceSessions').textContent=consistencyReady?`${perf.completed_sessions_28d??0} / ${perf.planned_sessions_28d??0} sesiones equivalentes`:`${perf.planned_sessions_28d??0} sesiones · se activa con 14 días o 6 sesiones`;
   $('performanceLoad7').textContent=perf.load_7d??'—'; $('performanceLoad28').textContent=perf.load_28d??'—'; $('performanceLoad42').textContent=perf.load_42d??'—';
-  $('performanceHrv').textContent=perf.hrv_current??'—'; $('performanceHrvBase').textContent=`Base 21 d: ${perf.hrv_baseline??'—'}`; $('performanceRhr').textContent=perf.resting_hr_current??'—'; $('performanceRhrBase').textContent=`Base 21 d: ${perf.resting_hr_baseline??'—'} ppm`;
+  $('performanceHrv').textContent=Number.isFinite(Number(perf.hrv_current))&&Number(perf.hrv_current)>0?perf.hrv_current:'—'; $('performanceHrvBase').textContent=`Base 21 d: ${Number.isFinite(Number(perf.hrv_baseline))&&Number(perf.hrv_baseline)>0?perf.hrv_baseline:'—'}`; $('performanceRhr').textContent=perf.resting_hr_current??'—'; $('performanceRhrBase').textContent=`Base 21 d: ${perf.resting_hr_baseline??'—'} ppm`;
   $('performanceSleep').textContent=Number.isFinite(Number(perf.sleep_hours))?`${Number(perf.sleep_hours).toFixed(1)} h`:'—'; $('performanceSleepBase').textContent=`Base 21 d: ${Number.isFinite(Number(perf.sleep_baseline_hours))?`${Number(perf.sleep_baseline_hours).toFixed(1)} h`:'—'}`;
   $('performanceRpe').textContent=Number.isFinite(Number(perf.avg_rpe_7d))?`RPE ${Number(perf.avg_rpe_7d).toFixed(1)}`:'RPE —'; $('performancePain').textContent=Number.isFinite(Number(perf.max_pain_7d))?`Molestia máx. ${Number(perf.max_pain_7d).toFixed(0)}/10${perf.latest_pain_area?` · ${perf.latest_pain_area}`:''}`:'Molestia —';
   $('performanceQuality').textContent=q>=80?'Consolidado':q>=55?'En observación':'Provisional'; $('performanceQuality').className=`badge ${q>=55?'':'pending'}`;
-  $('performanceChart').innerHTML=performanceChartSvg(rows); $('performanceStatus').textContent=`Último cálculo: ${dateLabel(perf.snapshot_date)} · calidad de datos ${q}%.`;
+  $('performanceChart').innerHTML=performanceChartSvg(rows,trajectory); $('performanceStatus').textContent=`Último cálculo: ${dateLabel(perf.snapshot_date)} · calidad de datos ${q}%.`;
+  $('performanceTrajectoryStatus').textContent=trajectory?.goal?`${trajectory.goal.name} · ${trajectory.status}${Number.isFinite(Number(trajectory.delta))?` · ${Number(trajectory.delta)>=0?'+':''}${Number(trajectory.delta).toFixed(1)} frente a la línea`:''}`:'No hay un objetivo activo con trayectoria configurada.';
+  const summary=state.performance?.activity_summary||perf.details?.activity_performance||{};
+  $('performanceEfficiency').textContent=Number.isFinite(Number(summary.aerobic_efficiency))?Number(summary.aerobic_efficiency).toFixed(2):'—';
+  $('performanceEfficiencyTrend').textContent=Number.isFinite(Number(summary.aerobic_efficiency_change_pct))?`${Number(summary.aerobic_efficiency_change_pct)>=0?'+':''}${Number(summary.aerobic_efficiency_change_pct).toFixed(1)}% vs bloque anterior`:'km/h por 100 ppm';
+  $('performanceZ2Pace').textContent=paceLabel(summary.z2_pace_sec_per_km);
+  $('performanceZ2Trend').textContent=Number.isFinite(Number(summary.z2_pace_change_pct))?`${Number(summary.z2_pace_change_pct)>=0?'+':''}${Number(summary.z2_pace_change_pct).toFixed(1)}% de mejora`:'sesiones comparables';
+  $('performanceDrift').textContent=Number.isFinite(Number(summary.cardiac_drift_pct))?`${Number(summary.cardiac_drift_pct).toFixed(1)}%`:'—';
+  $('performanceCadence').textContent=Number.isFinite(Number(summary.avg_cadence))?Number(summary.avg_cadence).toFixed(0):'—';
+  $('performanceStreamCount').textContent=`${Number(summary.activities_with_streams||0)} sesiones`; renderZoneDistribution(summary.zone_distribution);
+  renderTrajectoryEditor();
 }
 
 async function loadPerformance(refresh=false){
   if(!state.athlete)return;
-  $('performanceStatus').textContent=refresh?'Actualizando Intervals y recalculando…':'Cargando cálculo diario…';
+  $('performanceStatus').textContent=refresh?'Actualizando Intervals, streams y cálculos…':'Cargando cálculo diario…';
   try{state.performance=await api(`/api/coach/athletes/${state.athlete.id}/performance?days=84${refresh?'&refresh=1':''}`);renderPerformancePanel();}
   catch(error){$('performanceStatus').textContent=error.message;throw error;}
 }
@@ -2177,6 +2260,18 @@ $('syncCalendarActuals').addEventListener('click', async () => {
 $('syncActivities').addEventListener('click', () => loadActivities(true));
 $('saveActivityWorkoutLink').addEventListener('click', saveActivityWorkoutLink);
 $('syncRecovery').addEventListener('click', () => loadRecovery(true));
+$('trajectoryGoal').addEventListener('change', () => {
+  const goal=(state.athlete?.goals||[]).find(item=>item.id===$('trajectoryGoal').value); state.trajectoryDraft=trajectoryForGoal(goal); renderTrajectoryPoints();
+});
+$('trajectoryPoints').addEventListener('input', event => {
+  const dateIndex=event.target.dataset.trajectoryDate, valueIndex=event.target.dataset.trajectoryValue;
+  if(dateIndex!==undefined)state.trajectoryDraft[Number(dateIndex)].date=event.target.value;
+  if(valueIndex!==undefined)state.trajectoryDraft[Number(valueIndex)].value=event.target.value;
+});
+$('trajectoryPoints').addEventListener('click', event => { const button=event.target.closest('[data-remove-trajectory]'); if(!button)return; state.trajectoryDraft.splice(Number(button.dataset.removeTrajectory),1); renderTrajectoryPoints(); });
+$('addTrajectoryPoint').addEventListener('click',()=>addTrajectoryPoint());
+$('prepareTrajectory').addEventListener('click',prepareTrajectory);
+$('saveTrajectory').addEventListener('click',saveTrajectory);
 $('refreshPerformance').addEventListener('click', () => loadPerformance(true).catch(error => showMessage(error.message, 'error')));
 $('refreshLoadTolerance').addEventListener('click', async () => {
   const button = $('refreshLoadTolerance'); const original = button.textContent;
