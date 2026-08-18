@@ -21,7 +21,7 @@ const APP_ENCRYPTION_KEY = String(process.env.APP_ENCRYPTION_KEY || '');
 const OPENAI_API_KEY = String(process.env.OPENAI_API_KEY || '');
 const OPENAI_MODEL = String(process.env.OPENAI_MODEL || 'gpt-5.6-terra');
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
-const APP_VERSION = 'Online Pilot 1.6.2';
+const APP_VERSION = 'Online Pilot 1.7.0 · Athlete 2.0';
 const INTERVALS_API_BASE = 'https://intervals.icu/api/v1';
 
 const RUNFLOW_PLAN_SCHEMA = 'runflow.plan.v1';
@@ -376,6 +376,7 @@ function demoSeed() {
     ],
     coach_athletes: [{ coach_user_id: 'u-urtzi', athlete_id: 'a-urtzi' }, { coach_user_id: 'u-urtzi', athlete_id: 'a-ibon' }],
     manual_logs: [],
+    messages: [],
     activities: [
       activity('a-urtzi', -5, 'Rodaje aeróbico', 44, 10120, 3010, 132, 146),
       activity('a-urtzi', -2, '6 × 3 min ritmo 5K', 69, 11250, 3375, 151, 164, [218, 216, 217, 219, 221, 222]),
@@ -401,6 +402,7 @@ if (!Array.isArray(demo.activities)) demo.activities = [];
 if (!Array.isArray(demo.daily_metrics)) demo.daily_metrics = [];
 if (!Array.isArray(demo.activity_reviews)) demo.activity_reviews = [];
 if (!Array.isArray(demo.cycle_evaluations)) demo.cycle_evaluations = [];
+if (!Array.isArray(demo.messages)) demo.messages = [];
 function saveDemo() {
   fs.writeFileSync(DEMO_FILE, JSON.stringify(demo, null, 2), 'utf8');
 }
@@ -520,6 +522,70 @@ async function ensureCoachAccess(session, athleteId) {
 
 function sanitiseText(value, max = 2000) {
   return String(value || '').trim().slice(0, max);
+}
+
+async function primaryCoachForAthlete(athleteId) {
+  if (DEMO_MODE) {
+    const link = (demo.coach_athletes || []).find(item => item.athlete_id === athleteId);
+    return link ? link.coach_user_id : null;
+  }
+  const rows = await prodRows('coach_athletes', `athlete_id=eq.${encodeURIComponent(athleteId)}&select=coach_user_id&limit=1`);
+  return rows[0] ? rows[0].coach_user_id : null;
+}
+
+async function enrichMessagesWithWorkoutTitles(rows) {
+  const messages = Array.isArray(rows) ? rows : [];
+  const ids = [...new Set(messages.map(item => item.workout_id).filter(Boolean))];
+  if (!ids.length) return messages;
+  if (DEMO_MODE) {
+    const titleById = new Map();
+    for (const athlete of demo.athletes || []) for (const workout of athlete.week?.workouts || []) titleById.set(String(workout.id), workout.title);
+    return messages.map(item => ({ ...item, workout_title: item.workout_id ? titleById.get(String(item.workout_id)) || null : null }));
+  }
+  const workouts = await prodRows('workouts', `id=in.(${ids.join(',')})&select=id,title`);
+  const titleById = new Map(workouts.map(item => [String(item.id), item.title]));
+  return messages.map(item => ({ ...item, workout_title: item.workout_id ? titleById.get(String(item.workout_id)) || null : null }));
+}
+
+async function listAthleteMessages(athleteId, coachUserId, viewerRole, limit = 100, markRead = false) {
+  const safeLimit = Math.max(1, Math.min(200, Number(limit || 100)));
+  if (DEMO_MODE) {
+    const rows = (demo.messages || []).filter(item => item.athlete_id === athleteId && item.coach_user_id === coachUserId).sort((a,b) => String(a.created_at).localeCompare(String(b.created_at))).slice(-safeLimit);
+    if (markRead) {
+      const now = new Date().toISOString();
+      for (const item of rows) {
+        if (viewerRole === 'athlete' && item.sender_role === 'coach' && !item.read_by_athlete_at) item.read_by_athlete_at = now;
+        if (viewerRole === 'coach' && item.sender_role === 'athlete' && !item.read_by_coach_at) item.read_by_coach_at = now;
+      }
+      saveDemo();
+    }
+    const unread = rows.filter(item => viewerRole === 'athlete' ? item.sender_role === 'coach' && !item.read_by_athlete_at : item.sender_role === 'athlete' && !item.read_by_coach_at).length;
+    return { messages: await enrichMessagesWithWorkoutTitles(rows), unread };
+  }
+  if (markRead) {
+    const readColumn = viewerRole === 'athlete' ? 'read_by_athlete_at' : 'read_by_coach_at';
+    const oppositeRole = viewerRole === 'athlete' ? 'coach' : 'athlete';
+    await prodRows('athlete_messages', `athlete_id=eq.${encodeURIComponent(athleteId)}&coach_user_id=eq.${encodeURIComponent(coachUserId)}&sender_role=eq.${oppositeRole}&${readColumn}=is.null`, { method: 'PATCH', body: { [readColumn]: new Date().toISOString() } });
+  }
+  const rows = await prodRows('athlete_messages', `athlete_id=eq.${encodeURIComponent(athleteId)}&coach_user_id=eq.${encodeURIComponent(coachUserId)}&select=*&order=created_at.asc&limit=${safeLimit}`);
+  const readColumn = viewerRole === 'athlete' ? 'read_by_athlete_at' : 'read_by_coach_at';
+  const oppositeRole = viewerRole === 'athlete' ? 'coach' : 'athlete';
+  const unread = rows.filter(item => item.sender_role === oppositeRole && !item[readColumn]).length;
+  return { messages: await enrichMessagesWithWorkoutTitles(rows), unread };
+}
+
+async function createAthleteMessage({ athleteId, coachUserId, senderUserId, senderRole, workoutId, message }) {
+  const row = {
+    id: crypto.randomUUID(), athlete_id: athleteId, coach_user_id: coachUserId, sender_user_id: senderUserId,
+    sender_role: senderRole, workout_id: sanitiseText(workoutId, 80) || null, message: sanitiseText(message, 2000),
+    created_at: new Date().toISOString(),
+    read_by_coach_at: senderRole === 'coach' ? new Date().toISOString() : null,
+    read_by_athlete_at: senderRole === 'athlete' ? new Date().toISOString() : null,
+  };
+  if (!row.message) throw Object.assign(new Error('Escribe un mensaje antes de enviarlo.'), { status: 400 });
+  if (DEMO_MODE) { demo.messages.push(row); saveDemo(); return row; }
+  const rows = await prodRows('athlete_messages', '', { method: 'POST', body: row });
+  return rows[0] || row;
 }
 function numberOrNull(value, min = -Infinity, max = Infinity) {
   const n = Number(value);
@@ -2139,7 +2205,7 @@ function decorateCalendarWeeks(weeks, workouts, activities, manualLogs) {
         ...workout,
         execution_status,
         actual,
-        manual_log: log ? { status: log.status, rpe: log.rpe, pain: log.pain, comment: log.comment } : null,
+        manual_log: log ? { status: log.status, actual_duration_min: log.actual_duration_min, rpe: log.rpe, feeling: log.feeling || null, pain: log.pain, pain_area: log.pain_area || null, comment: log.comment, created_at: log.created_at } : null,
         activities: linked.map(publicActivitySummary),
       };
     });
@@ -2394,6 +2460,7 @@ function mesocycleApi(row, microcycles, actual) {
 async function getCycleEvaluations(athleteId, filters = {}) {
   if (DEMO_MODE) {
     if (!Array.isArray(demo.cycle_evaluations)) demo.cycle_evaluations = [];
+if (!Array.isArray(demo.messages)) demo.messages = [];
     return demo.cycle_evaluations
       .filter(item => item.athlete_id === athleteId)
       .filter(item => !filters.macrocycle_id || item.macrocycle_id === filters.macrocycle_id)
@@ -2456,6 +2523,7 @@ async function addCycleEvaluation(session, athleteId, body) {
 
   if (DEMO_MODE) {
     if (!Array.isArray(demo.cycle_evaluations)) demo.cycle_evaluations = [];
+if (!Array.isArray(demo.messages)) demo.messages = [];
     if (evaluation.evaluation_type === 'final') {
       const duplicate = demo.cycle_evaluations.find(item =>
         item.athlete_id === athleteId &&
@@ -2478,6 +2546,7 @@ async function addCycleEvaluation(session, athleteId, body) {
 async function getEvaluationForAthlete(athleteId, evaluationId) {
   if (DEMO_MODE) {
     if (!Array.isArray(demo.cycle_evaluations)) demo.cycle_evaluations = [];
+if (!Array.isArray(demo.messages)) demo.messages = [];
     const evaluation = demo.cycle_evaluations.find(item => item.id === evaluationId && item.athlete_id === athleteId);
     if (!evaluation) throw Object.assign(new Error('Evaluación no encontrada.'), { status: 404 });
     return evaluation;
@@ -4135,6 +4204,39 @@ async function api(req, res, url) {
   }
 
 
+  const coachMessagesMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/messages$/);
+  if (coachMessagesMatch && method === 'GET') {
+    const athleteId = coachMessagesMatch[1];
+    await ensureCoachAccess(session, athleteId);
+    const result = await listAthleteMessages(athleteId, session.user.id, 'coach', url.searchParams.get('limit') || 100, url.searchParams.get('mark_read') === '1');
+    return sendJson(res, 200, result);
+  }
+  if (coachMessagesMatch && method === 'POST') {
+    const athleteId = coachMessagesMatch[1];
+    await ensureCoachAccess(session, athleteId);
+    const body = await readJson(req);
+    const item = await createAthleteMessage({ athleteId, coachUserId: session.user.id, senderUserId: session.user.id, senderRole: 'coach', workoutId: body.workout_id, message: body.message });
+    return sendJson(res, 201, { message: item });
+  }
+
+  if (pathname === '/api/athlete/messages' && method === 'GET') {
+    requireRole(session, 'athlete');
+    if (!session.athlete_id) throw Object.assign(new Error('Tu usuario todavía no está vinculado a una ficha de deportista.'), { status: 409 });
+    const coachUserId = await primaryCoachForAthlete(session.athlete_id);
+    if (!coachUserId) return sendJson(res, 200, { messages: [], unread: 0 });
+    const result = await listAthleteMessages(session.athlete_id, coachUserId, 'athlete', url.searchParams.get('limit') || 100, url.searchParams.get('mark_read') === '1');
+    return sendJson(res, 200, result);
+  }
+  if (pathname === '/api/athlete/messages' && method === 'POST') {
+    requireRole(session, 'athlete');
+    if (!session.athlete_id) throw Object.assign(new Error('Tu usuario todavía no está vinculado a una ficha de deportista.'), { status: 409 });
+    const coachUserId = await primaryCoachForAthlete(session.athlete_id);
+    if (!coachUserId) throw Object.assign(new Error('No hay un entrenador vinculado a tu perfil.'), { status: 409 });
+    const body = await readJson(req);
+    const item = await createAthleteMessage({ athleteId: session.athlete_id, coachUserId, senderUserId: session.user.id, senderRole: 'athlete', workoutId: body.workout_id, message: body.message });
+    return sendJson(res, 201, { message: item });
+  }
+
   if (pathname === '/api/athlete/activities' && method === 'GET') {
     requireRole(session, 'athlete');
     if (!session.athlete_id) throw Object.assign(new Error('Tu usuario todavía no está vinculado a una ficha de deportista.'), { status: 409 });
@@ -4157,8 +4259,13 @@ async function api(req, res, url) {
   if (pathname === '/api/athlete/dashboard' && method === 'GET') {
     requireRole(session, 'athlete');
     if (!session.athlete_id) throw Object.assign(new Error('Tu usuario todavía no está vinculado a una ficha de deportista.'), { status: 409 });
-    const athlete = DEMO_MODE ? await demoAthleteBundle(session.athlete_id) : await prodAthleteBundle(session.athlete_id, url.searchParams.get('week_start') || startOfWeek());
-    if (athlete.week && athlete.week.status !== 'published') athlete.week = null;
+    const weekStart = url.searchParams.get('week_start') || startOfWeek();
+    const athlete = DEMO_MODE ? await demoAthleteBundle(session.athlete_id) : await prodAthleteBundle(session.athlete_id, weekStart);
+    if (athlete.week && athlete.week.status === 'published') {
+      const decorated = await listCalendarWeeks(session.athlete_id, weekStart, addDays(weekStart, 6), false);
+      const published = decorated.find(item => item.week_start === weekStart && item.status === 'published');
+      if (published) athlete.week = published;
+    } else athlete.week = null;
     return sendJson(res, 200, { athlete });
   }
 
@@ -4169,6 +4276,7 @@ async function api(req, res, url) {
       id: crypto.randomUUID(), athlete_id: session.athlete_id, workout_id: sanitiseText(body.workout_id, 80) || null,
       status: ['completed', 'partial', 'skipped'].includes(body.status) ? body.status : 'completed',
       actual_duration_min: numberOrNull(body.actual_duration_min, 0, 1000), rpe: numberOrNull(body.rpe, 1, 10), pain: numberOrNull(body.pain, 0, 10),
+      feeling: ['muy_bien', 'bien', 'normal', 'mal'].includes(body.feeling) ? body.feeling : null, pain_area: sanitiseText(body.pain_area, 180) || null,
       comment: sanitiseText(body.comment, 2000), created_at: new Date().toISOString(),
     };
     if (DEMO_MODE) { demo.manual_logs.push(log); saveDemo(); }
