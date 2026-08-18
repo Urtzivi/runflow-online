@@ -412,6 +412,19 @@
           </div>
         </section>
 
+        <section class="card performance-markers-card">
+          <div class="card-head"><div><h2>Umbral y rendimiento trail</h2><p>Marcadores de campo que evolucionan con el deportista. Son estimaciones y referencias de entrenamiento, no una prueba fisiológica de laboratorio.</p></div><span id="performanceThresholdConfidence" class="badge pending">Provisional</span></div>
+          <div class="card-body stack">
+            <div class="grid grid-4">
+              <article class="metric performance-marker"><span>Umbral de carrera</span><strong id="performanceThresholdPace">—</strong><small id="performanceThresholdTrend">estimación Intervals</small></article>
+              <article class="metric performance-marker"><span>FC umbral</span><strong id="performanceThresholdHr">—</strong><small id="performanceThresholdSource">sin referencia</small></article>
+              <article class="metric performance-marker trail"><span>Umbral subida</span><strong id="performanceUphillVam">—</strong><small id="performanceUphillTrend">m+/h · provisional</small></article>
+              <article class="metric performance-marker trail"><span>Eficiencia trail</span><strong id="performanceTrailEfficiency">—</strong><small id="performanceTrailEfficiencyTrend">GAP / FC</small></article>
+            </div>
+            <div class="performance-marker-note"><strong>Cómo leerlo</strong><span>El umbral de carrera usa la referencia <code>threshold_pace</code> guardada por Intervals en las actividades. La subida se estima con tramos sostenidos de 20–30 min y se vuelve más fiable al acumular sesiones comparables.</span></div>
+          </div>
+        </section>
+
         <section class="card">
           <div class="card-head"><div><h2>Métricas de carrera</h2><p>Calculadas automáticamente desde los streams de Intervals. Algunas necesitan varias sesiones comparables.</p></div></div>
           <div class="card-body stack">
