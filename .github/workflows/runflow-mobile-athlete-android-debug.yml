@@ -48,7 +48,9 @@ jobs:
         working-directory: mobile
         run: |
           npm install
+          npm install --no-save @capacitor/assets
           npx cap add android
+          npx @capacitor/assets generate --android --assetPath resources --iconBackgroundColor '#B7F34A' --iconBackgroundColorDark '#B7F34A'
           npx cap sync android
 
       - name: Build debug APK
