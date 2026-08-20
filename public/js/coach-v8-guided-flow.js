@@ -2,8 +2,11 @@
   const q=(s,r=document)=>r.querySelector(s);
   const qa=(s,r=document)=>[...r.querySelectorAll(s)];
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const STORE='runflow-v8-guided-flow-v2';
+  const STEP_LABELS=['Objetivo','Macro','Meso','Micro','Estímulo','Sesión'];
+  let painting=false;
 
-  // Recovered from Plan Lab v6 and kept aligned with the validated RunFlow guide.
+  // Exact planning routes recovered from Plan Lab v6.
   const ROUTES={
     '5K':{note:'Base → Umbral → VO₂max → Ritmo 5K → Taper. Pesan VO₂max, velocidad, economía, umbral y tolerancia al ritmo.',phases:[
       ['Preparación','Adaptación','Continuidad + fuerza',['Easy','Fuerza general','Técnica','Velocidad / economía']],
@@ -55,23 +58,24 @@
     ]}
   };
 
+  // Exact session-family clues recovered from Plan Lab v6.
   const SESSIONS={
-    'Easy':['30–90 min fácil según nivel y fase','Trail fácil por RPE/FC','Rodaje regenerativo'],
+    'Easy':['30-90’ fácil según nivel y fase','Trail fácil por RPE/FC','Rodaje regenerativo'],
     'Fuerza':['Fuerza general','Fuerza máxima','Fuerza-resistencia'],
     'Fuerza general':['Fuerza general','Fuerza básica + core','Fuerza general de baja fatiga'],
     'Técnica':['Técnica de carrera','Strides suaves','Técnica trail'],
     'Resistencia aeróbica':['Easy','Long Easy','Progressive'],
-    'Economía de carrera':['Strides','Cuestas 10–15 s','100–200 m controlados','Carrera progresiva múltiple'],
-    'Umbral':['3×8 min','4×8 min','3×10 min','2×15 min','Tempo continuo','Cruise intervals','Cuesta larga próxima a umbral'],
-    'VO₂max':['5–6×3 min','8×600 m','5–6×1000 m','Cuestas VO₂'],
-    'Velocidad / economía':['Strides','Sprints cortos','Cuestas 10–15 s','100–200 m controlados'],
+    'Economía de carrera':['Strides','Cuestas 10-15”','100-200 m controlados','Carrera progresiva múltiple'],
+    'Umbral':["3×8’","4×8’","3×10’","2×15’",'Tempo continuo','Cruise intervals','Cuesta larga próxima a umbral'],
+    'VO₂max':["5-6×3’",'8×600 m','5-6×1000 m','Cuestas VO₂'],
+    'Velocidad / economía':['Strides','Sprints cortos','Cuestas 10-15”','100-200 m controlados'],
     'Ritmo 5K':['5×1000','4×1200','3×1600','Escaleras','Bloques ritmo 5K'],
-    'Ritmo 10K':['3×2 km','2×3 km','5–6×1 km','Bloques ritmo 10K'],
-    'Ritmo HM':['3×3 km','2×5 km','3×15 min ritmo HM','Long Run con bloques HM'],
-    'Ritmo maratón':['Long Run con bloques RM','2×6–8 km RM','Simulación de nutrición'],
-    'Durability':['Long progresivo','90 min + 20 min tempo','Long Run + bloques finales','Bloques al final bajo fatiga'],
-    'Durability específica':['Long Trail con final específico','Subidas después de 60–90 min','Bajadas técnicas con fatiga previa','Ensayo nutrición/hidratación/material'],
-    'Capacidad de subida':['6×2 min subida','5×3 min subida','4×5 min subida','Intervalos verticales','Cuestas largas'],
+    'Ritmo 10K':['3×2 km','2×3 km','5-6×1 km','Bloques ritmo 10K'],
+    'Ritmo HM':['3×3 km','2×5 km',"3×15’ ritmo HM",'Long Run con bloques HM'],
+    'Ritmo maratón':['Long Run con bloques RM','2×6-8 km RM','Simulación de nutrición'],
+    'Durability':['Long progresivo',"90’ + 20’ tempo",'Long Run + bloques finales','Bloques al final bajo fatiga'],
+    'Durability específica':['Long Trail con final específico','Subidas después de 60-90’','Bajadas técnicas con fatiga previa','Ensayo nutrición/hidratación/material'],
+    'Capacidad de subida':["6×2’ subida","5×3’ subida","4×5’ subida",'Intervalos verticales','Cuestas largas'],
     'Power hiking':['Power hiking en pendiente','Cuestas largas caminando fuerte','Bloques hiking bajo fatiga'],
     'Capacidad de bajada':['Downhill progresivo','Downhill técnico','Bajada bajo fatiga'],
     'Fuerza específica':['Fuerza-resistencia','Cuestas largas','Subida con fatiga'],
@@ -83,210 +87,164 @@
     'Eliminar fatiga':['Easy + strides','Race pace breve','Primer corto','Taper threshold bajo volumen'],
     'Mantener intensidad':['Race pace corto','Strides','Activación','Pequeños bloques específicos']
   };
-
-  const LOAD_PRESET={
-    'Introducción':[65,60,70], 'Desarrollo':[75,70,82], 'Sobrecarga':[90,85,95],
-    'Consolidación':[65,60,72], 'Descarga':[50,45,55], 'Taper':[45,35,55],
-    'Competición':[75,60,90], 'Recuperación':[35,25,45]
-  };
-  const STEP_LABELS=['Objetivo','Macro','Meso','Micro','Estímulo','Sesión'];
-  const GUIDE_TYPES=Object.keys(ROUTES);
-  const STORE='runflow-v8-guided-flow-v1';
-  let applying=false;
+  const PCT={Introducción:[65,60,70],Desarrollo:[75,70,82],Sobrecarga:[90,85,95],Consolidación:[65,60,72],Descarga:[50,45,55],Taper:[45,35,55],Competición:[75,60,90],Recuperación:[35,25,45]};
+  const MICRO_API={Introducción:'adaptation',Desarrollo:'development',Sobrecarga:'overload',Consolidación:'load',Descarga:'deload',Taper:'taper',Competición:'competition',Recuperación:'recovery'};
 
   function stateSafe(){try{return window.state||state}catch{return null}}
-  function uniqueById(rows){const seen=new Set();return (rows||[]).filter(item=>{const id=String(item?.id||'');if(!id||seen.has(id))return false;seen.add(id);return true;});}
-  function allGoals(){const s=stateSafe();const planGoals=[...(s?.plan?.goals||[]),...(s?.plan?.unassigned?.goals||[])];return uniqueById(planGoals.length?planGoals:(s?.athlete?.goals||[]));}
-  function allMacros(){return stateSafe()?.plan?.macrocycles||[]}
-  function allMesos(){return allMacros().flatMap(m=>(m.mesocycles||[]).map(x=>({...x,_macro:m}))) }
-  function allMicros(){return allMesos().flatMap(m=>(m.microcycles||[]).map(x=>({...x,_meso:m,_macro:m._macro}))) }
-  function athleteId(){return q('#athleteSelect')?.value||q('#v8AthleteSelect')?.value||'default'}
-  function flowKey(){return `${STORE}:${athleteId()}`}
-  function loadFlow(){try{return JSON.parse(localStorage.getItem(flowKey())||'{}')||{}}catch{return{}}}
-  function saveFlow(data){try{localStorage.setItem(flowKey(),JSON.stringify(data))}catch{}}
-  function flow(){const f=loadFlow();const goals=allGoals();if(!f.goalId||!goals.some(g=>String(g.id)===String(f.goalId)))f.goalId=goals[0]?.id||'';const goal=goals.find(g=>String(g.id)===String(f.goalId));if(!f.guideType||!ROUTES[f.guideType])f.guideType=inferGuideType(goal);const route=ROUTES[f.guideType]||ROUTES['10K'];if(!f.phase||!route.phases.some(p=>p[0]===f.phase))f.phase=route.phases[0]?.[0]||'';const macros=allMacros();if(f.macroId&&!macros.some(m=>String(m.id)===String(f.macroId)))f.macroId='';if(!f.macroId&&macros.length)f.macroId=macros[0].id;const mesos=filteredMesos(f);if(f.mesoId&&!mesos.some(m=>String(m.id)===String(f.mesoId)))f.mesoId='';if(!f.mesoId&&mesos.length)f.mesoId=mesos[0].id;const phase=phaseData(f);if(!f.p1||!phase[3].includes(f.p1))f.p1=phase[3][0]||'';if(f.p2===f.p1)f.p2='';const micros=filteredMicros(f);if(f.microId&&!micros.some(m=>String(m.id)===String(f.microId)))f.microId='';if(!f.microId&&micros.length)f.microId=micros[0].id;if(!f.microType)f.microType=microOptions(f)[0]||'Desarrollo';const stimuli=stimulusOptions(f);if(!f.stimulus||!stimuli.includes(f.stimulus))f.stimulus=stimuli[0]||f.p1||'Easy';const sessions=SESSIONS[f.stimulus]||[];if(!f.session||!sessions.includes(f.session))f.session=sessions[0]||'';saveFlow(f);return f;}
+  function athleteId(){return q('#athleteSelect')?.value||q('#v8AthleteSelect')?.value||null}
+  function unique(rows){const seen=new Set();return (rows||[]).filter(x=>{const id=String(x?.id||'');if(!id||seen.has(id))return false;seen.add(id);return true})}
+  function goals(){const s=stateSafe();const plan=[...(s?.plan?.goals||[]),...(s?.plan?.unassigned?.goals||[])];return unique(plan.length?plan:(s?.athlete?.goals||[]))}
+  function macros(){return stateSafe()?.plan?.macrocycles||[]}
+  function mesos(){return macros().flatMap(m=>(m.mesocycles||[]).map(x=>({...x,_macro:m}))) }
+  function micros(){return mesos().flatMap(m=>(m.microcycles||[]).map(x=>({...x,_meso:m,_macro:m._macro}))) }
+  function season(){return stateSafe()?.plan?.season||null}
+  function key(){return `${STORE}:${athleteId()||'default'}`}
+  function read(){try{return JSON.parse(localStorage.getItem(key())||'{}')||{}}catch{return{}}}
+  function write(v){try{localStorage.setItem(key(),JSON.stringify(v))}catch{}}
+  function dateObj(s){return s?new Date(`${String(s).slice(0,10)}T12:00:00`):null}
+  function isoDate(d){return d&&Number.isFinite(d.getTime())?d.toISOString().slice(0,10):''}
+  function addDays(s,n){const d=dateObj(s);if(!d)return'';d.setDate(d.getDate()+n);return isoDate(d)}
+  function after(a,b){return a&&b&&String(a)>String(b)}
+  function goalPriority(g){return g?.priority_code||({Principal:'A',Secundario:'B'}[g?.priority])||g?.priority||'B'}
+  function macroGoal(m){return m?.goal_id||m?.goalId||m?.associated_goal_id||''}
+  function selectedGoal(f){return goals().find(g=>String(g.id)===String(f.goalId))}
+  function selectedMacro(f){return macros().find(m=>String(m.id)===String(f.macroId))}
+  function selectedMeso(f){return mesos().find(m=>String(m.id)===String(f.mesoId))}
+  function selectedMicro(f){return micros().find(m=>String(m.id)===String(f.microId))}
+  function route(f){return ROUTES[f.guideType]||ROUTES['10K']}
+  function phase(f){const r=route(f);return r.phases.find(p=>p[0]===f.phase)||r.phases[0]}
 
-  function inferGuideType(goal){
-    if(!goal)return'10K';
-    const text=[goal.name,goal.race_type,goal.raceType,goal.type,goal.sport,goal.surface].filter(Boolean).join(' ').toLowerCase();
-    const distance=Number(goal.distance_km||goal.distance||0);
-    const elevation=Number(goal.elevation_m||goal.elevation||0);
-    const trail=/trail|ultra|monta|mountain/.test(text)||elevation>=500;
-    if(trail)return /ultra/.test(text)||distance>=30?'Trail largo':'Trail corto';
-    if(/marat[oó]n/.test(text)&&!/media|half/.test(text))return'Maratón';
-    if(/media|half/.test(text))return'Media maratón';
-    if(/10\s?k/.test(text))return'10K';
-    if(/5\s?k/.test(text))return'5K';
-    if(distance>0&&distance<=6)return'5K';
-    if(distance<=12&&distance>0)return'10K';
-    if(distance<=25&&distance>0)return'Media maratón';
-    if(distance>25)return'Maratón';
+  function inferGuideType(g){
+    if(!g)return'10K';
+    const t=[g.name,g.race_type,g.raceType,g.type,g.sport,g.surface].filter(Boolean).join(' ').toLowerCase();
+    const km=Number(g.distance_km||g.distance||0),up=Number(g.elevation_m||g.elevation||0);
+    const trail=/trail|ultra|monta|mountain/.test(t)||up>=500;
+    if(trail)return /ultra/.test(t)||km>=30?'Trail largo':'Trail corto';
+    if(/marat[oó]n/.test(t)&&!/media|half/.test(t))return'Maratón';
+    if(/media|half/.test(t))return'Media maratón';
+    if(/10\s?k/.test(t))return'10K';
+    if(/5\s?k/.test(t))return'5K';
+    if(km>0&&km<=6)return'5K';if(km>0&&km<=12)return'10K';if(km>0&&km<=25)return'Media maratón';if(km>25)return'Maratón';
     return'10K';
   }
+  function demands(f){
+    const g=selectedGoal(f),road={
+      '5K':['VO₂max','Ritmo 5K','Velocidad','Economía de carrera','Tolerancia al ritmo'],
+      '10K':['Umbral','Ritmo 10K','VO₂max','Economía de carrera','Durability'],
+      'Media maratón':['Umbral','Ritmo media maratón','Economía de carrera','Durability','Tirada larga'],
+      'Maratón':['Resistencia aeróbica','Ritmo maratón','Durability','Nutrición','Volumen específico']
+    };
+    if(road[f.guideType])return road[f.guideType];
+    if(/^Trail/.test(f.guideType)){const a=['Resistencia aeróbica','Resistencia específica trail','Capacidad de subida','Capacidad de bajada','Durability específica','Fuerza específica','Economía de carrera','D+ / D-','Terreno / tecnicidad','Nutrición / hidratación','Esfuerzo competitivo'];const km=Number(g?.distance_km||g?.distance||0),up=Number(g?.elevation_m||g?.elevation||0);if(km&&up/km>45)a.push('Power hiking');return a}
+    return['Resistencia aeróbica','Umbral','Economía de carrera'];
+  }
+  function compatibleMacros(f){const linked=macros().filter(m=>String(macroGoal(m))===String(f.goalId));return linked.length?linked:macros()}
+  function compatibleMesos(f){return f.macroId?mesos().filter(m=>String(m._macro?.id||m.macrocycle_id||'')===String(f.macroId)):mesos()}
+  function compatibleMicros(f){return f.mesoId?micros().filter(m=>String(m._meso?.id||m.mesocycle_id||'')===String(f.mesoId)):micros()}
+  function maintainOptions(f){return [...new Set([...phase(f)[3],...demands(f),'Resistencia aeróbica','Fuerza','Economía de carrera','Durability','Velocidad / economía','Técnica trail'])].filter(x=>x&&x!==f.p1&&x!==f.p2)}
+  function stimuli(f){return [...new Set([f.p1,f.p2,...(f.maintain||[]),'Easy','Fuerza'].filter(x=>x&&SESSIONS[x]))]}
+  function microSequence(f){const n=Math.max(1,Math.min(12,Number(f.mesoWeeks)||4));const p=phase(f);if(/Taper/i.test(p[0])||p[1]==='Puesta a punto')return Array(n).fill('Taper');if(n===1)return['Consolidación'];if(n===2)return['Introducción','Consolidación'];if(n===3)return['Introducción','Desarrollo','Consolidación'];return Array.from({length:n},(_,i)=>i===0?'Introducción':i===n-1?'Consolidación':i===n-2?'Sobrecarga':'Desarrollo')}
+  function freshDrafts(f){return microSequence(f).map((type,i)=>{const p=PCT[type]||PCT.Desarrollo;return{index:i+1,type,objective:i===microSequence(f).length-1?'Consolidar y revisar adaptación':f.p1,loadPct:p[0],low:p[1],high:p[2]}})}
+  function ensureDrafts(f,force=false){const seq=microSequence(f);if(force||!Array.isArray(f.microDrafts)||f.microDrafts.length!==seq.length){f.microDrafts=freshDrafts(f);write(f)}return f.microDrafts}
 
-  function routeData(f){return ROUTES[f.guideType]||ROUTES['10K']}
-  function phaseData(f){const route=routeData(f);return route.phases.find(p=>p[0]===f.phase)||route.phases[0]}
-  function macroGoalId(m){return m?.goal_id||m?.goalId||m?.associated_goal_id||''}
-  function filteredMacros(f){const rows=allMacros();const linked=rows.filter(m=>String(macroGoalId(m))===String(f.goalId));return linked.length?linked:rows}
-  function filteredMesos(f){const rows=allMesos();if(!f.macroId)return rows;return rows.filter(m=>String(m._macro?.id)===String(f.macroId)||String(m.macrocycle_id||m.macroId||'')===String(f.macroId))}
-  function filteredMicros(f){const rows=allMicros();if(!f.mesoId)return rows;return rows.filter(m=>String(m._meso?.id)===String(f.mesoId)||String(m.mesocycle_id||m.mesoId||'')===String(f.mesoId))}
-  function selectedGoal(f){return allGoals().find(g=>String(g.id)===String(f.goalId))}
-  function selectedMacro(f){return allMacros().find(m=>String(m.id)===String(f.macroId))}
-  function selectedMeso(f){return allMesos().find(m=>String(m.id)===String(f.mesoId))}
-  function selectedMicro(f){return allMicros().find(m=>String(m.id)===String(f.microId))}
-  function microOptions(f){
-    const phase=String(f.phase||'');
-    if(/taper/i.test(phase))return['Taper'];
-    if(/competici/i.test(phase))return['Competición'];
-    if(/recuper|transici/i.test(phase))return['Recuperación','Descarga'];
-    return['Introducción','Desarrollo','Sobrecarga','Consolidación','Descarga'];
-  }
-  function maintainOptions(f){
-    const phase=phaseData(f);const base=[...phase[3],'Resistencia aeróbica','Fuerza','Economía de carrera','Durability','Velocidad / economía','Técnica trail'];
-    return [...new Set(base)].filter(x=>x&&x!==f.p1&&x!==f.p2);
-  }
-  function stimulusOptions(f){
-    const items=[f.p1,f.p2,...(Array.isArray(f.maintain)?f.maintain:[]),'Easy'];
-    if(!/Taper/i.test(f.phase))items.push('Fuerza');
-    return [...new Set(items.filter(x=>x&&SESSIONS[x]))];
-  }
-  function option(value,label,selected){return `<option value="${esc(value)}" ${String(value)===String(selected)?'selected':''}>${esc(label??value)}</option>`}
-  function selectField(label,id,html,help=''){return `<label class="v8-flow-field"><span>${esc(label)}</span><select id="${id}">${html}</select>${help?`<small>${esc(help)}</small>`:''}</label>`}
-  function contextRow(label,value){return `<div><span>${esc(label)}</span><b>${esc(value??'—')}</b></div>`}
-  function routePreview(f){const route=routeData(f);return `<div class="v8-flow-route">${route.phases.map((p,i)=>`<button type="button" class="v8-flow-route-row ${p[0]===f.phase?'active':''}" data-flow-phase="${esc(p[0])}"><span>${i+1}</span><div><b>${esc(p[0])}</b><small>${esc(p[1])} · ${esc(p[2])}</small></div></button>`).join('')}</div>`}
-  function selectedValues(id){return qa(`#${id} option:checked`).map(o=>o.value)}
-
-  function objectiveBody(f){
-    const goals=allGoals(),goal=selectedGoal(f),route=routeData(f);
-    const goalOptions=goals.map(g=>option(g.id,`${g.name||'Objetivo'} · ${g.goal_date||'sin fecha'}`,f.goalId)).join('');
-    if(!goals.length)return `<div class="v8-guided-card"><div class="eyebrow">1 · Empieza por el objetivo</div><h3>No hay ningún objetivo creado</h3><p>El planificador necesita una competición u objetivo real para poder filtrar el resto de decisiones.</p></div><div class="v8-guided-warning"><strong>Guía RunFlow:</strong> primero definimos qué queremos conseguir; después decidimos cómo entrenarlo.</div>`;
-    return `<div class="v8-guided-card"><div class="eyebrow">1 · Competición → necesidades</div><h3>¿Para qué estamos preparando al deportista?</h3><p>Selecciona el objetivo real. RunFlow propone una clasificación inicial y, a partir de ella, filtra la ruta de fases.</p><div class="v8-flow-grid">${selectField('Objetivo real','v8FlowGoal',goalOptions)}${selectField('Clasificación para la guía','v8FlowType',GUIDE_TYPES.map(x=>option(x,x,f.guideType)).join(''),'Puedes corregirla si la propuesta no representa bien la prueba.')}</div><div class="v8-guided-context">${contextRow('Prioridad',goal?.priority_code||goal?.priority||'—')}${contextRow('Distancia',goal?.distance_km?`${goal.distance_km} km`:'—')}${contextRow('Desnivel',goal?.elevation_m?`${goal.elevation_m} m+`:'—')}</div><div class="v8-flow-guide"><strong>Ruta recomendada por la guía</strong><p>${esc(route.note)}</p></div>${routePreview(f)}</div><div class="v8-guided-warning"><strong>Por qué:</strong> la competición determina las necesidades. No elegimos todavía sesiones.</div>`;
+  function hydrate(){
+    const f=read(),gs=goals();
+    if(!f.goalId||!gs.some(g=>String(g.id)===String(f.goalId)))f.goalId=gs[0]?.id||'';
+    const g=selectedGoal(f);if(!f.guideType||!ROUTES[f.guideType])f.guideType=inferGuideType(g);
+    const r=route(f);if(!f.phase||!r.phases.some(p=>p[0]===f.phase))f.phase=r.phases[0]?.[0]||'';
+    if(!Number(f.maxLoad))f.maxLoad=Number(f.maxLoad)||0;
+    const ms=compatibleMacros(f);if(f.macroId&&!macros().some(m=>String(m.id)===String(f.macroId)))f.macroId='';if(!f.macroId&&ms.length)f.macroId=ms[0].id;
+    const p=phase(f);if(!f.p1||!p[3].includes(f.p1))f.p1=p[3][0]||'';if(f.p2===f.p1)f.p2='';
+    f.mesoWeeks=Math.max(1,Math.min(12,Number(f.mesoWeeks)||4));
+    if(!Array.isArray(f.maintain))f.maintain=[];f.maintain=f.maintain.filter(x=>x!==f.p1&&x!==f.p2);
+    const mes=compatibleMesos(f);if(f.mesoId&&!mesos().some(m=>String(m.id)===String(f.mesoId)))f.mesoId='';
+    const mic=compatibleMicros(f);if(f.microId&&!micros().some(m=>String(m.id)===String(f.microId)))f.microId='';if(!f.microId&&mic.length)f.microId=mic[0].id;
+    ensureDrafts(f,false);
+    const st=stimuli(f);if(!f.stimulus||!st.includes(f.stimulus))f.stimulus=st[0]||'Easy';const ss=SESSIONS[f.stimulus]||[];if(!f.session||!ss.includes(f.session))f.session=ss[0]||'';
+    write(f);return f;
   }
 
-  function macroBody(f){
-    const macros=filteredMacros(f),route=routeData(f),phase=phaseData(f),metrics=stateSafe()?.athlete?.metrics||{};
-    const macroOptions=['<option value="">Selecciona un macrociclo</option>',...macros.map(m=>option(m.id,m.name||'Macrociclo',f.macroId))].join('');
-    return `<div class="v8-guided-card"><div class="eyebrow">2 · Necesidades → fase</div><h3>¿En qué parte del camino estamos?</h3><p>El macrociclo es el camino completo hasta el objetivo. La clasificación elegida en el paso anterior determina las fases coherentes que puedes seleccionar aquí.</p><div class="v8-flow-grid">${selectField('Macrociclo real','v8FlowMacro',macroOptions)}${selectField('Fase de la guía','v8FlowPhase',route.phases.map(p=>option(p[0],p[0],f.phase)).join(''))}</div><div class="v8-guided-context">${contextRow('Readiness',metrics.readiness_score??'—')}${contextRow('Aptitud / fatiga',`${metrics.fitness??'—'} / ${metrics.fatigue??'—'}`)}${contextRow('Forma',metrics.form??'—')}</div><div class="v8-flow-guide"><strong>${esc(phase[0])} · ${esc(phase[1])}</strong><p>${esc(phase[2])}</p><small>Capacidades compatibles: ${esc(phase[3].join(' · '))}</small></div>${routePreview(f)}</div><div class="v8-guided-warning"><strong>Guía RunFlow:</strong> las fases no son compartimentos rígidos. Cambia la prioridad, no desaparecen necesariamente las demás capacidades.</div>`;
+  function opt(value,label,selected){return `<option value="${esc(value)}" ${String(value)===String(selected)?'selected':''}>${esc(label??value)}</option>`}
+  function field(label,id,content,help=''){return `<label class="v8-flow-field"><span>${esc(label)}</span>${content}${help?`<small>${esc(help)}</small>`:''}</label>`}
+  function sel(label,id,options,help=''){return field(label,id,`<select id="${id}">${options}</select>`,help)}
+  function inp(label,id,value,type='text',help=''){return field(label,id,`<input id="${id}" type="${type}" value="${esc(value??'')}">`,help)}
+  function ta(label,id,value,help=''){return field(label,id,`<textarea id="${id}">${esc(value??'')}</textarea>`,help)}
+  function ctx(label,value){return `<div><span>${esc(label)}</span><b>${esc(value??'—')}</b></div>`}
+  function chips(items){return `<div class="v8-flow-chips">${items.map(x=>`<span>${esc(x)}</span>`).join('')}</div>`}
+  function entityList(type,rows){if(!rows.length)return'<div class="v8-guided-empty">Todavía no hay elementos reales creados.</div>';return `<div class="v8-guided-real-list">${rows.map(x=>`<div class="v8-guided-real-row"><div><b>${esc(x.name||x.primary_adaptation||x.week_type||'Sin nombre')}</b><small>${esc(x.start_date||x.goal_date||'—')}${x.end_date?` → ${esc(x.end_date)}`:''}</small></div><button class="btn secondary small" type="button" data-guide-edit="${type}" data-id="${esc(x.id)}">Editar</button></div>`).join('')}</div>`}
+  function routeBox(f){const r=route(f);return `<div class="v8-flow-route">${r.phases.map((p,i)=>`<button type="button" class="v8-flow-route-row ${p[0]===f.phase?'active':''}" data-flow-phase="${esc(p[0])}"><span>${i+1}</span><div><b>${esc(p[0])}</b><small>${esc(p[1])} · ${esc(p[2])}</small><em>${esc(p[3].join(' · '))}</em></div></button>`).join('')}</div>`}
+
+  function objectiveBody(f){const gs=goals(),g=selectedGoal(f),r=route(f);if(!gs.length)return `<div class="v8-guided-card"><div class="eyebrow">1 · Objetivo y demanda</div><h3>Crea primero una competición u objetivo</h3><p>La guía no puede proponer fases ni capacidades si todavía no sabe qué exige la prueba.</p></div>`;return `<div class="v8-guided-card"><div class="eyebrow">1 · Competición → necesidades</div><h3>Objetivo y demanda real</h3><p>Este es el punto de partida del Lab v6: primero entendemos la prueba; después aparece la arquitectura compatible.</p><div class="v8-flow-grid">${sel('Objetivo existente','gfGoal',gs.map(x=>opt(x.id,`${goalPriority(x)} · ${x.name||'Objetivo'} · ${x.goal_date||'sin fecha'}`,f.goalId)).join(''))}${sel('Clasificación para la guía','gfGuideType',Object.keys(ROUTES).map(x=>opt(x,x,f.guideType)).join(''),'Corrígela si la propuesta automática no representa bien la prueba.')}${inp('100% carga semanal','gfMaxLoad',f.maxLoad||'','number','Referencia individual para convertir los porcentajes de microciclo en carga absoluta.')}</div><div class="v8-guided-context">${ctx('Prioridad',goalPriority(g))}${ctx('Distancia',g?.distance_km?`${g.distance_km} km`:'—')}${ctx('Desnivel',g?.elevation_m?`${g.elevation_m} m+`:'—')}</div><div class="v8-flow-guide"><strong>Demandas a considerar</strong>${chips(demands(f))}</div><div class="v8-flow-guide"><strong>La guía recomienda</strong><p>${esc(r.note)}</p></div>${routeBox(f)}<div class="v8-guided-section-title">Objetivos reales</div>${entityList('goal',gs)}</div><div class="v8-guided-warning"><strong>Regla maestra:</strong> nunca empezamos preguntándonos qué entrenamiento hacer esta semana. Primero definimos qué queremos conseguir.</div>`}
+
+  function macroDefaults(f){const g=selectedGoal(f),s=season(),m=selectedMacro(f);if(m)return{name:m.name||'',start:m.start_date||'',end:m.end_date||'',objective:m.primary_objective||''};return{name:g?`Camino hacia ${g.name}`:'Macrociclo principal',start:s?.start_date||new Date().toISOString().slice(0,10),end:g?.goal_date||s?.end_date||'',objective:g?`Preparar ${g.name}`:''}}
+  function macroBody(f){const rows=compatibleMacros(f),d=macroDefaults(f),r=route(f);return `<div class="v8-guided-card"><div class="eyebrow">2 · Objetivo → macrociclo</div><h3>Ruta completa hasta la competición</h3><p>El macrociclo es el camino global. La ruta del Lab sirve como arquitectura inicial editable, no como una obligación.</p><div class="v8-flow-grid">${sel('Macrociclo real','gfMacro',['<option value="">Nuevo macrociclo</option>',...rows.map(x=>opt(x.id,x.name||'Macrociclo',f.macroId))].join(''))}${inp('Nombre','gfMacroName',f.macroName??d.name)}${inp('Inicio','gfMacroStart',f.macroStart??d.start,'date')}${inp('Fin','gfMacroEnd',f.macroEnd??d.end,'date')}${inp('Objetivo principal','gfMacroObjective',f.macroObjective??d.objective)}</div><div class="v8-flow-guide"><strong>Ruta recomendada</strong><p>${esc(r.note)}</p></div>${routeBox(f)}<div class="v8-guided-section-title">Macrociclos reales</div>${entityList('macro',rows)}</div><div class="v8-guided-warning"><strong>Guía del macrociclo:</strong> puedes modificar duración y orden de fases, pero cada cambio debe seguir respondiendo a las demandas de la prueba.</div>`}
+
+  function mesoBody(f){const p=phase(f),rows=compatibleMesos(f),maintain=maintainOptions(f),chosen=new Set(f.maintain||[]);return `<div class="v8-guided-card"><div class="eyebrow">3 · Fase → mesociclo → capacidad</div><h3>Crear / editar mesociclo</h3><p>Recuperamos aquí todas las pistas del Lab v6. Cada elección filtra la siguiente.</p><div class="v8-flow-grid">${sel('Mesociclo real','gfMeso',['<option value="">Nuevo mesociclo</option>',...rows.map(x=>opt(x.id,`${x.name||'Mesociclo'} · ${x.primary_adaptation||'—'}`,f.mesoId))].join(''))}${sel('Fase de la guía','gfPhase',route(f).phases.map(x=>opt(x[0],x[0],f.phase)).join(''))}${sel('Mesociclo recomendado','gfMesoType',opt(p[1],p[1],p[1]))}${inp('Duración prevista (semanas)','gfMesoWeeks',f.mesoWeeks,'number')}${sel('Prioridad 1','gfP1',p[3].map(x=>opt(x,x,f.p1)).join(''))}${sel('Prioridad 2','gfP2',['<option value="">Sin P2</option>',...p[3].filter(x=>x!==f.p1).map(x=>opt(x,x,f.p2))].join(''),'Opcional: solo si no interfiere con P1.')}</div><label class="v8-flow-field v8-flow-full"><span>Mantener</span><select id="gfMaintain" multiple size="6">${maintain.map(x=>`<option value="${esc(x)}" ${chosen.has(x)?'selected':''}>${esc(x)}</option>`).join('')}</select><small>Capacidades que no queremos perder durante este bloque.</small></label><div class="v8-flow-grid v8-flow-text-grid">${ta('Cambio esperado','gfExpected',f.expectedChange||'','Qué debería mejorar si el bloque funciona.')}${ta('Indicadores','gfIndicators',f.indicators||'','Qué observaremos para comprobar la adaptación.')}${ta('Criterio de éxito','gfSuccess',f.successCriteria||'','Qué tendría que ocurrir para considerar el mesociclo suficientemente conseguido.')}</div><div class="v8-flow-guide"><strong>${esc(p[0])} · ${esc(p[1])}</strong><p>Prioridad sugerida: ${esc(p[2])}.</p><small>Capacidades disponibles: ${esc(p[3].join(' · '))}</small></div><div class="v8-guided-section-title">Mesociclos reales del macro</div>${entityList('meso',rows)}</div><div class="v8-guided-warning"><strong>Regla del Lab:</strong> un mesociclo tiene P1, P2 opcional y capacidades a mantener. Duración prevista, nunca obligatoria.</div>`}
+
+  function microBody(f){const rows=compatibleMicros(f),drafts=ensureDrafts(f,false),m=selectedMeso(f);return `<div class="v8-guided-card"><div class="eyebrow">4 · Mesociclo → microciclos</div><h3>Propuesta de semanas</h3><p>La propuesta sigue la lógica validada: presentar → desarrollar → sobrecargar solo si la respuesta lo permite → consolidar/absorber. No obliga a usar siempre 3+1.</p>${m?`<div class="v8-guided-context">${ctx('Mesociclo',m.name||m.primary_adaptation)}${ctx('P1',f.p1||m.primary_adaptation||'—')}${ctx('Semanas',f.mesoWeeks)}</div>`:'<div class="v8-guided-warning">Guarda o selecciona primero un mesociclo real.</div>'}<div class="v8-flow-micro-head"><span>Sem.</span><span>Tipo</span><span>Objetivo semanal</span><span>%</span><span>Mín</span><span>Máx</span></div><div id="gfMicroDrafts" class="v8-flow-micro-list">${drafts.map((d,i)=>`<div class="v8-flow-micro-row" data-draft="${i}"><b>S${d.index}</b><select data-df="type">${Object.keys(PCT).map(t=>opt(t,t,d.type)).join('')}</select><input data-df="objective" value="${esc(d.objective)}"><input data-df="loadPct" type="number" value="${d.loadPct}"><input data-df="low" type="number" value="${d.low}"><input data-df="high" type="number" value="${d.high}"></div>`).join('')}</div><div class="v8-flow-inline-actions"><button class="btn secondary small" type="button" id="gfRegenerateMicros">Regenerar propuesta guía</button></div><div class="v8-flow-guide"><strong>Referencia individual</strong><p>${f.maxLoad?`100% = ${esc(f.maxLoad)} de carga semanal. Ejemplo S1: ${Math.round(f.maxLoad*(drafts[0]?.loadPct||0)/100)} de carga objetivo.`:'El porcentaje puede planificarse aunque el 100% absoluto todavía no esté definido.'}</p></div><div class="v8-guided-section-title">Microciclos reales</div>${entityList('micro',rows)}</div><div class="v8-guided-warning"><strong>Progresión:</strong> no aumentamos simultáneamente volumen + intensidad + frecuencia + desnivel + dificultad.</div>`}
+
+  function stimulusWhy(f){if(f.stimulus===f.p1)return`Es la P1 del mesociclo (${f.p1}), por eso recibe la mayor intención del bloque.`;if(f.stimulus===f.p2)return`Es la P2 (${f.p2}); solo debe trabajarse si no interfiere con P1.`;if(f.stimulus==='Easy')return'El EASY no es relleno: acumula volumen, consolida adaptaciones y permite que los días importantes sean productivos.';if(f.stimulus==='Fuerza')return'La fuerza se añade minimizando interferencias con las sesiones clave.';return'Es una capacidad de mantenimiento elegida para no perderla durante el bloque.'}
+  function stimulusBody(f){const ms=compatibleMicros(f),st=stimuli(f),mc=selectedMicro(f);return `<div class="v8-guided-card"><div class="eyebrow">5 · Microciclo → estímulo</div><h3>Primero la necesidad semanal</h3><p>Selecciona el micro y el estímulo. RunFlow oculta el resto de la biblioteca y muestra solo familias compatibles.</p><div class="v8-flow-grid">${sel('Microciclo real','gfMicro',['<option value="">Selecciona microciclo</option>',...ms.map(x=>opt(x.id,`${x.name||x.week_type||'Semana'} · ${x.start_date||'—'}`,f.microId))].join(''))}${sel('Estímulo necesario','gfStimulus',st.map(x=>opt(x,x,f.stimulus)).join(''))}</div><div class="v8-flow-guide"><strong>Por qué aparece</strong><p>${esc(stimulusWhy(f))}</p></div><div class="v8-flow-session-cards">${(SESSIONS[f.stimulus]||[]).map(x=>`<button type="button" data-session-choice="${esc(x)}" class="${x===f.session?'active':''}"><b>${esc(x)}</b><small>Compatible con ${esc(phase(f)[1])} · ${esc(mc?.name||mc?.week_type||'micro')}.</small></button>`).join('')}</div><div class="v8-flow-guide"><strong>Orden de construcción del Lab</strong><p>1. P1 · 2. estímulo clave nº1 · 3. segundo estímulo si procede · 4. long/durability · 5. fuerza · 6. easy/recovery · 7. comprobar recuperación entre estímulos agresivos.</p></div></div>`}
+
+  function sessionBody(f){const mc=selectedMicro(f),m=selectedMeso(f),d=(f.microDrafts||[]).find(x=>x.index===1)||{};return `<div class="v8-guided-card"><div class="eyebrow">6 · Estímulo → sesión</div><h3>Elegir una sesión compatible</h3><p>Ahora sí elegimos una sesión. Ha quedado filtrada por objetivo, fase, P1/P2, microciclo y estímulo.</p><div class="v8-flow-grid">${sel('Estímulo','gfSessionStimulus',stimuli(f).map(x=>opt(x,x,f.stimulus)).join(''))}${sel('Familia de sesión','gfSession',(SESSIONS[f.stimulus]||[]).map(x=>opt(x,x,f.session)).join(''))}</div><div class="v8-guided-context">${ctx('Objetivo',selectedGoal(f)?.name||'—')}${ctx('Fase',f.phase)}${ctx('Mesociclo',m?.name||phase(f)[1])}${ctx('P1',f.p1)}${ctx('Micro',mc?.name||mc?.week_type||'—')}${ctx('Carga guía',f.maxLoad&&d.loadPct?`${d.loadPct}% de ${f.maxLoad}`:'% editable')}</div><div class="v8-flow-final"><span>Necesidad</span><strong>${esc(f.stimulus)}</strong><span>Sesión elegida</span><strong>${esc(f.session||'—')}</strong><p><b>¿Por qué he elegido esta sesión concreta para producir la adaptación que necesito ahora?</b> Si no podemos responderlo, todavía no deberíamos colocarla.</p></div><div class="v8-flow-inline-actions"><button class="btn secondary small" type="button" id="gfOpenMicroCalendar">Abrir esta semana en calendario</button><button class="btn soft small" type="button" id="gfOpenLibrary">Abrir biblioteca filtrada</button><button class="btn primary small" type="button" id="gfOpenSeasonMap">Ver lógica global de temporada</button></div></div><div class="v8-guided-warning"><strong>Planificación bidireccional:</strong> PLAN → entrenamiento → respuesta del deportista → análisis → decisión → nuevo plan.</div>`}
+
+  const bodies=[objectiveBody,macroBody,mesoBody,microBody,stimulusBody,sessionBody];
+  function activeStep(){const b=q('#v8GuidedSteps .v8-guided-step-pill.active');return Math.max(0,Math.min(5,Number(b?.dataset.guideStep||0)))}
+  function saveField(id,key,transform=(v)=>v){const e=q(`#${id}`);if(!e)return;e.addEventListener('change',()=>{const f=hydrate();f[key]=transform(e.value,f);write(f);paint()})}
+  function collectDrafts(){const f=hydrate();qa('#gfMicroDrafts [data-draft]').forEach(row=>{const i=Number(row.dataset.draft),d=f.microDrafts[i];if(!d)return;const v=k=>row.querySelector(`[data-df="${k}"]`)?.value;d.type=v('type');d.objective=v('objective');d.loadPct=Number(v('loadPct'))||0;d.low=Number(v('low'))||0;d.high=Number(v('high'))||0});write(f);return f}
+
+  function bind(index){
+    saveField('gfGoal','goalId',(v,f)=>{f.guideType=inferGuideType(goals().find(g=>String(g.id)===String(v)));f.phase=ROUTES[f.guideType].phases[0][0];f.macroId='';f.mesoId='';f.microId='';f.microDrafts=[];return v});
+    saveField('gfGuideType','guideType',(v,f)=>{f.phase=ROUTES[v].phases[0][0];f.p1='';f.p2='';f.maintain=[];f.mesoId='';f.microId='';f.microDrafts=[];return v});
+    saveField('gfMaxLoad','maxLoad',v=>Number(v)||0);
+    saveField('gfMacro','macroId',(v,f)=>{const m=macros().find(x=>String(x.id)===String(v));if(m){f.macroName=m.name||'';f.macroStart=m.start_date||'';f.macroEnd=m.end_date||'';f.macroObjective=m.primary_objective||''}else{delete f.macroName;delete f.macroStart;delete f.macroEnd;delete f.macroObjective}f.mesoId='';f.microId='';return v});
+    saveField('gfMacroName','macroName');saveField('gfMacroStart','macroStart');saveField('gfMacroEnd','macroEnd');saveField('gfMacroObjective','macroObjective');
+    saveField('gfMeso','mesoId',(v,f)=>{const m=mesos().find(x=>String(x.id)===String(v));if(m){f.p1=m.primary_adaptation||f.p1;const meta=parseGuideNotes(m.notes);if(meta.phase&&route(f).phases.some(p=>p[0]===meta.phase))f.phase=meta.phase;if(meta.weeks)f.mesoWeeks=meta.weeks;if(meta.p2)f.p2=meta.p2;if(meta.maintain)f.maintain=meta.maintain;if(meta.expected)f.expectedChange=meta.expected;if(meta.indicators)f.indicators=meta.indicators;if(m.success_criteria)f.successCriteria=m.success_criteria}f.microId='';f.microDrafts=[];return v});
+    saveField('gfPhase','phase',(v,f)=>{f.p1='';f.p2='';f.maintain=[];f.microDrafts=[];return v});
+    saveField('gfMesoWeeks','mesoWeeks',(v,f)=>{f.microDrafts=[];return Math.max(1,Math.min(12,Number(v)||4))});
+    saveField('gfP1','p1',(v,f)=>{if(f.p2===v)f.p2='';f.microDrafts=[];return v});saveField('gfP2','p2',(v,f)=>{f.microDrafts=[];return v});
+    saveField('gfExpected','expectedChange');saveField('gfIndicators','indicators');saveField('gfSuccess','successCriteria');
+    q('#gfMaintain')?.addEventListener('change',()=>{const f=hydrate();f.maintain=qa('#gfMaintain option:checked').map(o=>o.value);f.microDrafts=[];write(f);paint()});
+    qa('[data-flow-phase]').forEach(b=>b.addEventListener('click',()=>{const f=hydrate();f.phase=b.dataset.flowPhase;f.p1='';f.p2='';f.maintain=[];f.microDrafts=[];write(f);paint()}));
+    qa('#gfMicroDrafts [data-df]').forEach(e=>e.addEventListener('change',()=>{if(e.dataset.df==='type'){const row=e.closest('[data-draft]'),p=PCT[e.value]||PCT.Desarrollo;row.querySelector('[data-df="loadPct"]').value=p[0];row.querySelector('[data-df="low"]').value=p[1];row.querySelector('[data-df="high"]').value=p[2]}collectDrafts()}));
+    q('#gfRegenerateMicros')?.addEventListener('click',()=>{const f=hydrate();ensureDrafts(f,true);write(f);paint()});
+    saveField('gfMicro','microId');saveField('gfStimulus','stimulus',(v,f)=>{f.session='';return v});
+    qa('[data-session-choice]').forEach(b=>b.addEventListener('click',()=>{const f=hydrate();f.session=b.dataset.sessionChoice;write(f);paint()}));
+    saveField('gfSessionStimulus','stimulus',(v,f)=>{f.session='';return v});saveField('gfSession','session');
+    q('#gfOpenMicroCalendar')?.addEventListener('click',()=>openCalendarForMicro(hydrate().microId));
+    q('#gfOpenLibrary')?.addEventListener('click',()=>openLibrary(hydrate().stimulus));
+    q('#gfOpenSeasonMap')?.addEventListener('click',openSeasonMap);
+    qa('[data-guide-edit]').forEach(b=>b.addEventListener('click',()=>openPlanEdit(b.dataset.guideEdit,b.dataset.id)));
   }
 
-  function mesoBody(f){
-    const phase=phaseData(f),macros=filteredMacros(f),maintain=maintainOptions(f);
-    const macroOptions=['<option value="">Selecciona un macrociclo</option>',...macros.map(m=>option(m.id,m.name||'Macrociclo',f.macroId))].join('');
-    const p2=['<option value="">Sin P2</option>',...phase[3].filter(x=>x!==f.p1).map(x=>option(x,x,f.p2))].join('');
-    const maintained=new Set(Array.isArray(f.maintain)?f.maintain:[]);
-    return `<div class="v8-guided-card"><div class="eyebrow">3 · Fase → mesociclo → capacidad</div><h3>¿Qué adaptación queremos producir ahora?</h3><p>Aquí aparece la lógica dependiente del prototipo: la fase filtra el mesociclo; el mesociclo filtra las capacidades posibles; P1 filtra P2 y mantenimiento.</p><div class="v8-flow-grid">${selectField('Macrociclo','v8FlowMesoMacro',macroOptions)}${selectField('Fase','v8FlowMesoPhase',routeData(f).phases.map(p=>option(p[0],p[0],f.phase)).join(''))}${selectField('Mesociclo recomendado','v8FlowMesoType',option(phase[1],phase[1],phase[1]))}${selectField('Prioridad 1','v8FlowP1',phase[3].map(x=>option(x,x,f.p1)).join(''))}${selectField('Prioridad 2','v8FlowP2',p2,'Opcional. Solo si no interfiere con P1.')}</div><label class="v8-flow-field v8-flow-full"><span>Mantener</span><select id="v8FlowMaintain" multiple size="${Math.min(6,Math.max(3,maintain.length))}">${maintain.map(x=>`<option value="${esc(x)}" ${maintained.has(x)?'selected':''}>${esc(x)}</option>`).join('')}</select><small>Selecciona capacidades que no quieres perder durante este bloque.</small></label><div class="v8-flow-guide"><strong>Decisión resultante</strong><p>P1: <b>${esc(f.p1||'—')}</b>${f.p2?` · P2: <b>${esc(f.p2)}</b>`:''}</p><small>${esc(phase[2])}</small></div></div><div class="v8-guided-warning"><strong>Regla:</strong> un mesociclo desarrolla principalmente una capacidad y, como máximo, una segunda prioridad importante. Duración prevista habitual: 2–6 semanas.</div>`;
-  }
-
-  function microBody(f){
-    const mesos=filteredMesos(f),meso=selectedMeso(f),micros=filteredMicros(f),types=microOptions(f),preset=LOAD_PRESET[f.microType]||LOAD_PRESET.Desarrollo;
-    const mesoOptions=['<option value="">Selecciona un mesociclo real</option>',...mesos.map(m=>option(m.id,m.name||m.primary_adaptation||'Mesociclo',f.mesoId))].join('');
-    const microOptionsHtml=['<option value="">Todavía no creado</option>',...micros.map(m=>option(m.id,m.name||m.week_type||'Microciclo',f.microId))].join('');
-    return `<div class="v8-guided-card"><div class="eyebrow">4 · Capacidad → microciclo</div><h3>¿Qué tipo de semana necesitamos?</h3><p>La prioridad del mesociclo ya está decidida. Ahora elegimos cómo presentar o progresar el estímulo durante esta semana.</p><div class="v8-flow-grid">${selectField('Mesociclo real','v8FlowMeso',mesoOptions)}${selectField('Microciclo real','v8FlowMicro',microOptionsHtml)}${selectField('Tipo de microciclo','v8FlowMicroType',types.map(x=>option(x,x,f.microType)).join(''))}</div><div class="v8-guided-context">${contextRow('P1',f.p1||meso?.primary_adaptation||'—')}${contextRow('P2',f.p2||'—')}${contextRow('Carga orientativa',`${preset[0]}% · rango ${preset[1]}–${preset[2]}%`)}</div><div class="v8-flow-guide"><strong>${esc(f.microType)}</strong><p>${microExplanation(f.microType)}</p></div></div><div class="v8-guided-warning"><strong>Progresión:</strong> no aumentes simultáneamente volumen + intensidad + frecuencia + desnivel + dificultad. Elige normalmente una variable y observa la respuesta.</div>`;
-  }
-
-  function microExplanation(type){return ({'Introducción':'Presentar el estímulo y comprobar tolerancia.','Desarrollo':'Aumentar el estímulo si la respuesta previa ha sido adecuada.','Sobrecarga':'Mayor estímulo solo si la respuesta es buena y la recuperación lo permite.','Consolidación':'Absorber lo realizado sin necesidad de seguir aumentando carga.','Descarga':'Reducir carga cuando la fatiga o la respuesta aconsejan recuperar.','Taper':'Eliminar fatiga manteniendo pequeñas dosis de intensidad y especificidad.','Competición':'Priorizar ejecución, estrategia y frescura.','Recuperación':'Recuperar según el coste real de la competición o del bloque.'})[type]||''}
-
-  function stimulusBody(f){
-    const micros=filteredMicros(f),stimuli=stimulusOptions(f),microOptionsHtml=['<option value="">Selecciona un microciclo real</option>',...micros.map(m=>option(m.id,m.name||m.week_type||'Microciclo',f.microId))].join('');
-    return `<div class="v8-guided-card"><div class="eyebrow">5 · Microciclo → estímulo</div><h3>¿Qué estímulo necesita esta semana?</h3><p>Primero eliges la necesidad. Solo después RunFlow enseña familias de sesiones compatibles.</p><div class="v8-flow-grid">${selectField('Microciclo','v8FlowStimulusMicro',microOptionsHtml)}${selectField('Estímulo necesario','v8FlowStimulus',stimuli.map(x=>option(x,x,f.stimulus)).join(''))}</div><div class="v8-flow-guide"><strong>Por qué aparece ${esc(f.stimulus)}</strong><p>${stimulusWhy(f)}</p></div><div class="v8-flow-session-preview">${(SESSIONS[f.stimulus]||[]).slice(0,4).map(x=>`<span>${esc(x)}</span>`).join('')}</div></div><div class="v8-guided-warning"><strong>Orden RunFlow:</strong> prioridad del mesociclo → sesión clave nº1 → segundo estímulo si procede → fuerza minimizando interferencias → easy/recuperación.</div>`;
-  }
-
-  function stimulusWhy(f){
-    if(f.stimulus===f.p1)return'Es la Prioridad 1 del mesociclo: debe recibir el estímulo de mayor intención del bloque.';
-    if(f.stimulus===f.p2)return'Es la Prioridad 2: se trabaja solo si no compromete la adaptación principal.';
-    if(f.stimulus==='Easy')return'El EASY permite acumular volumen, recuperar y hacer productivos los días importantes.';
-    if(f.stimulus==='Fuerza')return'La fuerza se coloca minimizando interferencias con las sesiones clave.';
-    return'Es una capacidad de mantenimiento seleccionada para evitar perderla durante el mesociclo.';
-  }
-
-  function sessionBody(f){
-    const options=SESSIONS[f.stimulus]||[],sessionOptions=options.map(x=>option(x,x,f.session)).join('');
-    return `<div class="v8-guided-card"><div class="eyebrow">6 · Estímulo → sesión</div><h3>Ahora sí: elige una familia de sesión</h3><p>Las opciones ya están filtradas por objetivo, fase, P1/P2, tipo de microciclo y estímulo semanal.</p><div class="v8-flow-grid">${selectField('Estímulo','v8FlowSessionStimulus',stimulusOptions(f).map(x=>option(x,x,f.stimulus)).join(''))}${selectField('Sesión compatible','v8FlowSession',sessionOptions)}</div><div class="v8-guided-context">${contextRow('Objetivo',selectedGoal(f)?.name||'—')}${contextRow('Fase',f.phase)}${contextRow('P1',f.p1)}${contextRow('Micro',f.microType)}</div><div class="v8-flow-final"><span>Necesidad</span><strong>${esc(f.stimulus)}</strong><span>Sesión elegida</span><strong>${esc(f.session||'—')}</strong><p>Antes de prescribirla, responde: <b>¿por qué esta sesión concreta debería producir la adaptación que necesito ahora?</b></p></div><div class="v8-flow-inline-actions"><button type="button" class="btn secondary small" data-flow-inline="calendar">Abrir microciclo en calendario</button><button type="button" class="btn soft small" data-flow-inline="restart">Revisar desde el objetivo</button></div></div><div class="v8-guided-warning"><strong>Después de entrenar:</strong> respuesta del deportista → análisis → decisión → nuevo plan. El calendario marca cuándo revisamos; la respuesta decide si avanzamos.</div>`;
-  }
-
-  function bodyFor(index,f){return [objectiveBody,macroBody,mesoBody,microBody,stimulusBody,sessionBody][index]?.(f)||''}
-  function activeStep(){const active=q('#v8GuidedSteps .v8-guided-step-pill.active');return Math.max(0,Math.min(5,Number(active?.dataset.guideStep||0)))}
-  function setField(id,key,transform=v=>v){const el=q(`#${id}`);if(!el)return;el.addEventListener('change',()=>{const f=flow();f[key]=transform(el.value,f);saveFlow(f);renderFlow();});}
-
-  function bindBody(index){
-    setField('v8FlowGoal','goalId',(v,f)=>{const g=allGoals().find(x=>String(x.id)===String(v));f.guideType=inferGuideType(g);f.phase=ROUTES[f.guideType].phases[0][0];f.macroId='';f.mesoId='';f.microId='';return v});
-    setField('v8FlowType','guideType',(v,f)=>{f.phase=ROUTES[v].phases[0][0];f.p1='';f.p2='';f.mesoId='';f.microId='';return v});
-    setField('v8FlowMacro','macroId');
-    setField('v8FlowPhase','phase',(v,f)=>{f.p1='';f.p2='';f.maintain=[];f.mesoId='';f.microId='';f.microType='';f.stimulus='';return v});
-    setField('v8FlowMesoMacro','macroId',(v,f)=>{f.mesoId='';f.microId='';return v});
-    setField('v8FlowMesoPhase','phase',(v,f)=>{f.p1='';f.p2='';f.maintain=[];f.mesoId='';f.microId='';f.microType='';f.stimulus='';return v});
-    setField('v8FlowP1','p1',(v,f)=>{if(f.p2===v)f.p2='';f.stimulus='';return v});
-    setField('v8FlowP2','p2',(v,f)=>{f.stimulus='';return v});
-    const maintain=q('#v8FlowMaintain');if(maintain)maintain.addEventListener('change',()=>{const f=flow();f.maintain=selectedValues('v8FlowMaintain');f.stimulus='';saveFlow(f);renderFlow()});
-    setField('v8FlowMeso','mesoId',(v,f)=>{f.microId='';return v});
-    setField('v8FlowMicro','microId');
-    setField('v8FlowMicroType','microType',(v,f)=>{f.stimulus='';return v});
-    setField('v8FlowStimulusMicro','microId');
-    setField('v8FlowStimulus','stimulus',(v,f)=>{f.session='';return v});
-    setField('v8FlowSessionStimulus','stimulus',(v,f)=>{f.session='';return v});
-    setField('v8FlowSession','session');
-    qa('[data-flow-phase]').forEach(button=>button.addEventListener('click',()=>{const f=flow();f.phase=button.dataset.flowPhase;f.p1='';f.p2='';f.maintain=[];f.mesoId='';f.microId='';f.microType='';f.stimulus='';saveFlow(f);renderFlow()}));
-    q('[data-flow-inline="calendar"]')?.addEventListener('click',()=>openMicroCalendar(flow().microId));
-    q('[data-flow-inline="restart"]')?.addEventListener('click',()=>q('#v8GuidedSteps [data-guide-step="0"]')?.click());
-  }
-
-  function relabelSteps(){qa('#v8GuidedSteps .v8-guided-step-pill').forEach((pill,i)=>{if(STEP_LABELS[i])pill.textContent=`${i+1} · ${STEP_LABELS[i]}`})}
-  function updateFooter(index,f){const action=q('#v8GuidedAction');if(!action)return;const labels=[allGoals().length?'+ Crear otro objetivo':'+ Crear objetivo',f.macroId?'Editar / crear macrociclo':'+ Crear macrociclo','Crear mesociclo con esta decisión','Crear / editar microciclo','Abrir microciclo en calendario','Abrir Biblioteca con este estímulo'];action.textContent=labels[index]||'Continuar';}
-  function renderFlow(){
-    const body=q('#v8GuidedBody');if(!body||applying)return;
-    applying=true;
-    const index=activeStep(),f=flow();
-    relabelSteps();
-    body.innerHTML=bodyFor(index,f);
-    updateFooter(index,f);
-    bindBody(index);
-    body.dataset.v8FlowStep=String(index);
-    applying=false;
-  }
-
+  function parseGuideNotes(notes){const out={};String(notes||'').split('\n').forEach(line=>{const [k,...rest]=line.split(':');const v=rest.join(':').trim();if(!v)return;if(k==='Fase')out.phase=v;if(k==='Semanas')out.weeks=Number(v)||0;if(k==='P2')out.p2=v==='—'?'':v;if(k==='Mantener')out.maintain=v==='—'?[]:v.split('|').map(x=>x.trim()).filter(Boolean);if(k==='Cambio esperado')out.expected=v;if(k==='Indicadores')out.indicators=v});return out}
+  function guideNotes(f){return ['RUNFLOW_GUIDE_V6',`Tipo guía: ${f.guideType}`,`Fase: ${f.phase}`,`Semanas: ${f.mesoWeeks}`,`P2: ${f.p2||'—'}`,`Mantener: ${(f.maintain||[]).join(' | ')||'—'}`,`Cambio esperado: ${f.expectedChange||'—'}`,`Indicadores: ${f.indicators||'—'}`].join('\n')}
   function originalView(name){return q(`main.shell>.tabs [data-view="${name}"]`)}
-  function closePlanner(){window.RunFlowV8Planner?.close?.()}
-  function openPlanAction(action,id){
-    closePlanner();originalView('plan')?.click();
-    setTimeout(()=>{
-      const idSelector=id?`[data-id="${CSS.escape(String(id))}"]`:'';
-      const button=q(`[data-plan-action="${action}"]${idSelector}`)||q(`[data-plan-action="${action}"]`);
-      if(button)button.click();
-      else alert('No encuentro todavía ese nivel en el Plan real. Crea primero el nivel anterior y vuelve al planificador guiado.');
-    },180);
-  }
-  function openMicroCalendar(id){
-    if(!id){alert('Selecciona o crea primero un microciclo real.');return;}
-    closePlanner();originalView('plan')?.click();
-    setTimeout(()=>{const select=q(`[data-plan-action="select-micro"][data-id="${CSS.escape(String(id))}"]`);if(!select){alert('No he encontrado ese microciclo en el Plan real.');return;}select.click();setTimeout(()=>q('#openSelectedWeekCalendar')?.click(),120);},180);
-  }
-  function openLibrary(stimulus){
-    closePlanner();originalView('library')?.click();
-    setTimeout(()=>{
-      const filter=q('#libraryStimulusFilter');
-      if(filter){const match=[...filter.options].find(o=>String(o.value).toLowerCase()===String(stimulus).toLowerCase()||String(o.textContent).toLowerCase().includes(String(stimulus).toLowerCase()));if(match){filter.value=match.value;filter.dispatchEvent(new Event('change',{bubbles:true}));return;}}
-      const search=q('#librarySearch');if(search){search.value=stimulus;search.dispatchEvent(new Event('input',{bubbles:true}));}
-    },180);
-  }
-  function runFooterAction(){
-    const index=activeStep(),f=flow();
-    if(index===0){closePlanner();q('#newPlanGoal')?.click();return;}
-    if(index===1){openPlanAction(f.macroId?'edit-macro':'new-macro',f.macroId);return;}
-    if(index===2){openPlanAction('new-meso',f.macroId);return;}
-    if(index===3){openPlanAction(f.microId?'edit-micro':'new-micro',f.microId||f.mesoId);return;}
-    if(index===4){openMicroCalendar(f.microId);return;}
-    if(index===5){openLibrary(f.stimulus);}
-  }
+  function close(){window.RunFlowV8Planner?.close?.()}
+  async function callApi(url,options={}){if(typeof api==='function')return api(url,options);const r=await fetch(url,{...options,headers:{'Content-Type':'application/json',...(options.headers||{})}});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'No se pudo guardar.');return d}
+  async function refreshPlan(){if(typeof loadPlan==='function')await loadPlan(stateSafe()?.selectedSeasonId||null)}
+  function notify(msg){if(typeof showMessage==='function')showMessage(msg,'success');else alert(msg)}
 
-  function installControls(){
-    const panel=q('#v8GuidedPlanner');if(!panel)return;
-    const action=q('#v8GuidedAction');
-    if(action&&!action.dataset.v8FlowCapture){action.dataset.v8FlowCapture='1';action.addEventListener('click',event=>{event.preventDefault();event.stopImmediatePropagation();runFooterAction();},true);}
-    renderFlow();
-  }
+  async function saveMacro(){const f=hydrate(),s=season();if(!s){close();originalView('plan')?.click();setTimeout(()=>q('#createFirstSeason')?.click(),150);return}const g=selectedGoal(f),d=macroDefaults(f);const payload={name:f.macroName||d.name,start_date:f.macroStart||d.start,end_date:f.macroEnd||d.end,status:'planned',goal_id:f.goalId||null,primary_objective:f.macroObjective||d.objective,constraints:'',notes:`RUNFLOW_GUIDE_V6\nTipo guía: ${f.guideType}\nRuta: ${route(f).note}`};if(!payload.name||!payload.start_date||!payload.end_date){alert('Completa nombre, inicio y fin del macrociclo.');return}const base=`/api/coach/athletes/${encodeURIComponent(athleteId())}`;const data=await callApi(f.macroId?`${base}/macrocycles/${encodeURIComponent(f.macroId)}`:`${base}/seasons/${encodeURIComponent(s.id)}/macrocycles`,{method:f.macroId?'PUT':'POST',body:JSON.stringify(payload)});await refreshPlan();f.macroId=data?.macrocycle?.id||f.macroId;write(f);notify('Macrociclo guardado en el Plan real.');paint()}
 
-  new MutationObserver(()=>{if(q('#v8GuidedPlanner'))installControls()}).observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:['class']});
-  document.addEventListener('DOMContentLoaded',installControls,{once:true});
-  q('#athleteSelect')?.addEventListener('change',()=>setTimeout(renderFlow,50));
-  setTimeout(installControls,900);
+  function suggestedMesoDates(f){const ma=selectedMacro(f);if(!ma)return{start:'',end:''};const rows=compatibleMesos(f).filter(x=>String(x.id)!==String(f.mesoId)).sort((a,b)=>String(a.end_date).localeCompare(String(b.end_date)));let start=rows.length?addDays(rows[rows.length-1].end_date,1):ma.start_date;const existing=selectedMeso(f);if(existing)start=existing.start_date||start;let end=addDays(start,f.mesoWeeks*7-1);if(ma.end_date&&after(end,ma.end_date))end=ma.end_date;return{start,end}}
+  async function saveMeso(){const f=collectDrafts(),ma=selectedMacro(f);if(!ma){alert('Selecciona o crea primero un macrociclo real.');return}const p=phase(f),dates=suggestedMesoDates(f),secondary=[f.p2,...(f.maintain||[])].filter(Boolean);const avg=(f.microDrafts||[]).reduce((s,x)=>s+Number(x.loadPct||0),0)/Math.max(1,(f.microDrafts||[]).length);const payload={name:p[1],start_date:dates.start,end_date:dates.end,status:'planned',primary_adaptation:f.p1,secondary_adaptations:secondary,planned_hours:null,planned_distance_km:null,planned_elevation_m:null,planned_load:f.maxLoad?Math.round(f.maxLoad*avg/100*f.mesoWeeks):null,planned_strength_sessions:null,success_criteria:f.successCriteria||'',progression_pattern:(f.microDrafts||[]).map(x=>MICRO_API[x.type]||'development'),notes:guideNotes(f)};if(!dates.start||!dates.end){alert('No puedo calcular las fechas del mesociclo. Revisa las fechas del macrociclo.');return}const base=`/api/coach/athletes/${encodeURIComponent(athleteId())}`;const data=await callApi(f.mesoId?`${base}/mesocycles/${encodeURIComponent(f.mesoId)}`:`${base}/macrocycles/${encodeURIComponent(ma.id)}/mesocycles`,{method:f.mesoId?'PUT':'POST',body:JSON.stringify(payload)});await refreshPlan();f.mesoId=data?.mesocycle?.id||f.mesoId;f.microDrafts=freshDrafts(f);write(f);notify('Mesociclo guardado con la lógica del Planificador guiado.');paint()}
+
+  async function saveMicros(){const f=collectDrafts(),m=selectedMeso(f);if(!m){alert('Selecciona o crea primero un mesociclo real.');return}const existing=compatibleMicros(f).slice().sort((a,b)=>String(a.start_date).localeCompare(String(b.start_date)));if(existing.length&&!confirm(`Ya existen ${existing.length} microciclo(s). RunFlow actualizará los que coincidan por posición y creará los que falten. No borrará semanas adicionales. ¿Continuar?`))return;const base=`/api/coach/athletes/${encodeURIComponent(athleteId())}`;for(let i=0;i<f.microDrafts.length;i++){const d=f.microDrafts[i],start=addDays(m.start_date,i*7),end=i===f.microDrafts.length-1?(m.end_date||addDays(start,6)):addDays(start,6),real=existing[i];const load=f.maxLoad?Math.round(f.maxLoad*d.loadPct/100):0;const payload={name:`S${i+1} · ${d.type}`,start_date:start,end_date:end,type:MICRO_API[d.type]||'development',primary_objective:d.objective||f.p1,planned:{hours:0,distance_km:0,elevation_m:0,load,strength_sessions:0},lifecycle_status:'planned',publication_status:'draft',recovery_target:d.type==='Consolidación'||d.type==='Descarga'?'Priorizar asimilación y recuperación':'',notes:`RUNFLOW_GUIDE_V6\nFase: ${f.phase}\nTipo: ${d.type}\nCarga %: ${d.loadPct}\nRango: ${d.low}-${d.high}\nP1: ${f.p1}`};await callApi(real?`${base}/microcycles/${encodeURIComponent(real.id)}`:`${base}/mesocycles/${encodeURIComponent(m.id)}/microcycles`,{method:real?'PUT':'POST',body:JSON.stringify(payload)})}await refreshPlan();const updated=compatibleMicros(f);f.microId=updated[0]?.id||f.microId;write(f);notify('Microciclos guardados en el Plan real y disponibles en Calendario.');paint()}
+
+  function openPlanEdit(type,id){close();originalView('plan')?.click();setTimeout(()=>{const action={goal:'edit-goal',macro:'edit-macro',meso:'edit-meso',micro:'edit-micro'}[type];q(`[data-plan-action="${action}"][data-id="${CSS.escape(String(id))}"]`)?.click()},180)}
+  function openCalendarForMicro(id){const mc=micros().find(x=>String(x.id)===String(id));close();originalView('week')?.click();if(mc&&typeof parseLocalDate==='function'){try{const d=parseLocalDate(mc.start_date);stateSafe().calendar.month=new Date(d.getFullYear(),d.getMonth(),1,12);if(typeof loadCalendarMonth==='function')loadCalendarMonth(false).then(()=>{if(typeof selectCalendarWeek==='function')selectCalendarWeek(mc.start_date,true)})}catch{}}}
+  function openLibrary(stim){close();originalView('library')?.click();setTimeout(()=>{const f=q('#libraryStimulusFilter');if(f){const o=[...f.options].find(x=>String(x.value).toLowerCase()===String(stim).toLowerCase()||String(x.textContent).toLowerCase().includes(String(stim).toLowerCase()));if(o){f.value=o.value;f.dispatchEvent(new Event('change',{bubbles:true}));return}}const s=q('#librarySearch');if(s){s.value=stim;s.dispatchEvent(new Event('input',{bubbles:true}))}},180)}
+  function openSeasonMap(){close();originalView('week')?.click();setTimeout(()=>q('#v8SeasonMap')?.scrollIntoView({behavior:'smooth',block:'start'}),220)}
+
+  async function footerAction(){const i=activeStep();try{const button=q('#v8GuidedAction');if(button)button.disabled=true;if(i===0){close();q('#newPlanGoal')?.click();return}if(i===1){await saveMacro();return}if(i===2){await saveMeso();return}if(i===3){await saveMicros();return}if(i===4){openCalendarForMicro(hydrate().microId);return}if(i===5){openSeasonMap()}}catch(e){alert(e.message||'No se pudo completar la acción.')}finally{const button=q('#v8GuidedAction');if(button)button.disabled=false}}
+  function footerLabel(i,f){return ['+ Crear / editar objetivo',f.macroId?'Guardar cambios del macrociclo':'Crear macrociclo real',f.mesoId?'Guardar cambios del mesociclo':'Crear mesociclo real',compatibleMicros(f).length?'Actualizar microciclos reales':'Crear propuesta de microciclos','Abrir microciclo en calendario','Ver temporada en calendario'][i]}
+
+  function paint(){const body=q('#v8GuidedBody');if(!body||painting)return;painting=true;const i=activeStep(),f=hydrate();qa('#v8GuidedSteps .v8-guided-step-pill').forEach((b,n)=>{if(STEP_LABELS[n])b.textContent=`${n+1} · ${STEP_LABELS[n]}`});body.innerHTML=bodies[i](f);const action=q('#v8GuidedAction');if(action)action.textContent=footerLabel(i,f);bind(i);painting=false}
+  function install(){const panel=q('#v8GuidedPlanner');if(!panel)return;const action=q('#v8GuidedAction');if(action&&!action.dataset.fullLab){action.dataset.fullLab='1';action.addEventListener('click',e=>{e.preventDefault();e.stopImmediatePropagation();footerAction()},true)}const steps=q('#v8GuidedSteps');if(steps&&!steps.dataset.fullLab){steps.dataset.fullLab='1';steps.addEventListener('click',()=>setTimeout(paint,0),true)}paint()}
+
+  const observer=new MutationObserver(muts=>{if(!q('#v8GuidedPlanner'))return;const body=q('#v8GuidedBody');if(body&&!body.querySelector('.v8-flow-grid,.v8-flow-micro-list')&&!painting)install()});
+  observer.observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['class']});
+  q('#athleteSelect')?.addEventListener('change',()=>setTimeout(paint,80));
+  document.addEventListener('DOMContentLoaded',install,{once:true});setTimeout(install,900);
 })();
