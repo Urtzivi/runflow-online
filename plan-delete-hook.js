@@ -250,6 +250,18 @@ async function removeWorkout(athleteId, workout, apiKey = null) {
   return { preserved, intervalsWarning };
 }
 
+async function deleteGoal(athleteId, goalId) {
+  const goals = await sb('goals', `id=eq.${encodeURIComponent(goalId)}&athlete_id=eq.${encodeURIComponent(athleteId)}&select=*`);
+  if (!goals.length) throw Object.assign(new Error('Objetivo no encontrado.'), { status: 404 });
+  await sb('macrocycles', `athlete_id=eq.${encodeURIComponent(athleteId)}&goal_id=eq.${encodeURIComponent(goalId)}`, {
+    method: 'PATCH', body: { goal_id: null }, prefer: 'return=minimal',
+  }).catch(() => []);
+  await sb('goals', `id=eq.${encodeURIComponent(goalId)}&athlete_id=eq.${encodeURIComponent(athleteId)}`, {
+    method: 'DELETE', prefer: 'return=minimal',
+  });
+  return { removed: { goals: 1 }, warnings: [] };
+}
+
 async function deleteWorkout(athleteId, workoutId) {
   const rows = await sb('workouts', `id=eq.${encodeURIComponent(workoutId)}&athlete_id=eq.${encodeURIComponent(athleteId)}&select=*`);
   if (!rows.length) throw Object.assign(new Error('Sesión no encontrada.'), { status: 404 });
@@ -313,6 +325,7 @@ async function deleteMacrocycle(athleteId, macrocycleId) {
 
 function routeFor(pathname) {
   const patterns = [
+    ['goal', /^\/api\/coach\/athletes\/([^/]+)\/goals\/([^/]+)$/],
     ['macrocycle', /^\/api\/coach\/athletes\/([^/]+)\/macrocycles\/([^/]+)$/],
     ['mesocycle', /^\/api\/coach\/athletes\/([^/]+)\/mesocycles\/([^/]+)$/],
     ['microcycle', /^\/api\/coach\/athletes\/([^/]+)\/microcycles\/([^/]+)$/],
@@ -328,6 +341,7 @@ function routeFor(pathname) {
 async function handleDelete(req, res, route) {
   await requireCoach(req, res, route.athleteId);
   let result;
+  if (route.type === 'goal') result = await deleteGoal(route.athleteId, route.id);
   if (route.type === 'macrocycle') result = await deleteMacrocycle(route.athleteId, route.id);
   if (route.type === 'mesocycle') result = await deleteMesocycle(route.athleteId, route.id);
   if (route.type === 'microcycle') result = await deleteMicrocycle(route.athleteId, route.id);
