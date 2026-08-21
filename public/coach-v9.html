@@ -16,10 +16,22 @@
   <link rel="stylesheet" href="/css/coach-v8-micro-workflow.css?v=8.7.0">
   <link rel="stylesheet" href="/css/coach-v8-plan-coordination.css?v=8.8.0">
   <link rel="stylesheet" href="/css/coach-v9.css?v=9.0.1">
-  <link rel="stylesheet" href="/css/coach-v9-batch.css?v=9.1.0">
+  <link rel="stylesheet" href="/css/coach-v9-batch.css?v=9.2.0">
+  <link rel="preload" as="script" href="/js/coach-v8-shell.js?v=8.0.0">
+  <link rel="preload" as="script" href="/js/coach-v8-planner.js?v=8.4.1">
+  <link rel="preload" as="script" href="/js/coach-v8-validation-persistence.js?v=8.4.0">
+  <link rel="preload" as="script" href="/js/coach-v8-runtime.js?v=8.4.0">
+  <link rel="preload" as="script" href="/js/coach-v8-delete-ui.js?v=8.4.2">
+  <link rel="preload" as="script" href="/js/coach-v8-guided-flow.js?v=8.6.0">
+  <link rel="preload" as="script" href="/js/coach-v8-season-map.js?v=8.6.0">
+  <link rel="preload" as="script" href="/js/coach-v8-micro-workflow.js?v=8.7.0">
+  <link rel="preload" as="script" href="/js/coach-v8-plan-coordination.js?v=8.8.0">
+  <link rel="preload" as="script" href="/js/coach-v9.js?v=9.0.1">
+  <link rel="preload" as="script" href="/js/coach-v9-batch.js?v=9.2.0">
+  <link rel="preload" as="script" href="/js/coach-v9-supplement.js?v=9.2.0">
 </head>
 <body class="coach-v8-loading coach-v9-beta">
-  <main class="v8-loader"><div class="v8-loader-mark">RF</div><strong>RunFlow Coach V9 · Beta</strong><span>Comprobando acceso y cargando la base estable de V8…</span></main>
+  <main class="v8-loader"><div class="v8-loader-mark">RF</div><strong>RunFlow Coach V9 · Beta</strong><span>Comprobando acceso y preparando la interfaz…</span></main>
   <script>
     (async()=>{
       const fail=()=>location.replace('/login-beta.html?target=coach-v9');
@@ -40,7 +52,8 @@
           '/js/coach-v8-micro-workflow.js?v=8.7.0',
           '/js/coach-v8-plan-coordination.js?v=8.8.0',
           '/js/coach-v9.js?v=9.0.1',
-          '/js/coach-v9-batch.js?v=9.1.0'
+          '/js/coach-v9-batch.js?v=9.2.0',
+          '/js/coach-v9-supplement.js?v=9.2.0'
         ];
         for(const src of scripts){
           await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src=src;s.onload=resolve;s.onerror=reject;document.body.appendChild(s);});
