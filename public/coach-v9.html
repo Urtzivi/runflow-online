@@ -31,6 +31,7 @@
   <link rel="preload" as="script" href="/js/coach-v9-batch.js?v=9.2.0">
   <link rel="preload" as="script" href="/js/coach-v9-supplement.js?v=9.2.0">
   <link rel="preload" as="script" href="/js/coach-v9-season-planner.js?v=9.3.0">
+  <link rel="preload" as="script" href="/js/coach-v9-season-bridge.js?v=9.3.0">
 </head>
 <body class="coach-v8-loading coach-v9-beta">
   <main class="v8-loader"><div class="v8-loader-mark">RF</div><strong>RunFlow Coach V9 · Beta</strong><span>Comprobando acceso y preparando la interfaz…</span></main>
@@ -56,7 +57,8 @@
           '/js/coach-v9.js?v=9.0.1',
           '/js/coach-v9-batch.js?v=9.2.0',
           '/js/coach-v9-supplement.js?v=9.2.0',
-          '/js/coach-v9-season-planner.js?v=9.3.0'
+          '/js/coach-v9-season-planner.js?v=9.3.0',
+          '/js/coach-v9-season-bridge.js?v=9.3.0'
         ];
         for(const src of scripts){
           await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src=src;s.onload=resolve;s.onerror=reject;document.body.appendChild(s);});
