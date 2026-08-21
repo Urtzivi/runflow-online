@@ -36,7 +36,7 @@
         modals.forEach(m=>document.body.appendChild(m));
         const load=src=>new Promise((resolve,reject)=>{const s=document.createElement('script');s.src=src;s.onload=resolve;s.onerror=reject;document.body.appendChild(s);});
         await load('/js/athlete.js?v=2.4.2.2');
-        await load('/js/athlete-v2-beta.js?v=2.0.2');
+        await load('/js/athlete-v2-beta.js?v=2.0.3');
       }catch(error){fail();}
     })();
   </script>
