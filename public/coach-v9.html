@@ -15,19 +15,36 @@
   <link rel="stylesheet" href="/css/coach-v8-season-map.css?v=8.6.0">
   <link rel="stylesheet" href="/css/coach-v8-micro-workflow.css?v=8.7.0">
   <link rel="stylesheet" href="/css/coach-v8-plan-coordination.css?v=8.8.0">
-  <link rel="stylesheet" href="/css/coach-v9.css?v=9.0.0">
+  <link rel="stylesheet" href="/css/coach-v9.css?v=9.0.1">
 </head>
 <body class="coach-v8-loading coach-v9-beta">
-  <main class="v8-loader"><div class="v8-loader-mark">RF</div><strong>RunFlow Coach V9 · Beta</strong><span>Cargando la base estable de V8 en un entorno separado…</span></main>
-  <script src="/js/coach-v8-shell.js?v=8.0.0"></script>
-  <script src="/js/coach-v8-planner.js?v=8.4.1"></script>
-  <script src="/js/coach-v8-validation-persistence.js?v=8.4.0"></script>
-  <script src="/js/coach-v8-runtime.js?v=8.4.0"></script>
-  <script src="/js/coach-v8-delete-ui.js?v=8.4.2"></script>
-  <script src="/js/coach-v8-guided-flow.js?v=8.6.0"></script>
-  <script src="/js/coach-v8-season-map.js?v=8.6.0"></script>
-  <script src="/js/coach-v8-micro-workflow.js?v=8.7.0"></script>
-  <script src="/js/coach-v8-plan-coordination.js?v=8.8.0"></script>
-  <script src="/js/coach-v9.js?v=9.0.0"></script>
+  <main class="v8-loader"><div class="v8-loader-mark">RF</div><strong>RunFlow Coach V9 · Beta</strong><span>Comprobando acceso y cargando la base estable de V8…</span></main>
+  <script>
+    (async()=>{
+      const fail=()=>location.replace('/login-beta.html?target=coach-v9');
+      try{
+        const response=await fetch('/api/auth/me',{credentials:'same-origin',cache:'no-store'});
+        if(!response.ok)return fail();
+        const data=await response.json();
+        if(!Array.isArray(data?.user?.roles)||!data.user.roles.includes('coach'))return fail();
+        localStorage.removeItem('runflow_client');
+        const scripts=[
+          '/js/coach-v8-shell.js?v=8.0.0',
+          '/js/coach-v8-planner.js?v=8.4.1',
+          '/js/coach-v8-validation-persistence.js?v=8.4.0',
+          '/js/coach-v8-runtime.js?v=8.4.0',
+          '/js/coach-v8-delete-ui.js?v=8.4.2',
+          '/js/coach-v8-guided-flow.js?v=8.6.0',
+          '/js/coach-v8-season-map.js?v=8.6.0',
+          '/js/coach-v8-micro-workflow.js?v=8.7.0',
+          '/js/coach-v8-plan-coordination.js?v=8.8.0',
+          '/js/coach-v9.js?v=9.0.1'
+        ];
+        for(const src of scripts){
+          await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src=src;s.onload=resolve;s.onerror=reject;document.body.appendChild(s);});
+        }
+      }catch(error){fail();}
+    })();
+  </script>
 </body>
 </html>
