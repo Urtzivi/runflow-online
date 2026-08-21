@@ -6,6 +6,7 @@
   const todayIso=()=>{const d=new Date();const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,'0');const day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`;};
   const sportIcon=value=>({walk:'🚶',strength:'🏋️',bike:'🚴',run:'🏃',trail:'⛰️',other:'●'})[value]||'●';
   const sportLabel=value=>({walk:'Caminar',strength:'Fuerza',bike:'Bici',run:'Running',trail:'Trail',other:'Otro'})[value]||'Actividad';
+  const srpeLoad=(duration,rpe)=>{const d=Number(duration),r=Number(rpe);return Number.isFinite(d)&&d>0&&Number.isFinite(r)&&r>=1&&r<=10?Math.round(d*r):null;};
 
   function readLocal(){try{return JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]')}catch{return []}}
   function writeLocal(rows){localStorage.setItem(STORAGE_KEY,JSON.stringify(rows.slice(0,100)));}
@@ -47,7 +48,7 @@
     modal.innerHTML=`<div class="modal athlete-feedback-modal v2-manual-modal">
       <div class="athlete-session-modal-head"><button id="v2CloseManual" class="athlete-modal-close" type="button">←</button><div><p class="athlete-kicker">ACTIVIDAD NO PROGRAMADA</p><h2>Añadir actividad</h2></div></div>
       <div class="modal-body">
-        <p class="v2-manual-help">Registra una actividad que RunFlow no haya recibido desde Intervals. La carga RunFlow se calculará cuando esté activo el motor de carga V9.</p>
+        <p class="v2-manual-help">RunFlow calcula desde ahora la carga interna sRPE de la actividad como duración real × RPE. La conversión a la carga RunFlow definitiva que alimentará Aptitud, Fatiga y Forma se incorporará con el motor V9.</p>
         <label class="athlete-field-label">Tipo de actividad</label>
         <div class="v2-sport-grid">
           <button type="button" data-v2-sport="walk">🚶<span>Caminar</span></button>
@@ -74,7 +75,7 @@
           <label>Sensación<select id="v2ManualFeeling"><option value="">Sin indicar</option><option value="muy_bien">Muy buenas</option><option value="bien">Buenas</option><option value="normal">Normales</option><option value="mal">Malas</option></select></label>
         </div>
         <label style="margin-top:12px">Comentario<textarea id="v2ManualComment" placeholder="Opcional"></textarea></label>
-        <div class="v2-load-pending"><span>Carga RunFlow</span><strong>—</strong><small>Pendiente del motor de carga V9</small></div>
+        <div id="v2LoadPreview" class="v2-load-pending"><span>Carga interna sRPE</span><strong>—</strong><small>duración × RPE</small></div>
         <button id="v2SaveManual" class="athlete-primary-cta full" type="button">Guardar actividad</button>
       </div>
     </div>`;
@@ -89,8 +90,20 @@
       modal.querySelectorAll('[data-v2-rpe]').forEach(x=>x.classList.toggle('active',x===btn));
       document.getElementById('v2ManualRpe').value=btn.dataset.v2Rpe;
       document.getElementById('v2ManualRpeValue').textContent=`${btn.dataset.v2Rpe}/10`;
+      updateLoadPreview();
     }));
+    document.getElementById('v2ManualDuration').addEventListener('input',updateLoadPreview);
     document.getElementById('v2SaveManual').addEventListener('click',saveManual);
+  }
+
+  function updateLoadPreview(){
+    const preview=document.getElementById('v2LoadPreview');
+    if(!preview)return;
+    const load=srpeLoad(document.getElementById('v2ManualDuration')?.value,document.getElementById('v2ManualRpe')?.value);
+    const strong=preview.querySelector('strong');
+    const small=preview.querySelector('small');
+    if(strong)strong.textContent=load===null?'—':String(load);
+    if(small)small.textContent=load===null?'duración × RPE':`${document.getElementById('v2ManualDuration').value} min × RPE ${document.getElementById('v2ManualRpe').value}`;
   }
 
   function resetModal(){
@@ -105,6 +118,7 @@
     document.getElementById('v2ManualFeeling').value='';
     document.getElementById('v2ManualComment').value='';
     document.querySelectorAll('[data-v2-sport],[data-v2-rpe]').forEach(x=>x.classList.remove('active'));
+    updateLoadPreview();
   }
   function openModal(){resetModal();document.getElementById('v2ManualActivityModal').classList.remove('hidden');}
   function closeModal(){document.getElementById('v2ManualActivityModal').classList.add('hidden');}
@@ -125,12 +139,13 @@
     if(!date) return window.message?.('Indica la fecha.','error');
     if(!Number.isFinite(duration)||duration<=0) return window.message?.('Indica la duración real.','error');
     if(!Number.isFinite(rpe)||rpe<1||rpe>10) return window.message?.('Indica el RPE de la actividad.','error');
+    const load=srpeLoad(duration,rpe);
     const distance=document.getElementById('v2ManualDistance').value;
     const elevation=document.getElementById('v2ManualElevation').value;
     const pain=Number(document.getElementById('v2ManualPain').value||0);
     const feeling=document.getElementById('v2ManualFeeling').value;
     const comment=document.getElementById('v2ManualComment').value.trim();
-    const metadata={source:'athlete_v2_manual_activity',activity_date:date,sport,distance_km:distance===''?null:Number(distance),elevation_m:elevation===''?null:Number(elevation),comment};
+    const metadata={source:'athlete_v2_manual_activity',activity_date:date,sport,distance_km:distance===''?null:Number(distance),elevation_m:elevation===''?null:Number(elevation),srpe_load:load,comment};
     const save=document.getElementById('v2SaveManual');
     save.disabled=true;save.textContent='Guardando…';
     try{
@@ -152,6 +167,7 @@
         sport,
         duration_min:duration,
         rpe,
+        srpe_load:load,
         distance_km:metadata.distance_km,
         elevation_m:metadata.elevation_m,
         pain,
@@ -162,7 +178,7 @@
       writeLocal(rows);
       closeModal();
       renderManualCards();
-      window.message?.('Actividad manual guardada en RunFlow.','success');
+      window.message?.(`Actividad guardada · carga sRPE ${load}.`,'success');
     }catch(error){window.message?.(error.message,'error');}
     finally{save.disabled=false;save.textContent='Guardar actividad';}
   }
@@ -183,7 +199,8 @@
       if(Number.isFinite(Number(row.distance_km)))details.push(`${Number(row.distance_km).toFixed(1)} km`);
       details.push(`${Number(row.duration_min)} min`);
       if(Number.isFinite(Number(row.elevation_m))&&Number(row.elevation_m)>0)details.push(`${Math.round(Number(row.elevation_m))} m+`);
-      card.innerHTML=`<div class="athlete-activity-icon">${sportIcon(row.sport)}</div><div><span>${esc(dateText(row.activity_date))} · MANUAL</span><h3>${esc(sportLabel(row.sport))}</h3><p>${esc(details.join(' · '))}</p></div><div class="athlete-activity-load-v2"><strong>—</strong><small>carga V9</small><em>RPE ${Number(row.rpe)}</em></div>`;
+      const load=Number.isFinite(Number(row.srpe_load))?Number(row.srpe_load):srpeLoad(row.duration_min,row.rpe);
+      card.innerHTML=`<div class="athlete-activity-icon">${sportIcon(row.sport)}</div><div><span>${esc(dateText(row.activity_date))} · MANUAL</span><h3>${esc(sportLabel(row.sport))}</h3><p>${esc(details.join(' · '))}</p></div><div class="athlete-activity-load-v2"><strong>${load===null?'—':load}</strong><small>carga sRPE</small><em>RPE ${Number(row.rpe)}</em></div>`;
       fragment.appendChild(card);
     });
     holder.prepend(fragment);
