@@ -5,7 +5,7 @@ services:
     plan: free
     autoDeploy: true
     buildCommand: npm install --omit=dev
-    startCommand: node -r ./plan-delete-hook.js server.js
+    startCommand: node -r ./plan-delete-hook.js -r ./v9-engine-hook.js -r ./v9-supplement-hook.js -r ./v9-reschedule-hook.js server.js
     healthCheckPath: /health
     envVars:
       - key: NODE_VERSION

@@ -1,0 +1,28 @@
+name: Validate RunFlow V9 + Athlete V2
+
+on:
+  pull_request:
+    paths:
+      - 'v9-*.js'
+      - 'public/coach-v9.html'
+      - 'public/athlete-v2.html'
+      - 'public/js/coach-v9-*.js'
+      - 'public/js/athlete-v2-*.js'
+      - 'public/css/coach-v9-*.css'
+      - 'public/css/athlete-v2-*.css'
+      - 'data/runflow-v9-library.part*.b64'
+      - 'scripts/validate-v9-batch.mjs'
+      - 'render.yaml'
+      - '.github/workflows/validate-v9-batch.yml'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate V9/V2 batch
+        run: node scripts/validate-v9-batch.mjs
