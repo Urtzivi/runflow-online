@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f3f4ef">
+  <title>RunFlow Athlete V2 · Beta</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+  <link rel="stylesheet" href="/css/app.css?v=2.4.2.2">
+  <link rel="stylesheet" href="/css/athlete-v4.css?v=4.0.0">
+  <link rel="stylesheet" href="/css/athlete-v2-beta.css?v=2.0.0">
+</head>
+<body class="athlete-v2-body athlete-v2-beta">
+  <div class="athlete-v2-beta-banner"><strong>RUNFLOW ATHLETE V2 · BETA</strong><span>Versión de prueba independiente. La app actual sigue intacta.</span></div>
+  <main id="athleteV2Mount"></main>
+  <script>
+    fetch('/athlete.html').then(r=>r.text()).then(html=>{
+      const doc=new DOMParser().parseFromString(html,'text/html');
+      const main=doc.querySelector('main.athlete-v2-shell');
+      const nav=doc.querySelector('nav.athlete-bottom-nav');
+      const modals=[...doc.body.querySelectorAll(':scope > .modal-backdrop')];
+      const mount=document.getElementById('athleteV2Mount');
+      if(main){ mount.replaceWith(main); }
+      if(nav) document.body.appendChild(nav);
+      modals.forEach(m=>document.body.appendChild(m));
+      const s=document.createElement('script'); s.src='/js/athlete.js?v=2.4.2.2'; s.onload=()=>{const b=document.createElement('script');b.src='/js/athlete-v2-beta.js?v=2.0.0';document.body.appendChild(b)};document.body.appendChild(s);
+    });
+  </script>
+</body>
+</html>
