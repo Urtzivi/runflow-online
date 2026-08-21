@@ -13,7 +13,6 @@ const syntaxFiles = [
   'public/js/coach-v9-season-bridge.js',
   'public/js/coach-v9-profile-availability.js',
   'public/js/coach-v9-hierarchy.js',
-  'public/js/coach-v9-stepwise.js',
   'public/js/coach-v9-stepwise-final.js',
   'public/js/athlete-v2-complete.js',
   'public/js/athlete-v2-fixes.js',
