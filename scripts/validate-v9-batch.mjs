@@ -9,6 +9,8 @@ const syntaxFiles = [
   'v9-supplement-hook.js',
   'public/js/coach-v9-batch.js',
   'public/js/coach-v9-supplement.js',
+  'public/js/coach-v9-season-planner.js',
+  'public/js/coach-v9-season-bridge.js',
   'public/js/athlete-v2-complete.js',
   'public/js/athlete-v2-fixes.js',
 ];
