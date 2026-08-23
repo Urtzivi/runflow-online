@@ -26,8 +26,9 @@
   <script>
     (async()=>{
       const fail=()=>location.replace('/login');
+      const nativeFetch=window.fetch.bind(window);
       try{
-        const response=await fetch('/api/auth/me',{credentials:'same-origin',cache:'no-store'});
+        const response=await nativeFetch('/api/auth/me',{credentials:'same-origin',cache:'no-store'});
         if(!response.ok)return fail();
         const data=await response.json();
         if(!Array.isArray(data?.user?.roles)||!data.user.roles.includes('coach'))return fail();
@@ -50,11 +51,17 @@
           '/js/coach-v9-profile-availability.js?v=9.4.0',
           '/js/coach-v9-stepwise-final.js?v=9.5.0'
         ];
-        await Promise.all(scripts.map(src=>new Promise((resolve,reject)=>{const p=document.createElement('link');p.rel='preload';p.as='script';p.href=src;p.onload=resolve;p.onerror=resolve;document.head.appendChild(p)})));
-        for(const src of scripts){
+        await Promise.all(scripts.map(src=>new Promise(resolve=>{const p=document.createElement('link');p.rel='preload';p.as='script';p.href=src;p.onload=resolve;p.onerror=resolve;document.head.appendChild(p)})));
+        window.fetch=(input,init)=>{
+          const url=typeof input==='string'?input:input?.url;
+          return nativeFetch(url==='/coach.html'?'/coach-base.html':input,init);
+        };
+        for(let i=0;i<scripts.length;i++){
+          const src=scripts[i];
           await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src=src;s.onload=resolve;s.onerror=reject;document.body.appendChild(s);});
+          if(i===0)window.fetch=nativeFetch;
         }
-      }catch(error){fail();}
+      }catch(error){window.fetch=nativeFetch;fail();}
     })();
   </script>
 </body>
