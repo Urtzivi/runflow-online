@@ -14,7 +14,7 @@
       <h1>Tu espacio privado para gestionar deportistas.</h1>
       <p>Desde esta web creas perfiles, planificas semanas, publicas sesiones y revisas la evolución. Los deportistas accederán únicamente desde su APK.</p>
       <div class="grid grid-2" style="margin-top:28px">
-        <div class="metric" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.2);color:white"><span style="color:#d8f1eb">Web</span><strong>Coach</strong><small style="color:#d8f1eb">Solo Urtzi</small></div>
+        <div class="metric" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.2);color:white"><span style="color:#d8f1eb">Web</span><strong>Coach</strong><small style="color:#d8f1eb">Acceso privado</small></div>
         <div class="metric" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.2);color:white"><span style="color:#d8f1eb">APK</span><strong>Atletas</strong><small style="color:#d8f1eb">Acceso individual</small></div>
       </div>
     </section>
@@ -27,11 +27,12 @@
       <label>Correo electrónico<input id="email" type="email" autocomplete="email" value="urtzi@suibroker.es"></label>
       <label style="margin-top:13px">Contraseña<input id="password" type="password" autocomplete="current-password" placeholder="Tu contraseña"></label>
       <button id="loginButton" class="btn primary" type="button" style="width:100%;margin-top:18px">Entrar como coach</button>
+      <button id="forgotPassword" class="btn secondary" type="button" style="width:100%;margin-top:10px">He olvidado mi contraseña</button>
       <button id="demoButton" class="btn secondary hidden" type="button" style="width:100%;margin-top:10px">Abrir demostración como Urtzi</button>
       <div id="demoHelp" class="login-help hidden"><strong>Modo demostración</strong><br>Correo: <code>urtzi@suibroker.es</code><br>Contraseña: <code>runflow</code></div>
     </section>
   </main>
-  <script src="/js/login.js"></script>
+  <script src="/js/login.js?v=2.5.0"></script>
   <script src="/js/register-sw.js"></script>
 </body>
 </html>
