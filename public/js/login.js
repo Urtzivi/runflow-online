@@ -65,6 +65,13 @@ async function login(email, password) {
   await routeUser(data.user);
 }
 
+async function recoverPassword() {
+  const email = $('email').value.trim();
+  if (!email) throw new Error('Introduce primero el correo de tu cuenta.');
+  const data = await json('/api/auth/recover', { method: 'POST', body: JSON.stringify({ email }) });
+  message(data.message || 'Si existe una cuenta con ese correo, recibirás un enlace de recuperación.', 'success');
+}
+
 async function init() {
   configureAthleteView();
   const config = await json('/api/config');
@@ -85,6 +92,12 @@ $('loginButton').addEventListener('click', async () => {
   try { await login($('email').value, $('password').value); }
   catch (error) { message(error.message, 'error'); }
   finally { $('loginButton').disabled = false; }
+});
+$('forgotPassword').addEventListener('click', async () => {
+  $('forgotPassword').disabled = true;
+  try { await recoverPassword(); }
+  catch (error) { message(error.message, 'error'); }
+  finally { $('forgotPassword').disabled = false; }
 });
 $('demoButton').addEventListener('click', async () => {
   $('demoButton').disabled = true;
