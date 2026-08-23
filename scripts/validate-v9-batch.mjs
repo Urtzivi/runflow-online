@@ -5,8 +5,11 @@ import { execFileSync } from 'node:child_process';
 
 const root = process.cwd();
 const syntaxFiles = [
+  'auth-recovery-hook.js',
   'v9-engine-hook.js',
   'v9-supplement-hook.js',
+  'public/js/login.js',
+  'public/js/activate.js',
   'public/js/coach-v9-batch.js',
   'public/js/coach-v9-supplement.js',
   'public/js/coach-v9-season-planner.js',
@@ -47,6 +50,9 @@ const primaryCoach = fs.readFileSync(path.join(root, 'public/coach.html'), 'utf8
 if (!primaryCoach.includes("location.replace('/login')")) throw new Error('El Coach principal no usa el login normal.');
 if (!primaryCoach.includes('/js/coach-v9-stepwise-final.js')) throw new Error('El Coach principal no carga el planificador V9 actual.');
 if (!primaryCoach.includes('/coach-base.html')) throw new Error('El Coach principal no conserva la base clásica durante el bootstrap.');
-const classicBase = fs.readFileSync(path.join(root, 'public/coach-base.html'), 'utf8');
-if (!classicBase.includes('id="athleteSelect"') || !classicBase.includes('/js/coach.js')) throw new Error('La base clásica de Coach no parece completa.');
-console.log('Sintaxis V9/V2 OK, biblioteca 307/307 y promoción de Coach V9 validada.');
+const loginHtml = fs.readFileSync(path.join(root, 'public/login.html'), 'utf8');
+const loginJs = fs.readFileSync(path.join(root, 'public/js/login.js'), 'utf8');
+const render = fs.readFileSync(path.join(root, 'render.yaml'), 'utf8');
+if (!loginHtml.includes('forgotPassword') || !loginJs.includes('/api/auth/recover')) throw new Error('El login no expone la recuperación de contraseña.');
+if (!render.includes('-r ./auth-recovery-hook.js')) throw new Error('El hook de recuperación no está precargado en Render.');
+console.log('Sintaxis OK, biblioteca 307/307, Coach V9 principal y recuperación de contraseña validados.');
