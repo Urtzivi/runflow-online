@@ -19,6 +19,7 @@ const syntaxFiles = [
   'public/js/coach-v9-stepwise-final.js',
   'public/js/coach-v9-session-generator-fix.js',
   'public/js/coach-v9-manual-planning.js',
+  'public/js/coach-v9-contextual-recommender-v2.js',
   'public/js/athlete-v2-complete.js',
   'public/js/athlete-v2-fixes.js',
 ];
@@ -54,6 +55,8 @@ if (!primaryCoach.includes('/js/coach-v9-stepwise-final.js')) throw new Error('E
 if (!primaryCoach.includes('/js/coach-v9-session-generator-fix.js')) throw new Error('El Coach principal no carga el generador de sesiones corregido.');
 if (!primaryCoach.includes('/js/coach-v9-manual-planning.js')) throw new Error('El Coach principal no carga las herramientas manuales de planificación.');
 if (!primaryCoach.includes('/css/coach-v9-manual-planning.css')) throw new Error('Falta el CSS de planificación manual.');
+if (!primaryCoach.includes('/js/coach-v9-contextual-recommender-v2.js')) throw new Error('El Coach principal no carga el recomendador contextual.');
+if (!primaryCoach.includes('/css/coach-v9-contextual-recommender.css')) throw new Error('Falta el CSS del recomendador contextual.');
 if (!primaryCoach.includes('/coach-base.html')) throw new Error('El Coach principal no conserva la base clásica durante el bootstrap.');
 const sessionFix = fs.readFileSync(path.join(root, 'public/js/coach-v9-session-generator-fix.js'), 'utf8');
 if (!sessionFix.includes('No se ha encontrado ninguna sesión clave compatible')) throw new Error('El generador no protege el caso de estímulo clave incompatible.');
@@ -62,9 +65,14 @@ for (const marker of ['runflow.week.v1','Pegar semana RunFlow','Estimar con hist
   if (!manual.includes(marker)) throw new Error(`Falta capacidad manual requerida: ${marker}`);
 }
 if (!manual.includes('/activities?oldest=') || !manual.includes('confidence')) throw new Error('La carga personalizada no usa historial real con nivel de confianza.');
+const recommender = fs.readFileSync(path.join(root, 'public/js/coach-v9-contextual-recommender-v2.js'), 'utf8');
+for (const marker of ['SESIONES CONTEXTUALES','Recomendadas para este contexto','P1:','Carga asignada','Ver toda la biblioteca','Crear desde cero','dynamic-profile','/api/v9/library','activities?oldest=']) {
+  if (!recommender.includes(marker)) throw new Error(`Falta capacidad del recomendador contextual: ${marker}`);
+}
+if (!recommender.includes('max_minutes') || !recommender.includes('mountain') || !recommender.includes('strength')) throw new Error('El recomendador no está usando las restricciones diarias de la ficha.');
 const loginHtml = fs.readFileSync(path.join(root, 'public/login.html'), 'utf8');
 const loginJs = fs.readFileSync(path.join(root, 'public/js/login.js'), 'utf8');
 const render = fs.readFileSync(path.join(root, 'render.yaml'), 'utf8');
 if (!loginHtml.includes('forgotPassword') || !loginJs.includes('/api/auth/recover')) throw new Error('El login no expone la recuperación de contraseña.');
 if (!render.includes('-r ./auth-recovery-hook.js')) throw new Error('El hook de recuperación no está precargado en Render.');
-console.log('Sintaxis OK, biblioteca 307/307, Coach manual, pegado de semanas, carga aprendida y recuperación validados.');
+console.log('Sintaxis OK, biblioteca 307/307, Coach manual, recomendador contextual, carga aprendida y recuperación validados.');
