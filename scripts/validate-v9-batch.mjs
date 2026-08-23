@@ -17,6 +17,7 @@ const syntaxFiles = [
   'public/js/coach-v9-profile-availability.js',
   'public/js/coach-v9-hierarchy.js',
   'public/js/coach-v9-stepwise-final.js',
+  'public/js/coach-v9-session-generator-fix.js',
   'public/js/athlete-v2-complete.js',
   'public/js/athlete-v2-fixes.js',
 ];
@@ -49,10 +50,14 @@ for (const file of requiredFiles) {
 const primaryCoach = fs.readFileSync(path.join(root, 'public/coach.html'), 'utf8');
 if (!primaryCoach.includes("location.replace('/login')")) throw new Error('El Coach principal no usa el login normal.');
 if (!primaryCoach.includes('/js/coach-v9-stepwise-final.js')) throw new Error('El Coach principal no carga el planificador V9 actual.');
+if (!primaryCoach.includes('/js/coach-v9-session-generator-fix.js')) throw new Error('El Coach principal no carga el generador de sesiones corregido.');
 if (!primaryCoach.includes('/coach-base.html')) throw new Error('El Coach principal no conserva la base clásica durante el bootstrap.');
+const sessionFix = fs.readFileSync(path.join(root, 'public/js/coach-v9-session-generator-fix.js'), 'utf8');
+if (!sessionFix.includes('disponible') && sessionFix.includes("for(const s of run)")) throw new Error('El generador parece conservar el relleno Easy por cada día disponible.');
+if (!sessionFix.includes('No se ha encontrado ninguna sesión clave compatible')) throw new Error('El generador no protege el caso de estímulo clave incompatible.');
 const loginHtml = fs.readFileSync(path.join(root, 'public/login.html'), 'utf8');
 const loginJs = fs.readFileSync(path.join(root, 'public/js/login.js'), 'utf8');
 const render = fs.readFileSync(path.join(root, 'render.yaml'), 'utf8');
 if (!loginHtml.includes('forgotPassword') || !loginJs.includes('/api/auth/recover')) throw new Error('El login no expone la recuperación de contraseña.');
 if (!render.includes('-r ./auth-recovery-hook.js')) throw new Error('El hook de recuperación no está precargado en Render.');
-console.log('Sintaxis OK, biblioteca 307/307, Coach V9 principal y recuperación de contraseña validados.');
+console.log('Sintaxis OK, biblioteca 307/307, Coach V9 principal, generador de sesiones corregido y recuperación validados.');
