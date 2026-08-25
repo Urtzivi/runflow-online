@@ -8,7 +8,8 @@ const syntaxFiles = [
   'auth-recovery-hook.js','v9-engine-hook.js','v9-supplement-hook.js','public/js/login.js','public/js/activate.js',
   'public/js/coach-v9-batch.js','public/js/coach-v9-supplement.js','public/js/coach-v9-season-planner.js','public/js/coach-v9-season-bridge.js',
   'public/js/coach-v9-profile-availability.js','public/js/coach-v9-hierarchy.js','public/js/coach-v9-stepwise-final.js','public/js/coach-v9-session-generator-fix.js',
-  'public/js/coach-v9-manual-planning.js','public/js/coach-v9-contextual-recommender-v2.js','public/js/coach-v9-plan-v2-import.js','public/js/athlete-v2-complete.js','public/js/athlete-v2-fixes.js',
+  'public/js/coach-v9-manual-planning.js','public/js/coach-v9-contextual-recommender-v2.js','public/js/coach-v9-plan-v2-import.js',
+  'public/js/athlete-v2-beta.js','public/js/athlete-v2-complete.js','public/js/athlete-v2-fixes.js',
 ];
 for (const file of syntaxFiles) execFileSync(process.execPath, ['--check', path.join(root, file)], { stdio:'inherit' });
 
@@ -22,7 +23,7 @@ if(sessions.length!==307)throw new Error(`Biblioteca V9 incompleta: ${sessions.l
 const ids=sessions.map(row=>row.i||row.ID).filter(Boolean);
 if(ids.length!==307||new Set(ids).size!==307)throw new Error('La biblioteca V9 necesita 307 IDs únicos.');
 
-for(const file of ['public/coach.html','public/coach-base.html','public/coach-v8.html','public/coach-v9.html','public/athlete.html'])if(!fs.existsSync(path.join(root,file)))throw new Error(`Falta ${file}.`);
+for(const file of ['public/coach.html','public/coach-base.html','public/coach-v8.html','public/coach-v9.html','public/athlete.html','public/athlete-base.html','public/athlete-v2.html'])if(!fs.existsSync(path.join(root,file)))throw new Error(`Falta ${file}.`);
 const primaryCoach=fs.readFileSync(path.join(root,'public/coach.html'),'utf8');
 for(const marker of ["location.replace('/login')",'/js/coach-v9-stepwise-final.js','/js/coach-v9-session-generator-fix.js','/js/coach-v9-manual-planning.js','/js/coach-v9-contextual-recommender-v2.js','/js/coach-v9-plan-v2-import.js','/css/coach-v9-plan-v2-import.css','/coach-base.html'])if(!primaryCoach.includes(marker))throw new Error(`Coach principal: falta ${marker}`);
 
@@ -36,6 +37,12 @@ for(const marker of ['runflow.plan.v2','RUNFLOW_PLAN_V2','Case ID:','coach_appro
 for(const route of ['/seasons','/goals','/macrocycles','/mesocycles','/microcycles'])if(!importer.includes(route))throw new Error(`El importador V2 no usa la ruta jerárquica ${route}.`);
 for(const rule of ['el primer mesociclo no empieza con el macro','hay hueco o solapamiento','el último mesociclo no llega al final del macro','el último micro no llega al final del meso','está fuera de'])if(!importer.includes(rule))throw new Error(`Falta validación jerárquica V2: ${rule}`);
 
+const athleteOfficial=fs.readFileSync(path.join(root,'public/athlete.html'),'utf8');
+for(const marker of ['/athlete-base.html','/js/athlete.js?v=2.4.2.2','/js/athlete-v2-beta.js?v=2.0.3','/js/athlete-v2-complete.js?v=2.2.0','/js/athlete-v2-fixes.js?v=2.1.0',"location.replace('/login?mode=athlete')",'runflowAthleteVersion=\'2-official\''])if(!athleteOfficial.includes(marker))throw new Error(`Athlete oficial: falta ${marker}`);
+if(athleteOfficial.includes('athlete-v2-beta-banner'))throw new Error('Athlete oficial no debe mostrar el banner beta.');
+const athleteBeta=fs.readFileSync(path.join(root,'public/athlete-v2.html'),'utf8');
+if(!athleteBeta.includes('/athlete-base.html')||!athleteBeta.includes('athlete-v2-beta-banner'))throw new Error('La ruta beta debe conservar su banner y usar la base preservada.');
+
 const loginHtml=fs.readFileSync(path.join(root,'public/login.html'),'utf8'),loginJs=fs.readFileSync(path.join(root,'public/js/login.js'),'utf8'),render=fs.readFileSync(path.join(root,'render.yaml'),'utf8');
 if(!loginHtml.includes('forgotPassword')||!loginJs.includes('/api/auth/recover')||!render.includes('-r ./auth-recovery-hook.js'))throw new Error('Recuperación de contraseña incompleta.');
-console.log('OK: 307/307, Coach V9, manual, recomendador contextual, plan.v2 + casos de aprendizaje y recuperación.');
+console.log('OK: 307/307, Coach V9, Athlete V2 oficial, manual, recomendador contextual, plan.v2 + casos de aprendizaje y recuperación.');
