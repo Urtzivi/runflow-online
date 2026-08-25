@@ -4,191 +4,52 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#f3f4ef">
-  <title>RunFlow Athlete V4</title>
+  <title>RunFlow Athlete</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
   <link rel="stylesheet" href="/css/app.css?v=2.4.2.2">
   <link rel="stylesheet" href="/css/athlete-v4.css?v=4.0.0">
+  <link rel="stylesheet" href="/css/athlete-v2-beta.css?v=2.0.3">
+  <link rel="stylesheet" href="/css/athlete-v2-complete.css?v=2.2.0">
+  <link rel="preload" as="fetch" href="/athlete-base.html" crossorigin="same-origin">
+  <link rel="preload" as="script" href="/js/athlete.js?v=2.4.2.2">
+  <link rel="preload" as="script" href="/js/athlete-v2-beta.js?v=2.0.3">
+  <link rel="preload" as="script" href="/js/athlete-v2-complete.js?v=2.2.0">
+  <link rel="preload" as="script" href="/js/athlete-v2-fixes.js?v=2.1.0">
+  <style>.athlete-v2-beta-chip{display:none!important}</style>
 </head>
 <body class="athlete-v2-body">
-  <main class="athlete-v2-shell">
-    <div id="athleteMessage" class="notice athlete-toast hidden"></div>
-
-    <section id="todayView" class="athlete-v2-view active">
-      <header class="athlete-v2-hero">
-        <div class="athlete-v2-brand-row">
-          <div class="athlete-v2-wordmark"><span class="athlete-v2-rf">RF</span><strong>RUNFLOW</strong></div>
-          <button id="athleteAvatar" class="athlete-avatar" type="button" aria-label="Abrir perfil">U</button>
-        </div>
-        <div class="athlete-v2-greeting">
-          <p id="todayDate">Hoy</p>
-          <h1 id="hello">Hola</h1>
-          <span id="todaySubtitle">Tu entrenamiento, de un vistazo</span>
-        </div>
-
-        <article id="todayWorkoutCard" class="today-workout-card">
-          <div class="today-workout-icon" id="todayWorkoutIcon">🏃</div>
-          <div class="today-workout-main">
-            <p class="athlete-kicker">SESIÓN DE HOY</p>
-            <h2 id="todayWorkoutTitle">Cargando sesión…</h2>
-            <p id="todayWorkoutSummary">Un momento.</p>
-            <div id="todayWorkoutMeta" class="today-workout-meta"></div>
-          </div>
-          <button id="openTodayWorkout" class="athlete-primary-cta" type="button">Ver sesión <span>→</span></button>
-        </article>
-      </header>
-
-      <div class="athlete-v2-content">
-        <section class="athlete-two-cards">
-          <article class="athlete-mini-card recovery">
-            <div class="athlete-mini-icon">♡</div>
-            <div><span>Preparación para entrenar</span><strong id="recoveryLabel">—</strong><small id="recoveryDetail">Sin datos</small></div>
-          </article>
-          <article class="athlete-mini-card load">
-            <div class="athlete-mini-icon">▥</div>
-            <div class="athlete-mini-grow"><span>Carga semanal</span><strong id="weekLoadText">—</strong><small id="weekLoadDetail">Plan —</small><i><em id="weekLoadBar" style="width:0%"></em></i></div>
-          </article>
-        </section>
-
-        <section class="athlete-section-card athlete-fitness-card">
-          <div class="athlete-section-head">
-            <div><span>Estado de forma</span><h3><strong id="athleteFitnessIndex">Aptitud —</strong> <small id="athleteFitnessTrend">En construcción</small></h3></div>
-            <span id="athleteFitnessQuality" class="athlete-status-pill">Provisional</span>
-          </div>
-          <div id="athleteFitnessSpark" class="athlete-fitness-spark" aria-label="Evolución de la aptitud y trayectoria objetivo"></div>
-          <div id="athleteTrajectoryStatus" class="athlete-trajectory-status">Trayectoria objetivo todavía sin configurar.</div>
-          <div class="athlete-fitness-foot">
-            <span id="athleteFitnessChange">Necesitamos más histórico para medir la evolución.</span>
-            <span id="athleteConsistency">Consistencia —</span>
-          </div>
-        </section>
-
-        <section class="athlete-section-card athlete-progress-markers-card">
-          <div class="athlete-section-head"><div><span>Tu progreso</span><h3>Marcadores de rendimiento</h3></div><span id="athleteMarkerConfidence" class="athlete-status-pill">Provisional</span></div>
-          <div class="athlete-progress-marker-grid">
-            <div class="athlete-progress-marker"><span>Umbral carrera</span><strong id="athleteThresholdPace">—</strong><small id="athleteThresholdTrend">Se actualizará con tus entrenamientos</small></div>
-            <div class="athlete-progress-marker"><span>Subida trail</span><strong id="athleteUphillVam">—</strong><small id="athleteUphillTrend">Necesitamos subidas comparables</small></div>
-            <div class="athlete-progress-marker"><span>Eficiencia aeróbica</span><strong id="athleteAerobicEfficiency">—</strong><small id="athleteAerobicTrend">Evolución de sesiones comparables</small></div>
-          </div>
-          <p class="athlete-marker-footnote">Son estimaciones de campo para seguir tu evolución. Lo importante es la tendencia, no un valor aislado.</p>
-        </section>
-
-        <section class="athlete-section-card">
-          <div class="athlete-section-head"><div><span>Próxima sesión</span><h3 id="nextWorkoutTitle">—</h3></div><div id="nextWorkoutIcon" class="athlete-round-icon">○</div></div>
-          <p id="nextWorkoutDetail" class="athlete-subtle">No hay otra sesión programada.</p>
-        </section>
-
-        <section class="athlete-section-card">
-          <div class="athlete-section-head"><div><span>Esta semana</span><h3 id="weekRange">—</h3></div><button class="athlete-link-button" data-athlete-nav="week" type="button">Ver semana</button></div>
-          <div id="weekVisual" class="athlete-week-visual"></div>
-        </section>
-
-        <section id="coachMessageCard" class="coach-message-card">
-          <div class="coach-message-avatar">C</div>
-          <div><span>Mensaje de tu entrenador</span><p id="coachWeekMessage">Sigue la planificación y avísame si necesitas adaptar algo.</p></div>
-          <button class="athlete-link-button light" data-athlete-nav="messages" type="button">Responder</button>
-        </section>
-
-        <section class="athlete-section-card">
-          <div class="athlete-section-head"><div><span>Objetivo principal</span><h3 id="mainGoalName">Sin objetivo definido</h3></div><div class="athlete-goal-days"><strong id="mainGoalDays">—</strong><small>días</small></div></div>
-          <p id="mainGoalDate" class="athlete-subtle">Tu entrenador puede definir aquí tu próximo objetivo.</p>
-        </section>
-      </div>
-    </section>
-
-    <section id="weekView" class="athlete-v2-view">
-      <div class="athlete-inner-page">
-        <div class="athlete-page-title"><div><p>PLANIFICACIÓN</p><h1>Tu semana</h1><span id="weekPageDates">—</span></div><span id="weekBadge" class="athlete-status-pill">Publicada</span></div>
-        <div class="athlete-week-nav-v2"><button id="athletePreviousWeek" type="button">←</button><button id="athleteCurrentWeek" type="button">Esta semana</button><button id="athleteNextWeek" type="button">→</button></div>
-        <section class="athlete-week-summary-card"><span id="weekType">Semana</span><h2 id="weekTitle">Objetivo semanal</h2><p id="weekComment">Sigue las sesiones programadas.</p></section>
-        <div id="athleteWeek" class="athlete-week-v2"></div>
-      </div>
-    </section>
-
-    <section id="activitiesView" class="athlete-v2-view">
-      <div class="athlete-inner-page">
-        <div class="athlete-page-title"><div><p>HISTORIAL</p><h1>Actividad</h1><span>Lo que realmente has hecho</span></div><button id="refreshAthleteActivities" class="athlete-icon-button" type="button">↻</button></div>
-        <div id="athleteActivities" class="athlete-activities-v2"><div class="empty-state">Cargando actividades…</div></div>
-        <p id="athleteActivitiesStatus" class="muted small"></p>
-      </div>
-    </section>
-
-    <section id="messagesView" class="athlete-v2-view">
-      <div class="athlete-inner-page athlete-messages-page">
-        <div class="athlete-page-title"><div><p>COACH ↔ ATLETA</p><h1>Mensajes</h1><span>Habla con tu entrenador dentro de RunFlow</span></div><span id="messageUnreadBadge" class="athlete-unread-badge hidden">0</span></div>
-        <div id="athleteConversation" class="athlete-conversation"><div class="empty-state">Cargando conversación…</div></div>
-        <form id="athleteMessageForm" class="athlete-message-composer">
-          <select id="athleteMessageWorkout"><option value="">Mensaje general</option></select>
-          <div><textarea id="athleteMessageText" rows="2" maxlength="2000" placeholder="Escribe a tu entrenador…"></textarea><button type="submit">Enviar</button></div>
-        </form>
-      </div>
-    </section>
-
-    <section id="profileView" class="athlete-v2-view">
-      <div class="athlete-inner-page">
-        <div class="athlete-page-title"><div><p>TU CUENTA</p><h1>Perfil</h1><span id="profileAthleteName">—</span></div><button id="logout" class="athlete-icon-button" type="button">Salir</button></div>
-        <section class="athlete-section-card profile-hero-card"><div class="athlete-profile-avatar" id="profileAvatar">U</div><div><h2 id="profileName">—</h2><p id="profileObjective">—</p></div></section>
-        <section class="athlete-section-card"><div class="athlete-section-head"><div><span>Métricas actuales</span><h3>Estado de entrenamiento</h3></div></div><div class="athlete-profile-metrics"><div><span>Aptitud</span><strong id="profileFitness">—</strong></div><div><span>Fatiga</span><strong id="profileFatigue">—</strong></div><div><span>Forma</span><strong id="profileForm">—</strong></div></div></section>
-        <section class="athlete-section-card"><div class="athlete-section-head"><div><span>Zonas</span><h3>Ritmo y frecuencia cardiaca</h3></div></div><div id="profileZones" class="athlete-zone-list"></div></section>
-        <button id="coachButton" class="athlete-secondary-cta hidden" type="button">Abrir RunFlow Coach</button>
-      </div>
-    </section>
-  </main>
-
-  <nav class="athlete-bottom-nav" aria-label="Navegación principal">
-    <button class="active" data-athlete-nav="today" type="button"><span>⌂</span><small>Hoy</small></button>
-    <button data-athlete-nav="week" type="button"><span>▦</span><small>Semana</small></button>
-    <button data-athlete-nav="activities" type="button"><span>↗</span><small>Actividad</small></button>
-    <button data-athlete-nav="messages" type="button"><span>☵</span><small>Mensajes</small><i id="bottomUnread" class="hidden"></i></button>
-    <button data-athlete-nav="profile" type="button"><span>○</span><small>Perfil</small></button>
-  </nav>
-
-  <div id="sessionDetail" class="modal-backdrop hidden">
-    <div class="modal athlete-session-modal-v2">
-      <div class="athlete-session-modal-head"><button id="closeDetail" class="athlete-modal-close" type="button">←</button><div><p id="detailDate" class="athlete-kicker">SESIÓN</p><h2 id="detailTitle">Entrenamiento</h2></div><span id="detailStatus" class="athlete-status-pill">Pendiente</span></div>
-      <div class="modal-body athlete-session-modal-body">
-        <div id="detailMeta" class="athlete-session-meta-grid"></div>
-        <p id="detailSummary" class="athlete-session-lead"></p>
-        <div id="detailBlocks" class="athlete-block-list"></div>
-        <div id="detailFeedbackExisting" class="athlete-existing-feedback hidden"></div>
-        <div class="athlete-session-actions"><button id="messageCoachFromWorkout" class="athlete-secondary-cta" type="button">Escribir al coach</button><button id="openLog" class="athlete-primary-cta full" type="button">Registrar cómo ha ido</button></div>
-      </div>
-    </div>
-  </div>
-
-  <div id="logModal" class="modal-backdrop hidden">
-    <div class="modal athlete-feedback-modal">
-      <div class="athlete-session-modal-head"><button id="closeLog" class="athlete-modal-close" type="button">←</button><div><p class="athlete-kicker">DESPUÉS DE ENTRENAR</p><h2>¿Cómo ha ido?</h2></div></div>
-      <div class="modal-body">
-        <label class="athlete-field-label">Resultado</label>
-        <div id="logStatusButtons" class="athlete-choice-row three"><button data-log-status="completed" class="active" type="button">Completada</button><button data-log-status="partial" type="button">Parcial</button><button data-log-status="skipped" type="button">No realizada</button></div>
-        <input id="logStatus" type="hidden" value="completed">
-
-        <label class="athlete-field-label">RPE · esfuerzo percibido <strong id="rpeValue">—</strong></label>
-        <div id="rpeScale" class="athlete-rpe-scale"></div>
-        <input id="logRpe" type="hidden">
-
-        <label class="athlete-field-label">Sensaciones</label>
-        <div id="feelingButtons" class="athlete-choice-row four"><button data-feeling="muy_bien" type="button">Muy buenas</button><button data-feeling="bien" type="button">Buenas</button><button data-feeling="normal" type="button">Normales</button><button data-feeling="mal" type="button">Malas</button></div>
-        <input id="logFeeling" type="hidden">
-
-        <div class="field-row" style="margin-top:16px"><label>Duración real (min)<input id="logDuration" type="number" min="0"></label><label>Molestia / dolor (0–10)<input id="logPain" type="number" min="0" max="10" value="0"></label></div>
-        <label style="margin-top:12px">Zona de molestia<input id="logPainArea" placeholder="Ej.: Aquiles derecho, gemelo…"></label>
-        <label style="margin-top:12px">Comentario para tu entrenador<textarea id="logComment" placeholder="Sensaciones, qué ha ido bien, qué cambiarías, molestias…"></textarea></label>
-        <div id="srpePreview" class="athlete-srpe-preview">Carga interna sRPE: —</div>
-        <button id="saveLog" class="athlete-primary-cta full" type="button">Guardar feedback</button>
-      </div>
-    </div>
-  </div>
-
-  <div id="athleteActivityModal" class="modal-backdrop hidden">
-    <div class="modal athlete-activity-modal">
-      <div class="athlete-session-modal-head"><button id="closeAthleteActivity" class="athlete-modal-close" type="button">←</button><div><p id="athleteActivityDate" class="athlete-kicker">ACTIVIDAD REAL</p><h2 id="athleteActivityName">Actividad</h2></div></div>
-      <div class="modal-body"><p id="athleteActivityPlan" class="muted"></p><div id="athleteActivityMetrics" class="activity-metric-grid"></div><section class="form-section" style="margin-top:16px"><h3>Intervalos y parciales</h3><div id="athleteActivityIntervals" class="table-wrap"></div></section><section class="form-section" style="margin-top:14px"><h3>Otros datos disponibles</h3><div id="athleteActivityExtra" class="activity-extra-grid"></div></section></div>
-    </div>
-  </div>
-
-  <script src="/js/athlete.js?v=2.4.2.2"></script>
-  <script src="/js/register-sw.js?v=2.4.2.2"></script>
+  <main id="athleteOfficialMount"><div style="padding:40px;text-align:center">Preparando RunFlow…</div></main>
+  <script>
+    (async()=>{
+      const fail=()=>location.replace('/login?mode=athlete');
+      try{
+        const response=await fetch('/api/auth/me',{credentials:'same-origin',cache:'no-store'});
+        if(!response.ok)return fail();
+        const data=await response.json();
+        if(!Array.isArray(data?.user?.roles)||!data.user.roles.includes('athlete'))return fail();
+        localStorage.setItem('runflow_client','athlete');
+        const base=await fetch('/athlete-base.html',{credentials:'same-origin',cache:'no-store'});
+        if(!base.ok)throw new Error('No se pudo cargar Athlete base');
+        const html=await base.text();
+        const doc=new DOMParser().parseFromString(html,'text/html');
+        const main=doc.querySelector('main.athlete-v2-shell');
+        const nav=doc.querySelector('nav.athlete-bottom-nav');
+        const modals=[...doc.body.querySelectorAll(':scope > .modal-backdrop')];
+        const mount=document.getElementById('athleteOfficialMount');
+        if(!main)throw new Error('Athlete base incompleto');
+        mount.replaceWith(main);
+        if(nav)document.body.appendChild(nav);
+        modals.forEach(m=>document.body.appendChild(m));
+        const load=src=>new Promise((resolve,reject)=>{const s=document.createElement('script');s.src=src;s.onload=resolve;s.onerror=reject;document.body.appendChild(s);});
+        await load('/js/athlete.js?v=2.4.2.2');
+        await load('/js/athlete-v2-beta.js?v=2.0.3');
+        await load('/js/athlete-v2-complete.js?v=2.2.0');
+        await load('/js/athlete-v2-fixes.js?v=2.1.0');
+        await load('/js/register-sw.js?v=2.4.2.2');
+        document.documentElement.dataset.runflowAthleteVersion='2-official';
+      }catch(error){console.error('[RunFlow Athlete]',error);fail();}
+    })();
+  </script>
 </body>
 </html>

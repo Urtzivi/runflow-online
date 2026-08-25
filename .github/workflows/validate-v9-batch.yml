@@ -5,6 +5,8 @@ on:
     paths:
       - 'v9-*.js'
       - 'public/coach-v9.html'
+      - 'public/athlete.html'
+      - 'public/athlete-base.html'
       - 'public/athlete-v2.html'
       - 'public/js/coach-v9-*.js'
       - 'public/js/athlete-v2-*.js'
