@@ -1,8 +1,10 @@
 'use strict';
 
-// Repairs a missing auth-user -> athlete link without creating a new athlete.
-// Safety rule: only self-heal when the authenticated athlete user has exactly
-// one active athlete record with the same normalized email address.
+// Repairs a missing or stale auth-user -> athlete link without creating a new athlete.
+// Safety rules:
+// - authenticated user must have athlete role
+// - there must be exactly one active athlete with the same normalized email
+// - if that athlete is linked to another auth UUID, that old auth user must no longer exist
 const http = require('http');
 const { URL } = require('url');
 
@@ -35,6 +37,21 @@ async function authUser(accessToken) {
   return jsonFetch(`${SUPABASE_URL}/auth/v1/user`, {
     headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${accessToken}` },
   });
+}
+
+async function authAdminUser(userId) {
+  try {
+    const user = await jsonFetch(`${SUPABASE_URL}/auth/v1/admin/users/${encodeURIComponent(userId)}`, {
+      headers: {
+        apikey: SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      },
+    });
+    return user || null;
+  } catch (error) {
+    if (error?.status === 404) return null;
+    throw error;
+  }
 }
 
 async function rows(table, query = '', options = {}) {
@@ -76,8 +93,17 @@ async function repairAthleteLink(req) {
 
   const athlete = matches[0];
   if (athlete.user_id && String(athlete.user_id) !== String(user.id)) {
-    console.warn('[athlete-link-recovery] athlete already linked to another user', athlete.id);
-    return;
+    let oldAuthUser;
+    try { oldAuthUser = await authAdminUser(athlete.user_id); }
+    catch (error) {
+      console.error('[athlete-link-recovery] could not verify stale auth user', error);
+      return;
+    }
+    if (oldAuthUser) {
+      console.warn('[athlete-link-recovery] athlete still linked to an existing auth user', athlete.id);
+      return;
+    }
+    console.warn('[athlete-link-recovery] replacing stale auth link', athlete.id);
   }
 
   await rows('athletes', `id=eq.${encodeURIComponent(athlete.id)}`, {

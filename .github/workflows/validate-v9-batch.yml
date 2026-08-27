@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'v9-*.js'
+      - 'athlete-link-recovery-hook.js'
       - 'public/coach-v9.html'
       - 'public/athlete.html'
       - 'public/athlete-base.html'
@@ -26,5 +27,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Check Athlete auth recovery hook syntax
+        run: node --check athlete-link-recovery-hook.js
       - name: Validate V9/V2 batch
         run: node scripts/validate-v9-batch.mjs
