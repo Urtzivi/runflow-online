@@ -4,7 +4,8 @@
 // Safety rules:
 // - authenticated user must have athlete role
 // - there must be exactly one active athlete with the same normalized email
-// - if that athlete is linked to another auth UUID, that old auth user must no longer exist
+// - if that athlete is linked to another auth UUID, reassignment is allowed only
+//   when the old auth user is gone or its email no longer matches the athlete/current user
 const http = require('http');
 const { URL } = require('url');
 
@@ -23,6 +24,7 @@ function parseCookies(req) {
   });
   return out;
 }
+function normalizedEmail(value) { return String(value || '').trim().toLowerCase(); }
 
 async function jsonFetch(url, options = {}) {
   const response = await fetch(url, options);
@@ -42,10 +44,7 @@ async function authUser(accessToken) {
 async function authAdminUser(userId) {
   try {
     const user = await jsonFetch(`${SUPABASE_URL}/auth/v1/admin/users/${encodeURIComponent(userId)}`, {
-      headers: {
-        apikey: SUPABASE_SERVICE_ROLE_KEY,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-      },
+      headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
     });
     return user || null;
   } catch (error) {
@@ -62,8 +61,7 @@ async function rows(table, query = '', options = {}) {
     ...(options.prefer ? { Prefer: options.prefer } : {}),
   };
   return jsonFetch(`${SUPABASE_URL}/rest/v1/${table}${query ? `?${query}` : ''}`, {
-    method: options.method || 'GET',
-    headers,
+    method: options.method || 'GET', headers,
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
   });
 }
@@ -83,9 +81,10 @@ async function repairAthleteLink(req) {
   const linked = await rows('athletes', `user_id=eq.${encodeURIComponent(user.id)}&lifecycle_status=eq.active&select=id&limit=1`).catch(() => []);
   if (linked.length) return;
 
-  const email = String(user.email).trim().toLowerCase();
+  const email = normalizedEmail(user.email);
   if (!email) return;
-  const matches = await rows('athletes', `email=eq.${encodeURIComponent(email)}&lifecycle_status=eq.active&select=id,user_id,email&limit=2`).catch(() => []);
+  // PostgREST text equality is case-sensitive. Use ilike so legacy mixed-case emails still self-heal.
+  const matches = await rows('athletes', `email=ilike.${encodeURIComponent(email)}&lifecycle_status=eq.active&select=id,user_id,email&limit=2`).catch(() => []);
   if (matches.length !== 1) {
     if (matches.length > 1) console.warn('[athlete-link-recovery] ambiguous athlete email', email);
     return;
@@ -99,11 +98,12 @@ async function repairAthleteLink(req) {
       console.error('[athlete-link-recovery] could not verify stale auth user', error);
       return;
     }
-    if (oldAuthUser) {
-      console.warn('[athlete-link-recovery] athlete still linked to an existing auth user', athlete.id);
+    const oldEmail = normalizedEmail(oldAuthUser?.email);
+    if (oldAuthUser && oldEmail === email) {
+      console.warn('[athlete-link-recovery] same-email auth conflict; refusing automatic relink', athlete.id);
       return;
     }
-    console.warn('[athlete-link-recovery] replacing stale auth link', athlete.id);
+    console.warn('[athlete-link-recovery] replacing stale or mismatched auth link', athlete.id);
   }
 
   await rows('athletes', `id=eq.${encodeURIComponent(athlete.id)}`, {
