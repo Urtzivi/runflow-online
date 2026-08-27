@@ -61,7 +61,7 @@ for(const marker of ['dur>60','isLongSession','targetMinutes','duration_mix','li
 const policy=fs.readFileSync(path.join(root,'library-policy-hook.js'),'utf8');
 for(const marker of ['non_long_max_minutes:60','excluded_over_60_non_long','selection_balance_targets_min:[45,60]','No se recortan automáticamente'])if(!policy.includes(marker))throw new Error(`Política de biblioteca incompleta: ${marker}`);
 const linkRecovery=fs.readFileSync(path.join(root,'athlete-link-recovery-hook.js'),'utf8');
-for(const marker of ['user_id=eq.','email=eq.','matches.length !== 1','authAdminUser','error?.status === 404','athlete still linked to an existing auth user','replacing stale auth link'])if(!linkRecovery.includes(marker))throw new Error(`Recuperación de vínculo Athlete incompleta: ${marker}`);
+for(const marker of ['user_id=eq.','email=ilike.','matches.length !== 1','authAdminUser','error?.status === 404','same-email auth conflict','replacing stale or mismatched auth link'])if(!linkRecovery.includes(marker))throw new Error(`Recuperación de vínculo Athlete incompleta: ${marker}`);
 
 const loginHtml=fs.readFileSync(path.join(root,'public/login.html'),'utf8');
 const loginJs=fs.readFileSync(path.join(root,'public/js/login.js'),'utf8');
