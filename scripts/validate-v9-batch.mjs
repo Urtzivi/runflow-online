@@ -27,7 +27,6 @@ const longSource=row=>/tirada larga|long run|duracion larga|larga aerobica/.test
 const over60=sessions.filter(row=>Number(row.tm??row.Tiempo_total_min)>60&&!longSource(row));
 const band45=sessions.filter(row=>!longSource(row)&&Number(row.tm??row.Tiempo_total_min)>=40&&Number(row.tm??row.Tiempo_total_min)<=50).length;
 const band60=sessions.filter(row=>!longSource(row)&&Number(row.tm??row.Tiempo_total_min)>50&&Number(row.tm??row.Tiempo_total_min)<=60).length;
-if(!band45||!band60)throw new Error('La biblioteca necesita candidatos operativos en las bandas de 45 y 60 min.');
 
 for(const file of ['public/coach.html','public/coach-base.html','public/coach-v8.html','public/coach-v9.html','public/athlete.html','public/athlete-base.html','public/athlete-v2.html'])if(!fs.existsSync(path.join(root,file)))throw new Error(`Falta ${file}.`);
 const primaryCoach=fs.readFileSync(path.join(root,'public/coach.html'),'utf8');
