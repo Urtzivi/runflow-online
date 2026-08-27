@@ -53,11 +53,12 @@
           '/js/coach-v9-season-bridge.js?v=9.3.0',
           '/js/coach-v9-profile-availability.js?v=9.4.0',
           '/js/coach-v9-stepwise-final.js?v=9.5.0',
-          '/js/coach-v9-session-generator-fix.js?v=9.5.1',
+          '/js/coach-v9-session-generator-fix.js?v=9.5.2',
           '/js/coach-v9-manual-planning.js?v=9.6.0',
           '/js/coach-v9-contextual-recommender-v2.js?v=9.7.0',
           '/js/coach-v9-plan-v2-import.js?v=9.8.0',
-          '/js/coach-v9-plan-v2-visibility-fix.js?v=9.8.1'
+          '/js/coach-v9-plan-v2-visibility-fix.js?v=9.8.1',
+          '/js/coach-learning.js?v=1.0.0'
         ];
         await Promise.all(scripts.map(src=>new Promise(resolve=>{const p=document.createElement('link');p.rel='preload';p.as='script';p.href=src;p.onload=resolve;p.onerror=resolve;document.head.appendChild(p)})));
         window.fetch=(input,init)=>{
