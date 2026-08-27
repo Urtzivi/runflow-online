@@ -6,6 +6,7 @@ function message(text, type = '') {
   el.textContent = text;
   el.className = `notice ${type}`;
   el.classList.remove('hidden');
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 async function json(url, options = {}) {
@@ -68,6 +69,7 @@ async function login(email, password) {
 async function recoverPassword() {
   const email = $('email').value.trim();
   if (!email) throw new Error('Introduce primero el correo de tu cuenta.');
+  message('Enviando enlace de recuperación…');
   const data = await json('/api/auth/recover', { method: 'POST', body: JSON.stringify({ email }) });
   message(data.message || 'Si existe una cuenta con ese correo, recibirás un enlace de recuperación.', 'success');
 }
@@ -95,9 +97,11 @@ $('loginButton').addEventListener('click', async () => {
 });
 $('forgotPassword').addEventListener('click', async () => {
   $('forgotPassword').disabled = true;
+  const original = $('forgotPassword').textContent;
+  $('forgotPassword').textContent = 'Enviando…';
   try { await recoverPassword(); }
   catch (error) { message(error.message, 'error'); }
-  finally { $('forgotPassword').disabled = false; }
+  finally { $('forgotPassword').disabled = false; $('forgotPassword').textContent = original; }
 });
 $('demoButton').addEventListener('click', async () => {
   $('demoButton').disabled = true;
