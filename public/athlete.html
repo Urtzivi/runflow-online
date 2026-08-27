@@ -11,11 +11,13 @@
   <link rel="stylesheet" href="/css/athlete-v4.css?v=4.0.0">
   <link rel="stylesheet" href="/css/athlete-v2-beta.css?v=2.0.3">
   <link rel="stylesheet" href="/css/athlete-v2-complete.css?v=2.2.0">
+  <link rel="stylesheet" href="/css/athlete-learning.css?v=2.3.0">
   <link rel="preload" as="fetch" href="/athlete-base.html" crossorigin="same-origin">
   <link rel="preload" as="script" href="/js/athlete.js?v=2.4.2.2">
   <link rel="preload" as="script" href="/js/athlete-v2-beta.js?v=2.0.3">
   <link rel="preload" as="script" href="/js/athlete-v2-complete.js?v=2.2.0">
   <link rel="preload" as="script" href="/js/athlete-v2-fixes.js?v=2.1.0">
+  <link rel="preload" as="script" href="/js/athlete-learning.js?v=2.3.0">
   <style>.athlete-v2-beta-chip{display:none!important}</style>
 </head>
 <body class="athlete-v2-body">
@@ -46,8 +48,9 @@
         await load('/js/athlete-v2-beta.js?v=2.0.3');
         await load('/js/athlete-v2-complete.js?v=2.2.0');
         await load('/js/athlete-v2-fixes.js?v=2.1.0');
+        await load('/js/athlete-learning.js?v=2.3.0');
         await load('/js/register-sw.js?v=2.4.2.2');
-        document.documentElement.dataset.runflowAthleteVersion='2-official';
+        document.documentElement.dataset.runflowAthleteVersion='2.3-learning';
       }catch(error){console.error('[RunFlow Athlete]',error);fail();}
     })();
   </script>
