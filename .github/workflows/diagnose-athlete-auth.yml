@@ -1,0 +1,29 @@
+name: Diagnose Athlete Auth Recovery
+
+on:
+  push:
+    branches:
+      - diagnose-athlete-auth-recovery
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check production health
+        run: |
+          set -x
+          curl -sS -D - --max-time 30 https://runflow-online-pilot.onrender.com/health -o /tmp/health.txt
+          cat /tmp/health.txt
+      - name: Check production login assets
+        run: |
+          set -x
+          curl -sS --max-time 30 'https://runflow-online-pilot.onrender.com/login?mode=athlete' -o /tmp/login.html
+          grep -n 'forgotPassword\|login.js' /tmp/login.html || true
+          curl -sS --max-time 30 'https://runflow-online-pilot.onrender.com/js/login.js?v=2.5.0' -o /tmp/login.js
+          grep -n 'recoverPassword\|/api/auth/recover\|forgotPassword' /tmp/login.js || true
+      - name: Test password recovery endpoint
+        run: |
+          set -x
+          curl -sS -D - --max-time 30 -X POST 'https://runflow-online-pilot.onrender.com/api/auth/recover' \
+            -H 'Content-Type: application/json' \
+            --data '{"email":"urtzi@suibroker.es"}'
