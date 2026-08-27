@@ -1,0 +1,64 @@
+name: Build RunFlow Athlete APK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'capacitor.config.ts'
+      - 'package.json'
+      - '.github/workflows/build-athlete-apk.yml'
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0' || true
+
+      - name: Install Capacitor dependencies
+        run: npm install
+
+      - name: Create minimal webDir
+        run: |
+          mkdir -p www
+          printf '%s\n' '<!doctype html><html><body>RunFlow Athlete</body></html>' > www/index.html
+
+      - name: Generate Android project
+        run: npx cap add android
+
+      - name: Sync Android
+        run: npx cap sync android
+
+      - name: Build debug APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Rename APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk RunFlow-Athlete.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: RunFlow-Athlete-APK
+          path: RunFlow-Athlete.apk
+          if-no-files-found: error
