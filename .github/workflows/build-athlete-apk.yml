@@ -34,7 +34,9 @@ jobs:
         run: yes | sdkmanager 'platforms;android-36' 'build-tools;36.0.0' || true
 
       - name: Install Capacitor dependencies
-        run: npm install
+        run: |
+          npm install
+          npm install --no-save typescript
 
       - name: Create minimal webDir
         run: |
