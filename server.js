@@ -1253,22 +1253,26 @@ async function saveWeek(athleteId, body, publish = false) {
     const athlete = demo.athletes.find(item => item.id === athleteId);
     if (!athlete) throw Object.assign(new Error('Deportista no encontrado.'), { status: 404 });
 
-    const previous = athlete.week || {};
+    if (!Array.isArray(athlete.microcycles)) athlete.microcycles = [];
+    const microcycleIndex = athlete.microcycles.findIndex(item => item.week_start === week.week_start);
+    const previous = microcycleIndex >= 0 ? athlete.microcycles[microcycleIndex] : (athlete.week || {});
     const previousWorkouts = new Map((previous.workouts || []).map(item => [String(item.id), item]));
     const mergedWorkouts = week.workouts.map(item => ({
       ...(previousWorkouts.get(String(item.id)) || {}),
       ...item,
     }));
-    athlete.week = {
+    const savedWeek = {
       ...previous,
       ...week,
       id: previous.id || crypto.randomUUID(),
       end_date: week.end_date || previous.end_date || addDays(week.week_start, 6),
       workouts: mergedWorkouts,
     };
+    if (microcycleIndex >= 0) athlete.microcycles[microcycleIndex] = savedWeek;
+    else athlete.week = savedWeek;
     if (athlete.metrics) athlete.metrics.planned_load = week.target_load;
     saveDemo();
-    return athlete.week;
+    return savedWeek;
   }
 
   const existingRows = await prodRows(
