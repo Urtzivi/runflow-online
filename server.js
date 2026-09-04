@@ -21,7 +21,7 @@ const APP_ENCRYPTION_KEY = String(process.env.APP_ENCRYPTION_KEY || '');
 const OPENAI_API_KEY = String(process.env.OPENAI_API_KEY || '');
 const OPENAI_MODEL = String(process.env.OPENAI_MODEL || 'gpt-5.6-terra');
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
-const APP_VERSION = 'Online Pilot 1.9.0 - Planificador de temporada y disponibilidad';
+const APP_VERSION = 'Online Pilot 1.9.1 - Planificador sin solapamientos';
 const INTERVALS_API_BASE = 'https://intervals.icu/api/v1';
 
 const RUNFLOW_PLAN_SCHEMA = 'runflow.plan.v1';
@@ -1959,6 +1959,28 @@ function validateMesocycleInsideMacrocycle(mesocycle, macrocycle) {
   }
 }
 
+async function ensureMesocycleDatesAvailable(athleteId, macrocycle, mesocycle, excludeId = null) {
+  let candidates = [];
+  if (DEMO_MODE) {
+    const athlete = demo.athletes.find(item => item.id === athleteId);
+    const seasonMacroIds = new Set((athlete?.macrocycles || [])
+      .filter(item => macrocycle.season_id ? item.season_id === macrocycle.season_id : item.id === macrocycle.id)
+      .map(item => item.id));
+    candidates = (athlete?.mesocycles || []).filter(item => seasonMacroIds.has(item.macrocycle_id));
+  } else {
+    const macroRows = macrocycle.season_id
+      ? await prodRows('macrocycles', `athlete_id=eq.${encodeURIComponent(athleteId)}&season_id=eq.${encodeURIComponent(macrocycle.season_id)}&select=id`)
+      : [{ id: macrocycle.id }];
+    const macroIds = new Set(macroRows.map(item => item.id));
+    candidates = await prodRows('mesocycles', `athlete_id=eq.${encodeURIComponent(athleteId)}&select=id,name,start_date,end_date,macrocycle_id`);
+    candidates = candidates.filter(item => macroIds.has(item.macrocycle_id));
+  }
+  const conflict = candidates.find(item => item.id !== excludeId && mesocycle.start_date <= item.end_date && mesocycle.end_date >= item.start_date);
+  if (conflict) {
+    throw Object.assign(new Error(`Las fechas se solapan con el mesociclo “${conflict.name || 'sin nombre'}” (${conflict.start_date} – ${conflict.end_date}).`), { status: 409 });
+  }
+}
+
 async function validateMesocycleChildrenInside(athleteId, mesocycleId, mesocycle) {
   if (DEMO_MODE) {
     const athlete = demo.athletes.find(item => item.id === athleteId);
@@ -1983,6 +2005,7 @@ async function addMesocycle(athleteId, macrocycleId, body) {
   const macrocycle = await getMacrocycleForAthlete(athleteId, macrocycleId);
   const data = normaliseMesocycle(body);
   validateMesocycleInsideMacrocycle(data, macrocycle);
+  await ensureMesocycleDatesAvailable(athleteId, macrocycle, data);
 
   const mesocycle = {
     id: crypto.randomUUID(),
@@ -2008,6 +2031,7 @@ async function updateMesocycle(mesocycleId, athleteId, body) {
   const macrocycle = await getMacrocycleForAthlete(athleteId, existing.macrocycle_id);
   const data = normaliseMesocycle(body, existing);
   validateMesocycleInsideMacrocycle(data, macrocycle);
+  await ensureMesocycleDatesAvailable(athleteId, macrocycle, data, mesocycleId);
   await validateMesocycleChildrenInside(athleteId, mesocycleId, data);
 
   if (DEMO_MODE) {

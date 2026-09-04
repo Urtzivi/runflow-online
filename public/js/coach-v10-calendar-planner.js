@@ -32,7 +32,7 @@
   };
   const TECHNICAL_MACRO_MARKER = 'RUNFLOW_V10_TECHNICAL_MACRO';
   const MESO_TYPE_PREFIX = 'RUNFLOW_MESO_TYPE:';
-  const planner = { level: 'season', mesocycleId: null, microcycleId: null, importContext: null, installed: false };
+  const planner = { level: 'season', seasonMode: 'calendar', mesocycleId: null, microcycleId: null, importContext: null, installed: false };
 
   function appState() { try { return state; } catch { return null; } }
   function athleteId() { return appState()?.athlete?.id || ''; }
@@ -42,6 +42,18 @@
     return macros().flatMap((macro, macroIndex) => (macro.mesocycles || []).map((meso, index) => ({ ...meso, _macro: macro, _colour: (macroIndex + index) % 6 })));
   }
   function microcycles(meso) { return meso?.microcycles || []; }
+  function datesOverlap(firstStart, firstEnd, secondStart, secondEnd) {
+    return firstStart <= secondEnd && firstEnd >= secondStart;
+  }
+  function mesocycleConflict(start, end, excludeId = '') {
+    return mesocycles().find(item => String(item.id) !== String(excludeId || '') && datesOverlap(start, end, item.start_date, item.end_date));
+  }
+  function nextAvailableStart(items, rangeStart, rangeEnd) {
+    const ordered = [...items].filter(item => item?.start_date && item?.end_date).sort((a, b) => String(a.end_date).localeCompare(String(b.end_date)));
+    if (!ordered.length) return rangeStart;
+    const candidate = add(ordered[ordered.length - 1].end_date, 1);
+    return candidate <= rangeEnd ? candidate : rangeStart;
+  }
   function mesocycleById(id) { return mesocycles().find(item => String(item.id) === String(id)); }
   function microcycleById(id) {
     for (const meso of mesocycles()) {
@@ -122,6 +134,25 @@
       </div>`;
   }
 
+  function renderMesocycleList(mesos) {
+    if (!mesos.length) return '<div class="v10-empty compact"><h3>Todavía no hay mesociclos</h3><p>Crea el primero para empezar a estructurar la temporada.</p><button class="btn primary" data-v10-action="new-meso" type="button">+ Primer mesociclo</button></div>';
+    const ordered = [...mesos].sort((a, b) => String(a.start_date).localeCompare(String(b.start_date)));
+    return `<div class="v10-meso-overview">
+      <div class="v10-meso-overview-head"><span>Orden</span><span>Mesociclo y objetivo</span><span>Tipo</span><span>Fechas</span><span>Microciclos</span><span></span></div>
+      ${ordered.map((meso, index) => {
+        const conflict = ordered.find(other => String(other.id) !== String(meso.id) && datesOverlap(meso.start_date, meso.end_date, other.start_date, other.end_date));
+        return `<article class="v10-meso-overview-row ${conflict ? 'conflict' : ''}">
+          <span class="v10-meso-order">${index + 1}</span>
+          <div><strong>${esc(meso.name || `Mesociclo ${index + 1}`)}</strong><p>${esc(meso.primary_adaptation || 'Sin objetivo principal definido')}</p>${conflict ? `<small class="v10-conflict-note">Se solapa con “${esc(conflict.name)}”. Edita las fechas para corregirlo.</small>` : ''}</div>
+          <span>${esc(MESO_TYPES[mesoType(meso)] || MESO_TYPES.other)}</span>
+          <span>${formatDate(meso.start_date)}<br>${formatDate(meso.end_date)}</span>
+          <span>${microcycles(meso).length}</span>
+          <div class="actions"><button class="btn soft small" data-v10-edit-meso="${esc(meso.id)}" type="button">Editar</button><button class="btn secondary small" data-v10-open-meso="${esc(meso.id)}" type="button">Abrir →</button></div>
+        </article>`;
+      }).join('')}
+    </div>`;
+  }
+
   function renderSeason() {
     const currentPlan = plan();
     const season = currentPlan?.season;
@@ -138,8 +169,10 @@
       <span><strong>${goals.length}</strong> objetivos</span><span><strong>${mesos.length}</strong> mesociclos</span><span><strong>${mesos.reduce((sum, meso) => sum + microcycles(meso).length, 0)}</strong> microciclos</span><span><strong>${mesos.reduce((sum, meso) => sum + microcycles(meso).reduce((inner, micro) => inner + (micro.workouts || []).length, 0), 0)}</strong> sesiones</span>
     </div>
     ${goals.length ? `<div class="v10-goal-legend">${goals.map(goal => `<span><i class="priority-${String(goal.priority_code || 'B').toLowerCase()}">${esc(goal.priority_code || 'B')}</i>${esc(goal.name)} · ${formatDate(goal.goal_date)}</span>`).join('')}</div>` : ''}
-    <p class="v10-calendar-help">Pulsa un día para crear un mesociclo desde esa fecha. Pulsa un mesociclo para entrar y añadir sus microciclos.</p>
-    <div class="v10-season-months">${seasonMonths(season).map(month => monthCalendar(month, season, mesos, goals)).join('')}</div>`;
+    <div class="v10-view-switch" role="group" aria-label="Vista del planificador"><button class="${planner.seasonMode === 'calendar' ? 'active' : ''}" data-v10-action="calendar-view" type="button">Calendario mensual</button><button class="${planner.seasonMode === 'list' ? 'active' : ''}" data-v10-action="meso-list-view" type="button">Lista de mesociclos</button></div>
+    ${planner.seasonMode === 'list'
+      ? renderMesocycleList(mesos)
+      : `<p class="v10-calendar-help">Pulsa un día libre para crear un mesociclo desde esa fecha. Pulsa un mesociclo para entrar y añadir sus microciclos.</p><div class="v10-season-months">${seasonMonths(season).map(month => monthCalendar(month, season, mesos, goals)).join('')}</div>`}`;
   }
 
   function renderMeso(meso) {
@@ -211,7 +244,8 @@
     const modal = q('#v10CycleModal');
     const isMeso = kind === 'mesocycle';
     const parentMeso = !isMeso ? (item?._meso || mesocycleById(parentId)) : null;
-    let suggestedStart = item?.start_date || initialDate || (parentMeso?.start_date || season.start_date);
+    const existingSiblings = isMeso ? mesocycles() : microcycles(parentMeso);
+    let suggestedStart = item?.start_date || initialDate || nextAvailableStart(existingSiblings, parentMeso?.start_date || season.start_date, parentMeso?.end_date || season.end_date);
     if (!isMeso && !item) {
       const cursor = iso(suggestedStart);
       const daysToMonday = (8 - cursor.getDay()) % 7;
@@ -266,6 +300,10 @@
     const start = q('#v10Start').value; const end = q('#v10End').value; const name = q('#v10Name').value.trim(); const objective = q('#v10Objective').value.trim();
     if (!name || !start || !end || !objective) { q('#v10CycleStatus').textContent = 'Completa nombre, fechas y objetivo.'; return; }
     if (end < start) { q('#v10CycleStatus').textContent = 'La fecha final no puede ser anterior a la inicial.'; return; }
+    if (kind === 'mesocycle') {
+      const conflict = mesocycleConflict(start, end, id);
+      if (conflict) { q('#v10CycleStatus').textContent = `Estas fechas se solapan con “${conflict.name}” (${formatDate(conflict.start_date)} – ${formatDate(conflict.end_date)}).`; return; }
+    }
     const button = q('#v10SaveCycle');
     try {
       button.disabled = true; q('#v10CycleStatus').textContent = 'Guardando…';
@@ -423,6 +461,8 @@
     if (action === 'legacy-view') { q('#planView')?.classList.remove('v10-mode'); q('#v10SeasonPlanner')?.classList.add('hidden'); return; }
     if (action === 'return-planner') { q('#planView')?.classList.add('v10-mode'); q('#v10SeasonPlanner')?.classList.remove('hidden'); planner.level = 'season'; renderPlanner(); return; }
     if (action === 'new-meso') return openCycleForm('mesocycle');
+    if (action === 'calendar-view') { planner.seasonMode = 'calendar'; renderPlanner(); return; }
+    if (action === 'meso-list-view') { planner.seasonMode = 'list'; renderPlanner(); return; }
     if (action === 'back-season') { planner.level = 'season'; planner.mesocycleId = null; planner.microcycleId = null; renderPlanner(); }
   }
 

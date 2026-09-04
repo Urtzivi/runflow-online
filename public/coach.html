@@ -23,7 +23,7 @@
   <link rel="stylesheet" href="/css/coach-v9-manual-planning.css?v=9.6.0">
   <link rel="stylesheet" href="/css/coach-v9-contextual-recommender.css?v=9.7.0">
   <link rel="stylesheet" href="/css/coach-v9-plan-v2-import.css?v=9.8.0">
-  <link rel="stylesheet" href="/css/coach-v10-calendar-planner.css?v=10.1.1">
+  <link rel="stylesheet" href="/css/coach-v10-calendar-planner.css?v=10.2.0">
 </head>
 <body class="coach-v8-loading coach-v9-beta">
   <main class="v8-loader"><div class="v8-loader-mark">RF</div><strong>RunFlow Coach</strong><span>Comprobando acceso y preparando la interfaz…</span></main>
@@ -50,9 +50,9 @@
           '/js/coach-v9.js?v=9.0.1',
           '/js/coach-v9-batch.js?v=9.2.0',
           '/js/coach-v9-supplement.js?v=9.3.0',
-          '/js/coach-v9-season-planner.js?v=9.3.0',
+          '/js/coach-v9-season-planner.js?v=9.3.1',
           '/js/coach-v9-season-bridge.js?v=9.3.0',
-          '/js/coach-v9-profile-availability.js?v=9.4.2',
+          '/js/coach-v9-profile-availability.js?v=9.4.3',
           '/js/coach-v9-stepwise-final.js?v=9.5.1',
           '/js/coach-v9-session-generator-fix.js?v=9.5.3',
           '/js/coach-v9-manual-planning.js?v=9.6.0',
@@ -60,7 +60,7 @@
           '/js/coach-v9-plan-v2-import.js?v=9.8.0',
           '/js/coach-v9-plan-v2-visibility-fix.js?v=9.8.1',
           '/js/coach-learning.js?v=1.0.0',
-          '/js/coach-v10-calendar-planner.js?v=10.1.0'
+          '/js/coach-v10-calendar-planner.js?v=10.2.0'
         ];
         await Promise.all(scripts.map(src=>new Promise(resolve=>{const p=document.createElement('link');p.rel='preload';p.as='script';p.href=src;p.onload=resolve;p.onerror=resolve;document.head.appendChild(p)})));
         window.fetch=(input,init)=>{

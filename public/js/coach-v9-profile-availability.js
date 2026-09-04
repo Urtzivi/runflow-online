@@ -17,7 +17,9 @@
   let current = null;
   let currentAthleteId = '';
 
-  const athleteId = () => q('#athleteSelect')?.value || '';
+  const athleteId = () => q('#athleteSelect')?.value || (() => {
+    try { return state?.athlete?.id || ''; } catch { return ''; }
+  })();
   const apiCall = async (url, options = {}) => {
     const response = await fetch(url, {
       ...options,
@@ -147,8 +149,6 @@
     const id = athleteId();
     const root = q('#profileView .layout > .card .card-body') || q('#profileView');
     if (!id || !root) return;
-    let data;
-    try { data = await load(true); } catch (error) { console.warn(error); return; }
     let card = q('#v9HierarchyAvailability');
     if (!card) {
       card = document.createElement('section');
@@ -157,6 +157,15 @@
       const experience = [...root.querySelectorAll('.form-section')].find(section => section.querySelector('#availability'));
       if (experience) experience.insertAdjacentElement('afterend', card);
       else root.prepend(card);
+    }
+    let data;
+    try {
+      data = await load(true);
+    } catch (error) {
+      console.warn(error);
+      card.innerHTML = `<div class="card-head"><div><p class="eyebrow">Disponibilidad semanal</p><h2>No se pudo cargar</h2><p>${String(error.message || 'Error al consultar la ficha del deportista.').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]))}</p></div></div><div class="card-body"><button id="v9hRetryAvailability" class="btn secondary" type="button">Reintentar</button></div>`;
+      q('#v9hRetryAvailability')?.addEventListener('click', render);
+      return;
     }
     const map = new Map((data.availability?.days || []).map(item => [Number(item.day), item]));
     const complete = DAYS.every(day => modeFromStored(map.get(day[0]) || {}, data.strength_mode) !== 'undefined');
@@ -251,5 +260,7 @@
   window.addEventListener('runflow:v9-athlete-ready', () => {
     current = null;
     currentAthleteId = '';
+    if (q('#profileView')?.classList.contains('active')) setTimeout(render, 50);
   });
+  setTimeout(onView, 600);
 })();
