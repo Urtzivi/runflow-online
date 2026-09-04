@@ -1,0 +1,79 @@
+.v10-mode > .stack > :not(#v10SeasonPlanner) { display: none !important; }
+.v10-season-planner { display: block; }
+.v10-planner-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; padding: 24px; border-radius: 22px; background: #111b20; color: #fff; box-shadow: 0 18px 45px rgba(15, 28, 35, .13); }
+.v10-planner-head h2 { margin: 3px 0 6px; font-size: clamp(1.45rem, 2.5vw, 2.15rem); }
+.v10-planner-head p { margin: 0; color: #b8c4c8; }
+.v10-planner-head .eyebrow { color: #b9f34d; }
+.v10-planner-head .actions { justify-content: flex-end; }
+.v10-season-select { min-width: 190px; color: #dce4e6; font-size: .76rem; }
+.v10-season-select select { margin-top: 5px; min-height: 40px; background: #fff; color: #172226; }
+.v10-season-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 14px 0; }
+.v10-season-summary span { display: flex; align-items: baseline; gap: 7px; padding: 13px 16px; border: 1px solid #dfe6e8; border-radius: 14px; background: #fff; color: #647276; }
+.v10-season-summary strong { color: #172226; font-size: 1.35rem; }
+.v10-goal-legend { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 14px; border-radius: 14px; background: #f3f7f6; }
+.v10-goal-legend span { display: inline-flex; align-items: center; gap: 7px; font-size: .82rem; color: #526165; }
+.v10-goal-legend i, .v10-profile-goals span { display: grid; place-items: center; width: 23px; height: 23px; border-radius: 50%; font-style: normal; font-weight: 800; color: #fff; }
+.v10-goal-legend .priority-a, .v10-profile-goals .priority-a { background: #e24d4d; }
+.v10-goal-legend .priority-b, .v10-profile-goals .priority-b { background: #ef9b27; }
+.v10-goal-legend .priority-c, .v10-profile-goals .priority-c { background: #5b7fd6; }
+.v10-calendar-help { margin: 16px 2px 10px; color: #657377; font-size: .9rem; }
+.v10-season-months { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.v10-month-card { min-width: 0; padding: 16px; border: 1px solid #dfe6e8; border-radius: 18px; background: #fff; box-shadow: 0 9px 24px rgba(20, 34, 41, .05); }
+.v10-month-card h3 { margin: 0 0 12px; text-transform: capitalize; font-size: 1.06rem; }
+.v10-weekdays, .v10-month-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.v10-weekdays span { padding: 5px; text-align: center; color: #819094; font-size: .7rem; font-weight: 800; }
+.v10-day { min-width: 0; min-height: 72px; padding: 5px 3px; border: 0; border-right: 1px solid #edf1f2; border-bottom: 1px solid #edf1f2; background: #fff; color: #263337; text-align: left; cursor: pointer; overflow: hidden; }
+.v10-day:nth-child(7n+1) { border-left: 1px solid #edf1f2; }
+.v10-day:nth-child(-n+7) { border-top: 1px solid #edf1f2; }
+.v10-day:hover:not(:disabled) { background: #f6faed; }
+.v10-day.outside { background: #f7f9f9; color: #aab4b6; }
+.v10-day.outside-season { opacity: .38; cursor: default; }
+.v10-day-number { display: block; margin: 0 2px 4px; font-size: .72rem; font-weight: 700; }
+.v10-day-content { display: grid; gap: 2px; }
+.v10-meso-strip { display: block; width: 100%; min-width: 0; height: 18px; padding: 2px 4px; border-radius: 4px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #1d292d; font-size: .62rem; font-weight: 750; pointer-events: auto; }
+.v10-meso-strip.colour-0 { background: #c9f36e; }.v10-meso-strip.colour-1 { background: #8ee3cf; }.v10-meso-strip.colour-2 { background: #f6ce71; }.v10-meso-strip.colour-3 { background: #b9cdf8; }.v10-meso-strip.colour-4 { background: #e7b9ef; }.v10-meso-strip.colour-5 { background: #f3b39e; }
+.v10-goal-pin { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #a43c3c; font-size: .6rem; font-weight: 800; }
+.v10-breadcrumb { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; color: #768488; font-size: .88rem; }
+.v10-breadcrumb button { padding: 0; border: 0; background: transparent; color: #375b67; text-decoration: underline; cursor: pointer; }
+.v10-objective-card { margin: 14px 0; padding: 18px 20px; border-left: 5px solid #b9f34d; border-radius: 14px; background: #f4f8f0; }
+.v10-objective-card > span { display: block; color: #778477; font-size: .74rem; font-weight: 800; text-transform: uppercase; }
+.v10-objective-card > strong { display: block; margin-top: 5px; color: #1c2a2d; font-size: 1.12rem; }
+.v10-objective-card p { margin: 7px 0 0; color: #647276; }
+.v10-micro-list, .v10-session-list { display: grid; gap: 10px; }
+.v10-micro-card { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto auto; gap: 14px; align-items: center; width: 100%; padding: 16px; border: 1px solid #dfe6e8; border-radius: 15px; background: #fff; color: #263337; text-align: left; cursor: pointer; }
+.v10-micro-card:hover { border-color: #abc95b; box-shadow: 0 8px 22px rgba(25, 38, 45, .07); transform: translateY(-1px); }
+.v10-micro-number { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 12px; background: #eff7dd; color: #3d541a; font-weight: 800; }
+.v10-micro-card small, .v10-micro-card p { display: block; margin: 3px 0 0; color: #748185; }
+.v10-publication { padding: 5px 9px; border-radius: 999px; font-size: .72rem; font-weight: 800; }
+.v10-publication.draft { background: #eef1f2; color: #69777b; }.v10-publication.published { background: #e3f5bf; color: #35530f; }
+.v10-session-card { display: grid; grid-template-columns: 120px minmax(0, 1fr) auto; gap: 18px; align-items: center; padding: 17px; border: 1px solid #dfe6e8; border-radius: 15px; background: #fff; }
+.v10-session-date { display: grid; gap: 2px; padding-right: 14px; border-right: 1px solid #e3e8e9; text-transform: capitalize; }
+.v10-session-date span, .v10-sport, .v10-session-metrics { color: #748185; font-size: .76rem; }
+.v10-session-card h3 { margin: 4px 0; font-size: 1rem; }.v10-session-card p { margin: 0; color: #647276; }
+.v10-session-metrics { display: grid; justify-items: end; gap: 5px; }
+.v10-publish-bar { display: flex; justify-content: space-between; align-items: center; gap: 18px; margin-top: 16px; padding: 18px 20px; border-radius: 16px; background: #172226; color: #fff; }
+.v10-publish-bar p { margin: 3px 0 0; color: #aebcc0; }
+.v10-empty { padding: 48px 28px; border: 1px dashed #cbd6d8; border-radius: 18px; background: #fff; text-align: center; }
+.v10-empty.compact { padding: 30px 20px; }.v10-empty h2, .v10-empty h3 { margin-top: 0; }.v10-empty .actions { justify-content: center; }
+.v10-profile-season { margin-bottom: 18px; }
+.v10-profile-season-body { display: grid; gap: 13px; }
+.v10-profile-goals { display: flex; flex-wrap: wrap; gap: 8px; }
+.v10-profile-goals button { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; padding: 9px 11px; border: 1px solid #dfe6e8; border-radius: 12px; background: #fff; color: #263337; cursor: pointer; }
+.v10-cycle-modal { max-width: 760px; }.v10-import-modal { max-width: 700px; }
+.v10-import-rows { display: grid; gap: 8px; max-height: 48vh; overflow: auto; }
+.v10-import-rows > div { display: flex; justify-content: space-between; gap: 14px; padding: 11px; border: 1px solid #e0e6e8; border-radius: 10px; }
+.v10-import-rows span { color: #758286; font-size: .8rem; }
+
+@media (max-width: 1100px) {
+  .v10-season-months { grid-template-columns: 1fr; }
+  .v10-planner-head { flex-direction: column; }
+  .v10-planner-head .actions { justify-content: flex-start; }
+}
+@media (max-width: 720px) {
+  .v10-season-summary { grid-template-columns: repeat(2, 1fr); }
+  .v10-month-card { padding: 9px; }
+  .v10-day { min-height: 58px; }.v10-meso-strip { font-size: 0; }.v10-meso-strip::after { content: ' '; }
+  .v10-micro-card { grid-template-columns: 36px minmax(0, 1fr); }.v10-micro-card > :nth-last-child(-n+2) { grid-column: 2; }
+  .v10-session-card { grid-template-columns: 1fr; }.v10-session-date { border-right: 0; border-bottom: 1px solid #e3e8e9; padding-bottom: 9px; }.v10-session-metrics { justify-items: start; }
+  .v10-publish-bar { align-items: stretch; flex-direction: column; }
+}
