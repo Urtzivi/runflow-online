@@ -20,7 +20,6 @@
   <link rel="stylesheet" href="/css/coach-v9-season-planner.css?v=9.3.0">
   <link rel="stylesheet" href="/css/coach-v9-hierarchy.css?v=9.4.0">
   <link rel="stylesheet" href="/css/coach-v9-stepwise.css?v=9.5.0">
-  <link rel="stylesheet" href="/css/coach-v10-calendar-planner.css?v=10.0.0">
   <link rel="preload" as="script" href="/js/coach-v8-shell.js?v=8.0.0">
   <link rel="preload" as="script" href="/js/coach-v8-planner.js?v=8.4.1">
   <link rel="preload" as="script" href="/js/coach-v8-validation-persistence.js?v=8.4.0">
@@ -65,8 +64,7 @@
           '/js/coach-v9-season-planner.js?v=9.3.0',
           '/js/coach-v9-season-bridge.js?v=9.3.0',
           '/js/coach-v9-profile-availability.js?v=9.4.0',
-          '/js/coach-v9-stepwise-final.js?v=9.5.0',
-          '/js/coach-v10-calendar-planner.js?v=10.0.0'
+          '/js/coach-v9-stepwise-final.js?v=9.5.0'
         ];
         for(const src of scripts){
           await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src=src;s.onload=resolve;s.onerror=reject;document.body.appendChild(s);});
