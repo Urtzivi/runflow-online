@@ -20,7 +20,7 @@
   <link rel="stylesheet" href="/css/coach-v9-season-planner.css?v=9.3.0">
   <link rel="stylesheet" href="/css/coach-v9-hierarchy.css?v=9.4.0">
   <link rel="stylesheet" href="/css/coach-v9-stepwise.css?v=9.5.0">
-  <link rel="stylesheet" href="/css/coach-v10-calendar-planner.css?v=10.1.1">
+  <link rel="stylesheet" href="/css/coach-v10-calendar-planner.css?v=10.2.0">
   <link rel="preload" as="script" href="/js/coach-v8-shell.js?v=8.0.1">
   <link rel="preload" as="script" href="/js/coach-v8-planner.js?v=8.4.1">
   <link rel="preload" as="script" href="/js/coach-v8-validation-persistence.js?v=8.4.0">
@@ -33,9 +33,9 @@
   <link rel="preload" as="script" href="/js/coach-v9.js?v=9.0.1">
   <link rel="preload" as="script" href="/js/coach-v9-batch.js?v=9.2.0">
   <link rel="preload" as="script" href="/js/coach-v9-supplement.js?v=9.3.0">
-  <link rel="preload" as="script" href="/js/coach-v9-season-planner.js?v=9.3.0">
+  <link rel="preload" as="script" href="/js/coach-v9-season-planner.js?v=9.3.1">
   <link rel="preload" as="script" href="/js/coach-v9-season-bridge.js?v=9.3.0">
-  <link rel="preload" as="script" href="/js/coach-v9-profile-availability.js?v=9.4.2">
+  <link rel="preload" as="script" href="/js/coach-v9-profile-availability.js?v=9.4.3">
   <link rel="preload" as="script" href="/js/coach-v9-stepwise-final.js?v=9.5.1">
 </head>
 <body class="coach-v8-loading coach-v9-beta">
@@ -62,11 +62,11 @@
           '/js/coach-v9.js?v=9.0.1',
           '/js/coach-v9-batch.js?v=9.2.0',
           '/js/coach-v9-supplement.js?v=9.3.0',
-          '/js/coach-v9-season-planner.js?v=9.3.0',
+          '/js/coach-v9-season-planner.js?v=9.3.1',
           '/js/coach-v9-season-bridge.js?v=9.3.0',
-          '/js/coach-v9-profile-availability.js?v=9.4.2',
+          '/js/coach-v9-profile-availability.js?v=9.4.3',
           '/js/coach-v9-stepwise-final.js?v=9.5.1',
-          '/js/coach-v10-calendar-planner.js?v=10.1.0'
+          '/js/coach-v10-calendar-planner.js?v=10.2.0'
         ];
         for(const src of scripts){
           await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src=src;s.onload=resolve;s.onerror=reject;document.body.appendChild(s);});

@@ -17,7 +17,19 @@
 .v10-goal-legend .priority-b, .v10-profile-goals .priority-b { background: #ef9b27; }
 .v10-goal-legend .priority-c, .v10-profile-goals .priority-c { background: #5b7fd6; }
 .v10-calendar-help { margin: 16px 2px 10px; color: #657377; font-size: .9rem; }
+.v10-view-switch { display: inline-flex; gap: 3px; margin: 14px 0 2px; padding: 4px; border: 1px solid #dfe6e8; border-radius: 12px; background: #f3f6f5; }
+.v10-view-switch button { min-height: 36px; padding: 7px 13px; border: 0; border-radius: 8px; background: transparent; color: #647276; font-weight: 750; cursor: pointer; }
+.v10-view-switch button.active { background: #172226; color: #fff; box-shadow: 0 3px 9px rgba(20, 33, 39, .16); }
 .v10-season-months { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.v10-meso-overview { display: grid; gap: 8px; margin-top: 12px; }
+.v10-meso-overview-head, .v10-meso-overview-row { display: grid; grid-template-columns: 58px minmax(230px, 1.5fr) minmax(120px, .65fr) minmax(145px, .75fr) 90px minmax(150px, auto); gap: 14px; align-items: center; }
+.v10-meso-overview-head { padding: 0 15px 3px; color: #7b898d; font-size: .68rem; font-weight: 800; text-transform: uppercase; }
+.v10-meso-overview-row { padding: 15px; border: 1px solid #dfe6e8; border-left: 5px solid #b9f34d; border-radius: 14px; background: #fff; color: #536165; }
+.v10-meso-overview-row.conflict { border-color: #e7b8a4; border-left-color: #dc6b41; background: #fffaf7; }
+.v10-meso-overview-row strong { display: block; color: #1c292d; }
+.v10-meso-overview-row p { margin: 4px 0 0; color: #647276; }
+.v10-meso-order { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 11px; background: #eff7dd; color: #3d541a; font-weight: 800; }
+.v10-conflict-note { display: block; margin-top: 6px; color: #a54a2c; font-weight: 700; }
 .v10-month-card { min-width: 0; padding: 16px; border: 1px solid #dfe6e8; border-radius: 18px; background: #fff; box-shadow: 0 9px 24px rgba(20, 34, 41, .05); }
 .v10-month-card h3 { margin: 0 0 12px; text-transform: capitalize; font-size: 1.06rem; }
 .v10-weekdays, .v10-month-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
@@ -76,6 +88,10 @@
   .v10-season-months { grid-template-columns: 1fr; }
   .v10-planner-head { flex-direction: column; }
   .v10-planner-head .actions { justify-content: flex-start; }
+  .v10-meso-overview-head { display: none; }
+  .v10-meso-overview-row { grid-template-columns: 44px minmax(0, 1fr) auto; }
+  .v10-meso-overview-row > :nth-child(3), .v10-meso-overview-row > :nth-child(4), .v10-meso-overview-row > :nth-child(5) { grid-column: 2; }
+  .v10-meso-overview-row > .actions { grid-column: 2 / -1; justify-content: flex-start; }
 }
 @media (max-width: 720px) {
   .v10-season-summary { grid-template-columns: repeat(2, 1fr); }
