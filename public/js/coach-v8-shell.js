@@ -119,7 +119,7 @@
       document.body.innerHTML = doc.body.innerHTML;
       document.body.className = 'coach-v8';
       buildSidebar();
-      const coachScript=document.createElement('script'); coachScript.src='/js/coach.js?v=2.4.2.2';
+      const coachScript=document.createElement('script'); coachScript.src='/js/coach.js?v=2.4.2.3';
       coachScript.onload=()=>{
         const sw=document.createElement('script'); sw.src='/js/register-sw.js?v=2.4.2.2'; document.body.appendChild(sw);
         setTimeout(()=>{ decorateIntensity(); renderV8PlanWeek(); updateSidebarMeta(); installObservers(); },400);

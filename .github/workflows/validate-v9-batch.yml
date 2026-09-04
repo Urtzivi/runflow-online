@@ -7,15 +7,23 @@ on:
       - 'session-comparison-metrics.js'
       - 'athlete-link-recovery-hook.js'
       - 'public/coach-v9.html'
+      - 'public/coach.html'
+      - 'public/coach-base.html'
+      - 'server.js'
       - 'public/athlete.html'
       - 'public/athlete-base.html'
       - 'public/athlete-v2.html'
       - 'public/js/coach-v9-*.js'
+      - 'public/js/coach-v10-*.js'
+      - 'public/js/coach.js'
+      - 'public/js/coach-v8-shell.js'
       - 'public/js/athlete-v2-*.js'
       - 'public/css/coach-v9-*.css'
+      - 'public/css/coach-v10-*.css'
       - 'public/css/athlete-v2-*.css'
       - 'data/runflow-v9-library.part*.b64'
       - 'scripts/validate-v9-batch.mjs'
+      - 'scripts/validate-v10-calendar-planner.mjs'
       - 'render.yaml'
       - '.github/workflows/validate-v9-batch.yml'
   workflow_dispatch:
@@ -32,3 +40,10 @@ jobs:
         run: node --check athlete-link-recovery-hook.js
       - name: Validate V9/V2 batch
         run: node scripts/validate-v9-batch.mjs
+      - name: Check season calendar planner syntax
+        run: |
+          node --check server.js
+          node --check public/js/coach.js
+          node --check public/js/coach-v10-calendar-planner.js
+      - name: Validate season calendar planner
+        run: node scripts/validate-v10-calendar-planner.mjs

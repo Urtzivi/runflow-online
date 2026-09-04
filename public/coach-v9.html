@@ -20,7 +20,8 @@
   <link rel="stylesheet" href="/css/coach-v9-season-planner.css?v=9.3.0">
   <link rel="stylesheet" href="/css/coach-v9-hierarchy.css?v=9.4.0">
   <link rel="stylesheet" href="/css/coach-v9-stepwise.css?v=9.5.0">
-  <link rel="preload" as="script" href="/js/coach-v8-shell.js?v=8.0.0">
+  <link rel="stylesheet" href="/css/coach-v10-calendar-planner.css?v=10.1.0">
+  <link rel="preload" as="script" href="/js/coach-v8-shell.js?v=8.0.1">
   <link rel="preload" as="script" href="/js/coach-v8-planner.js?v=8.4.1">
   <link rel="preload" as="script" href="/js/coach-v8-validation-persistence.js?v=8.4.0">
   <link rel="preload" as="script" href="/js/coach-v8-runtime.js?v=8.4.0">
@@ -34,8 +35,8 @@
   <link rel="preload" as="script" href="/js/coach-v9-supplement.js?v=9.3.0">
   <link rel="preload" as="script" href="/js/coach-v9-season-planner.js?v=9.3.0">
   <link rel="preload" as="script" href="/js/coach-v9-season-bridge.js?v=9.3.0">
-  <link rel="preload" as="script" href="/js/coach-v9-profile-availability.js?v=9.4.0">
-  <link rel="preload" as="script" href="/js/coach-v9-stepwise-final.js?v=9.5.0">
+  <link rel="preload" as="script" href="/js/coach-v9-profile-availability.js?v=9.4.1">
+  <link rel="preload" as="script" href="/js/coach-v9-stepwise-final.js?v=9.5.1">
 </head>
 <body class="coach-v8-loading coach-v9-beta">
   <main class="v8-loader"><div class="v8-loader-mark">RF</div><strong>RunFlow Coach V9 · Beta</strong><span>Comprobando acceso y preparando la interfaz…</span></main>
@@ -49,7 +50,7 @@
         if(!Array.isArray(data?.user?.roles)||!data.user.roles.includes('coach'))return fail();
         localStorage.removeItem('runflow_client');
         const scripts=[
-          '/js/coach-v8-shell.js?v=8.0.0',
+          '/js/coach-v8-shell.js?v=8.0.1',
           '/js/coach-v8-planner.js?v=8.4.1',
           '/js/coach-v8-validation-persistence.js?v=8.4.0',
           '/js/coach-v8-runtime.js?v=8.4.0',
@@ -63,8 +64,9 @@
           '/js/coach-v9-supplement.js?v=9.3.0',
           '/js/coach-v9-season-planner.js?v=9.3.0',
           '/js/coach-v9-season-bridge.js?v=9.3.0',
-          '/js/coach-v9-profile-availability.js?v=9.4.0',
-          '/js/coach-v9-stepwise-final.js?v=9.5.0'
+          '/js/coach-v9-profile-availability.js?v=9.4.1',
+          '/js/coach-v9-stepwise-final.js?v=9.5.1',
+          '/js/coach-v10-calendar-planner.js?v=10.1.0'
         ];
         for(const src of scripts){
           await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src=src;s.onload=resolve;s.onerror=reject;document.body.appendChild(s);});
