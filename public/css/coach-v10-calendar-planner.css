@@ -64,7 +64,10 @@
 .v10-profile-season-body { display: grid; gap: 13px; }
 .v10-profile-goals { display: flex; flex-wrap: wrap; gap: 8px; }
 .v10-profile-goals button { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; padding: 9px 11px; border: 1px solid #dfe6e8; border-radius: 12px; background: #fff; color: #263337; cursor: pointer; }
-.v10-cycle-modal { max-width: 760px; }.v10-import-modal { max-width: 700px; }
+.v10-cycle-modal, .v10-import-modal { width: min(100%, 760px); max-height: calc(100vh - 36px); overflow: auto; border-radius: 22px; background: #fff; box-shadow: 0 30px 90px rgba(0,0,0,.25); }
+.v10-import-modal { max-width: 700px; }
+.v10-cycle-modal .modal-head, .v10-import-modal .modal-head { z-index: 2; }
+.v10-cycle-modal .modal-actions, .v10-import-modal .modal-actions { position: sticky; bottom: 0; z-index: 2; padding: 15px 19px; border-top: 1px solid #dfe6e8; background: #fff; }
 .v10-import-rows { display: grid; gap: 8px; max-height: 48vh; overflow: auto; }
 .v10-import-rows > div { display: flex; justify-content: space-between; gap: 14px; padding: 11px; border: 1px solid #e0e6e8; border-radius: 10px; }
 .v10-import-rows span { color: #758286; font-size: .8rem; }
@@ -94,6 +97,9 @@
 .v9h-minutes i { color: #707970; font-style: normal; }
 .v9h-rule { color: #667168; font-size: .74rem; }
 .v9-h-profile-note { margin-bottom: 14px; font-size: .78rem; }
+.v9-h-availability-card { padding: 0; overflow: hidden; border: 1px solid #dfe6e8; border-radius: 16px; background: #fff; }
+.v9-h-availability-card > .card-head { padding: 18px 18px 12px; }
+.v9-h-availability-card > .card-body { padding: 0 18px 18px; }
 
 @media (max-width: 950px) {
   .v9-h-availability-row { grid-template-columns: 75px 1fr; }

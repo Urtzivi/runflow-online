@@ -13,9 +13,9 @@ const server = read('server.js');
 const engine = read('v9-engine-hook.js');
 
 for (const html of [coach, beta]) {
-  assert(html.includes('/css/coach-v10-calendar-planner.css?v=10.1.0'), 'Falta cargar el CSS del planificador V10.');
+  assert(html.includes('/css/coach-v10-calendar-planner.css?v=10.1.1'), 'Falta cargar el CSS del planificador V10.');
   assert(html.includes('/js/coach-v10-calendar-planner.js?v=10.1.0'), 'Falta cargar el JavaScript del planificador V10.');
-  assert(html.includes('/js/coach-v9-profile-availability.js?v=9.4.1'), 'Falta cargar la disponibilidad semanal actualizada.');
+  assert(html.includes('/js/coach-v9-profile-availability.js?v=9.4.2'), 'Falta cargar la disponibilidad semanal actualizada.');
 }
 
 assert(planner.includes("planner.level = 'season'"), 'Falta la vista de temporada.');
@@ -28,6 +28,8 @@ assert(planner.includes('/week/publish'), 'Falta la publicación explícita de s
 assert(planner.includes("publication_status: 'draft'"), 'La importación no protege el estado borrador.');
 assert(styles.includes('.v10-season-months'), 'Faltan los estilos del calendario de temporada.');
 assert(base.includes('Correo de acceso Athlete'), 'La ficha no identifica el correo de acceso del deportista.');
+assert(base.includes('v9HierarchyAvailability'), 'La matriz semanal no está integrada en el cuerpo principal de la ficha.');
+assert(base.includes('Notas adicionales de disponibilidad'), 'El texto libre debe distinguirse de la disponibilidad estructurada.');
 for (const marker of ['activity_type', 'configured: true', 'Gimnasio / fuerza externa', 'validateWorkout', 'Elige una opción para los siete días']) {
   assert(availability.includes(marker), `Disponibilidad semanal incompleta: ${marker}`);
 }
@@ -38,5 +40,7 @@ for (const marker of ['ATHLETE_AVAILABILITY_CONFLICT', 'assertWorkoutsFitAvailab
   assert(server.includes(marker), `El servidor no protege ficha/planificación: ${marker}`);
 }
 assert(engine.includes('dayAllowsWorkout'), 'La replanificación automática no respeta el tipo de actividad diario.');
+assert(styles.includes('max-height: calc(100vh - 36px)'), 'La ficha de mesociclo puede quedar fuera de la pantalla.');
+assert(styles.includes('position: sticky; bottom: 0'), 'El botón de guardado del ciclo no permanece accesible.');
 
 console.log('RunFlow V10 planner, acceso Athlete y disponibilidad semanal validados.');
