@@ -485,9 +485,12 @@
               <h3>Experiencia y disponibilidad</h3>
               <div class="field-row-3"><label>Nivel<input id="level" placeholder="Inicial, intermedio, avanzado"></label><label>Años de experiencia<input id="experience" type="number" step="0.5"></label><label>Sesiones semanales<input id="weeklySessions" type="number"></label></div>
               <div class="field-row" style="margin-top:12px"><label>Kilómetros actuales<input id="weeklyKm" type="number" step="0.1"></label><label>Horas actuales<input id="weeklyHours" type="number" step="0.1"></label></div>
-              <label style="margin-top:12px">Disponibilidad<textarea id="availability" placeholder="Días disponibles, tiempo entre semana, fin de semana, preferencias…"></textarea></label>
+              <label style="margin-top:12px">Notas adicionales de disponibilidad<textarea id="availability" placeholder="Preferencias, horarios concretos o circunstancias que el entrenador deba conocer…"></textarea><small class="muted">Estas notas sirven como contexto. Los días, actividades y minutos se definen en la matriz inferior.</small></label>
               <label style="margin-top:12px">Restricciones laborales o familiares<textarea id="restrictions"></textarea></label>
             </div>
+            <section id="v9HierarchyAvailability" class="form-section v9-h-availability-card">
+              <div class="notice">Cargando disponibilidad semanal estructurada…</div>
+            </section>
             <div class="form-section load-tolerance-section">
               <div class="card-head compact"><div><h3>Tolerancia de carga semanal</h3><p>Rangos individuales definidos por el entrenador. RunFlow avisa, pero no bloquea la planificación.</p></div><span id="loadToleranceConfidenceBadge" class="badge pending">Provisional</span></div>
               <div class="tolerance-range-grid">

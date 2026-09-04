@@ -145,7 +145,7 @@
 
   async function render() {
     const id = athleteId();
-    const root = q('#profileView .stack') || q('#profileView');
+    const root = q('#profileView .layout > .card .card-body') || q('#profileView');
     if (!id || !root) return;
     let data;
     try { data = await load(true); } catch (error) { console.warn(error); return; }
@@ -154,7 +154,9 @@
       card = document.createElement('section');
       card.id = 'v9HierarchyAvailability';
       card.className = 'card v9-h-availability-card';
-      root.prepend(card);
+      const experience = [...root.querySelectorAll('.form-section')].find(section => section.querySelector('#availability'));
+      if (experience) experience.insertAdjacentElement('afterend', card);
+      else root.prepend(card);
     }
     const map = new Map((data.availability?.days || []).map(item => [Number(item.day), item]));
     const complete = DAYS.every(day => modeFromStored(map.get(day[0]) || {}, data.strength_mode) !== 'undefined');
