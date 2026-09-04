@@ -473,11 +473,11 @@
     <section id="profileView" class="view" style="margin-top:18px">
       <div class="layout">
         <section class="card">
-          <div class="card-head"><div><h2>Ficha del deportista</h2><p>Se puede completar progresivamente, incluso antes de conectar Intervals.</p></div><span id="profileProgress" class="badge">0% completa</span></div>
+          <div class="card-head"><div><h2>Ficha del deportista</h2><p>Define su acceso, sus datos y las condiciones que debe respetar la planificación.</p></div><span id="profileProgress" class="badge">0% completa</span></div>
           <div class="card-body">
             <div class="form-section">
               <h3>Datos básicos</h3>
-              <div class="field-row"><label>Nombre<input id="displayName"></label><label>Correo<input id="athleteEmail" type="email"></label></div>
+              <div class="field-row"><label>Nombre<input id="displayName"></label><label>Correo de acceso Athlete<input id="athleteEmail" type="email"><small class="muted">Será el correo con el que el deportista recibirá la invitación y entrará en Athlete.</small></label></div>
               <div class="field-row-3" style="margin-top:12px"><label>Fecha de nacimiento<input id="birthDate" type="date"></label><label>Sexo<select id="sex"><option value="">Sin indicar</option><option value="M">Hombre</option><option value="F">Mujer</option><option value="X">Otro / no binario</option></select></label><label>Teléfono<input id="phone"></label></div>
               <div class="field-row" style="margin-top:12px"><label>Peso (kg)<input id="weight" type="number" step="0.1"></label><label>Altura (cm)<input id="height" type="number" step="0.1"></label></div>
             </div>
@@ -662,6 +662,6 @@
     </div>
   </div>
 
-  <script src="/js/coach.js?v=2.4.2.2"></script>
+  <script src="/js/coach.js?v=2.4.2.3"></script>
 <script src="/js/register-sw.js?v=2.4.2.2"></script></body>
 </html>

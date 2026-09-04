@@ -21,7 +21,7 @@ const APP_ENCRYPTION_KEY = String(process.env.APP_ENCRYPTION_KEY || '');
 const OPENAI_API_KEY = String(process.env.OPENAI_API_KEY || '');
 const OPENAI_MODEL = String(process.env.OPENAI_MODEL || 'gpt-5.6-terra');
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
-const APP_VERSION = 'Online Pilot 1.8.4 - Metrics y deportistas 2.4.2.2';
+const APP_VERSION = 'Online Pilot 1.9.0 - Planificador de temporada y disponibilidad';
 const INTERVALS_API_BASE = 'https://intervals.icu/api/v1';
 
 const RUNFLOW_PLAN_SCHEMA = 'runflow.plan.v1';
@@ -676,6 +676,81 @@ function safeObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 }
 
+const TRAINING_DAY_NAMES = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'];
+
+function trainingDayNumber(dateValue) {
+  const date = new Date(`${dateValue}T12:00:00Z`);
+  return ((date.getUTCDay() + 6) % 7) + 1;
+}
+
+function workoutAvailabilityKind(workout) {
+  const text = `${workout && workout.sport || ''} ${workout && workout.title || ''} ${workout && workout.adaptation_target || ''}`.toLowerCase();
+  if (workout && workout.is_strength || /strength|fuerza|gimnasio/.test(text)) return 'strength';
+  if (/ride|bike|cycling|bici/.test(text)) return 'bike';
+  if (/trail|montaña|mountain|desnivel/.test(text)) return 'trail';
+  return 'run';
+}
+
+function availabilityMode(day) {
+  const explicit = sanitiseText(day && (day.activity_type || day.mode), 30);
+  if (['unavailable', 'run', 'trail', 'bike', 'strength', 'gym', 'flexible'].includes(explicit)) return explicit;
+  if (day && day.can_train === false) return 'unavailable';
+  if (day && day.gym && day.strength && day.run === false) return 'gym';
+  if (day && day.strength && day.run === false && day.bike !== true) return 'strength';
+  if (day && day.bike && day.run === false && day.strength !== true) return 'bike';
+  if (day && day.run && day.mountain) return 'trail';
+  if (day && day.run && day.bike !== true && day.strength !== true) return 'run';
+  return 'flexible';
+}
+
+function workoutAvailabilityError(availability, workout) {
+  const config = safeObject(availability);
+  const days = Array.isArray(config.days) ? config.days : [];
+  const configured = config.configured === true || days.some(day => day && (day.activity_type || day.mode || hasOwn(day, 'can_train')));
+  if (!configured || !validDate(workout && workout.workout_date)) return null;
+  const dayNumber = trainingDayNumber(workout.workout_date);
+  const day = days.find(item => Number(item && item.day) === dayNumber);
+  const dayName = TRAINING_DAY_NAMES[dayNumber - 1];
+  if (!day) return `La disponibilidad del ${dayName} no está definida en la ficha del deportista.`;
+  const mode = availabilityMode(day);
+  const title = sanitiseText(workout.title || 'Sesión', 160);
+  if (mode === 'unavailable' || day.can_train === false) return `No puedes colocar “${title}” el ${dayName}: el deportista no puede entrenar ese día.`;
+  const kind = workoutAvailabilityKind(workout);
+  const allowed = mode === 'flexible'
+    ? (kind === 'strength' ? day.strength !== false : kind === 'bike' ? day.bike === true : day.run !== false)
+    : mode === 'run' ? kind === 'run'
+      : mode === 'trail' ? kind === 'trail'
+        : mode === 'bike' ? kind === 'bike'
+          : (mode === 'strength' || mode === 'gym') ? kind === 'strength'
+            : false;
+  if (!allowed) {
+    const labels = { run: 'correr', trail: 'trail/montaña', bike: 'bici', strength: 'fuerza', gym: 'gimnasio', flexible: 'actividad flexible' };
+    return `No puedes colocar “${title}” el ${dayName}: ese día está reservado para ${labels[mode] || 'otra actividad'}.`;
+  }
+  const duration = numberOrNull(workout.planned_duration_min, 0, 2000);
+  const maximum = numberOrNull(day.max_minutes, 0, 2000);
+  if (duration !== null && maximum !== null && duration > maximum) {
+    return `“${title}” dura ${duration} min, pero el ${dayName} solo dispone de ${maximum} min.`;
+  }
+  return null;
+}
+
+async function athleteTrainingAvailability(athleteId) {
+  if (DEMO_MODE) {
+    const athlete = demo.athletes.find(item => item.id === athleteId);
+    return safeObject(athlete && athlete.profile && athlete.profile.availability);
+  }
+  const rows = await prodRows('athlete_profiles', `athlete_id=eq.${encodeURIComponent(athleteId)}&select=availability&limit=1`);
+  return safeObject(rows[0] && rows[0].availability);
+}
+
+async function assertWorkoutsFitAvailability(athleteId, workouts) {
+  if (!Array.isArray(workouts) || !workouts.length) return;
+  const availability = await athleteTrainingAvailability(athleteId);
+  const errors = workouts.map(workout => workoutAvailabilityError(availability, workout)).filter(Boolean);
+  if (errors.length) throw Object.assign(new Error(errors.slice(0, 3).join(' ')), { status: 409, code: 'ATHLETE_AVAILABILITY_CONFLICT' });
+}
+
 function safeStringArray(value, maxItems = 30, maxLength = 120) {
   return Array.isArray(value)
     ? value.slice(0, maxItems).map(item => sanitiseText(item, maxLength)).filter(Boolean)
@@ -953,6 +1028,60 @@ async function findAuthUserByEmail(email) {
   return null;
 }
 
+function athleteAccessEmail(value) {
+  const email = sanitiseText(value, 200).toLowerCase();
+  if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
+    throw Object.assign(new Error('Introduce un correo de acceso Athlete válido.'), { status: 400 });
+  }
+  return email;
+}
+
+async function ensureAthleteEmailAvailable(athleteId, email) {
+  if (DEMO_MODE) {
+    if (demo.athletes.some(item => item.id !== athleteId && String(item.email || '').toLowerCase() === email)) {
+      throw Object.assign(new Error('Ese correo ya pertenece a otro deportista.'), { status: 409 });
+    }
+    return;
+  }
+  const rows = await prodRows('athletes', `email=eq.${encodeURIComponent(email)}&select=id`);
+  if (rows.some(item => item.id !== athleteId)) {
+    throw Object.assign(new Error('Ese correo ya pertenece a otro deportista.'), { status: 409 });
+  }
+}
+
+async function synchroniseAthleteAccessEmail(athlete, email) {
+  const previous = String(athlete && athlete.email || '').toLowerCase();
+  if (!athlete || previous === email) return;
+  await ensureAthleteEmailAvailable(athlete.id, email);
+  if (DEMO_MODE) {
+    if (athlete.user_id) {
+      const user = demo.users.find(item => item.id === athlete.user_id);
+      if (user) {
+        const conflict = demo.users.find(item => item.id !== user.id && String(item.email || '').toLowerCase() === email);
+        if (conflict) throw Object.assign(new Error('Ese correo ya está utilizado por otra cuenta.'), { status: 409 });
+        user.email = email;
+      }
+    }
+    athlete.email = email;
+    return;
+  }
+  if (athlete.user_id) {
+    const authUser = await findAuthUserByEmail(email);
+    if (authUser && String(authUser.id) !== String(athlete.user_id)) {
+      throw Object.assign(new Error('Ese correo ya está utilizado por otra cuenta de acceso.'), { status: 409 });
+    }
+    await supabaseFetch(`/auth/v1/admin/users/${encodeURIComponent(athlete.user_id)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ email, email_confirm: true }),
+    });
+    await prodRows('profiles', `id=eq.${encodeURIComponent(athlete.user_id)}`, {
+      method: 'PATCH',
+      body: { email, updated_at: new Date().toISOString() },
+      prefer: 'return=minimal',
+    }).catch(() => []);
+  }
+}
+
 async function inviteAthleteUser(session, athleteId) {
   await ensureCoachAccess(session, athleteId);
   if (DEMO_MODE) {
@@ -996,9 +1125,8 @@ async function inviteAthleteUser(session, athleteId) {
 async function createCoachAthlete(session, body) {
   requireRole(session, 'coach');
   const displayName = sanitiseText(body.display_name, 160);
-  const email = sanitiseText(body.email, 200).toLowerCase();
+  const email = athleteAccessEmail(body.email);
   if (!displayName) throw Object.assign(new Error('Introduce el nombre del deportista.'), { status: 400 });
-  if (!email || !/^\S+@\S+\.\S+$/.test(email)) throw Object.assign(new Error('Introduce un correo válido.'), { status: 400 });
   const intervalsStatus = ['pending', 'disabled'].includes(body.intervals_status) ? body.intervals_status : 'pending';
   if (DEMO_MODE) {
     if (demo.athletes.some(item => item.email.toLowerCase() === email)) throw Object.assign(new Error('Ya existe un deportista con ese correo.'), { status: 409 });
@@ -1035,22 +1163,38 @@ async function createCoachAthlete(session, body) {
 }
 
 async function saveProfile(athleteId, body) {
-  const profile = normaliseProfile(body);
+  const incomingProfile = normaliseProfile(body);
   if (DEMO_MODE) {
     const athlete = demo.athletes.find(item => item.id === athleteId);
+    if (!athlete) throw Object.assign(new Error('Deportista no encontrado.'), { status: 404 });
+    const email = hasOwn(body, 'email') ? athleteAccessEmail(body.email) : athlete.email;
+    await synchroniseAthleteAccessEmail(athlete, email);
+    const profile = {
+      ...incomingProfile,
+      availability: { ...safeObject(athlete.profile && athlete.profile.availability), ...safeObject(incomingProfile.availability) },
+    };
     athlete.profile = { ...athlete.profile, ...profile };
     if (body.display_name) athlete.display_name = sanitiseText(body.display_name, 160);
-    if (body.email) athlete.email = sanitiseText(body.email, 200).toLowerCase();
     if (body.intervals_status) athlete.intervals_status = sanitiseText(body.intervals_status, 30);
     saveDemo();
     return demoAthleteBundle(athleteId);
   }
+  const athleteRows = await prodRows('athletes', `id=eq.${encodeURIComponent(athleteId)}&select=id,user_id,email&limit=1`);
+  const athlete = athleteRows[0];
+  if (!athlete) throw Object.assign(new Error('Deportista no encontrado.'), { status: 404 });
+  const email = hasOwn(body, 'email') ? athleteAccessEmail(body.email) : athlete.email;
+  await synchroniseAthleteAccessEmail(athlete, email);
+  const existingProfiles = await prodRows('athlete_profiles', `athlete_id=eq.${encodeURIComponent(athleteId)}&select=availability&limit=1`);
+  const profile = {
+    ...incomingProfile,
+    availability: { ...safeObject(existingProfiles[0] && existingProfiles[0].availability), ...safeObject(incomingProfile.availability) },
+  };
   if (body.display_name || body.email || body.intervals_status) {
     await prodRows('athletes', `id=eq.${encodeURIComponent(athleteId)}`, {
       method: 'PATCH',
       body: {
         ...(body.display_name ? { display_name: sanitiseText(body.display_name, 160) } : {}),
-        ...(body.email ? { email: sanitiseText(body.email, 200).toLowerCase() } : {}),
+        ...(hasOwn(body, 'email') ? { email } : {}),
         ...(body.intervals_status ? { intervals_status: sanitiseText(body.intervals_status, 30) } : {}),
       },
     });
@@ -1244,6 +1388,7 @@ async function persistWeekWorkouts(savedWeek, athleteId, workouts, publicationSt
 
 async function saveWeek(athleteId, body, publish = false) {
   const week = normaliseWeek(body, athleteId);
+  await assertWorkoutsFitAvailability(athleteId, week.workouts);
   if (publish) {
     week.status = 'published';
     week.published_at = new Date().toISOString();
@@ -1253,22 +1398,26 @@ async function saveWeek(athleteId, body, publish = false) {
     const athlete = demo.athletes.find(item => item.id === athleteId);
     if (!athlete) throw Object.assign(new Error('Deportista no encontrado.'), { status: 404 });
 
-    const previous = athlete.week || {};
+    if (!Array.isArray(athlete.microcycles)) athlete.microcycles = [];
+    const microcycleIndex = athlete.microcycles.findIndex(item => item.week_start === week.week_start);
+    const previous = microcycleIndex >= 0 ? athlete.microcycles[microcycleIndex] : (athlete.week || {});
     const previousWorkouts = new Map((previous.workouts || []).map(item => [String(item.id), item]));
     const mergedWorkouts = week.workouts.map(item => ({
       ...(previousWorkouts.get(String(item.id)) || {}),
       ...item,
     }));
-    athlete.week = {
+    const savedWeek = {
       ...previous,
       ...week,
       id: previous.id || crypto.randomUUID(),
       end_date: week.end_date || previous.end_date || addDays(week.week_start, 6),
       workouts: mergedWorkouts,
     };
+    if (microcycleIndex >= 0) athlete.microcycles[microcycleIndex] = savedWeek;
+    else athlete.week = savedWeek;
     if (athlete.metrics) athlete.metrics.planned_load = week.target_load;
     saveDemo();
-    return athlete.week;
+    return savedWeek;
   }
 
   const existingRows = await prodRows(
@@ -2048,6 +2197,7 @@ async function addMicrocycle(athleteId, mesocycleId, body) {
   };
   const sourceWorkouts = Array.isArray(body && body.workouts) ? body.workouts : [];
   const workouts = sourceWorkouts.map((item, index) => normaliseWorkout(item, athleteId, data.week_start, index));
+  await assertWorkoutsFitAvailability(athleteId, workouts);
 
   if (DEMO_MODE) {
     const athlete = demo.athletes.find(item => item.id === athleteId);
@@ -2081,6 +2231,10 @@ async function updateMicrocycle(microcycleId, athleteId, body) {
   const data = normaliseMicrocycle(body, existingShape);
   validateMicrocycleInsideMesocycle(data, mesocycle);
   await ensureMicrocycleStartAvailable(athleteId, data.week_start, microcycleId);
+  const incomingWorkouts = Array.isArray(body && body.workouts)
+    ? body.workouts.map((item, index) => normaliseWorkout(item, athleteId, data.week_start, index))
+    : null;
+  if (incomingWorkouts) await assertWorkoutsFitAvailability(athleteId, incomingWorkouts);
 
   if (DEMO_MODE) {
     const athlete = demo.athletes.find(item => item.id === athleteId);
@@ -2089,9 +2243,7 @@ async function updateMicrocycle(microcycleId, athleteId, body) {
     if (Array.isArray(athlete.microcycles)) athlete.microcycles.forEach(item => candidates.push({ kind: 'array', item }));
     const found = candidates.find(entry => entry.item.id === microcycleId);
     const currentWorkouts = found.item.workouts || [];
-    const workouts = Array.isArray(body && body.workouts)
-      ? body.workouts.map((item, index) => normaliseWorkout(item, athleteId, data.week_start, index))
-      : currentWorkouts;
+    const workouts = incomingWorkouts || currentWorkouts;
     const updated = { ...found.item, ...data, mesocycle_id: mesocycleId, workouts };
     if (found.kind === 'week') athlete.week = updated;
     else {
@@ -2113,9 +2265,8 @@ async function updateMicrocycle(microcycleId, athleteId, body) {
   const saved = rows[0];
 
   let workouts;
-  if (Array.isArray(body && body.workouts)) {
-    const normalised = body.workouts.map((item, index) => normaliseWorkout(item, athleteId, data.week_start, index));
-    workouts = await persistWeekWorkouts(saved, athleteId, normalised, saved.status);
+  if (incomingWorkouts) {
+    workouts = await persistWeekWorkouts(saved, athleteId, incomingWorkouts, saved.status);
   } else {
     workouts = await prodRows('workouts', `training_week_id=eq.${encodeURIComponent(saved.id)}&select=*&order=workout_date.asc`);
   }
@@ -4728,6 +4879,7 @@ async function api(req, res, url) {
     const source = Array.isArray(body.workouts) ? body.workouts : (body.workout ? [body.workout] : []);
     const weekStart = validDate(body.week_start) || startOfWeek();
     const workouts = source.slice(0, 30).map((item, index) => normaliseWorkout(item, athleteId, weekStart, index));
+    await assertWorkoutsFitAvailability(athleteId, workouts);
     const events = workouts.map(buildIntervalsEvent).filter(Boolean);
     return sendJson(res, 200, { events });
   }

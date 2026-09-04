@@ -1452,6 +1452,10 @@ $('saveSessionModal').addEventListener('click', async () => {
   const workout = currentModalWorkout();
   try {
     $('saveSessionModal').disabled = true;
+    if (window.RunFlowAvailability?.validateWorkout) {
+      const availability = await window.RunFlowAvailability.validateWorkout(workout);
+      if (!availability.ok) throw new Error(availability.error);
+    }
     if (state.editingSession.workoutId) {
       originalWeek.workouts = (originalWeek.workouts || []).filter(item => String(item.id) !== String(state.editingSession.workoutId));
     }
