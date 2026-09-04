@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 
 const root = process.cwd();
 const syntaxFiles = [
-  'auth-recovery-hook.js','athlete-link-recovery-hook.js','learning-api-hook.js','library-policy-hook.js','v9-engine-hook.js','v9-supplement-hook.js','public/js/login.js','public/js/activate.js',
+  'auth-recovery-hook.js','athlete-link-recovery-hook.js','learning-api-hook.js','library-policy-hook.js','session-comparison-metrics.js','v9-engine-hook.js','v9-supplement-hook.js','public/js/login.js','public/js/activate.js',
   'public/js/coach-v9-batch.js','public/js/coach-v9-supplement.js','public/js/coach-v9-season-planner.js','public/js/coach-v9-season-bridge.js',
   'public/js/coach-v9-profile-availability.js','public/js/coach-v9-hierarchy.js','public/js/coach-v9-stepwise-final.js','public/js/coach-v9-session-generator-fix.js',
   'public/js/coach-v9-manual-planning.js','public/js/coach-v9-contextual-recommender-v2.js','public/js/coach-v9-plan-v2-import.js','public/js/coach-learning.js',
@@ -69,5 +69,31 @@ const render=fs.readFileSync(path.join(root,'render.yaml'),'utf8');
 if(!loginHtml.includes('forgotPassword')||!loginJs.includes('/api/auth/recover')||!render.includes('-r ./auth-recovery-hook.js'))throw new Error('Recuperación de contraseña incompleta.');
 if(!render.includes('-r ./learning-api-hook.js')||!render.includes('-r ./library-policy-hook.js'))throw new Error('Los hooks de aprendizaje/biblioteca no están cargados en Render.');
 if(!render.includes('-r ./athlete-link-recovery-hook.js'))throw new Error('El hook de recuperación del vínculo Athlete no está cargado en Render.');
+
+const comparisonModule=await import(`file://${path.join(root,'session-comparison-metrics.js')}`);
+const comparison=comparisonModule.default||comparisonModule;
+const workout={title:'VO2max 5 x 3 minutos',sport:'Run',blocks:[{type:'runflow_meta',library_id:'RF-VO2-01'}]};
+const intervalActivity={avg_pace_sec_per_km:360,avg_hr:120,raw_summary:{icu_intervals:[
+  {type:'WARMUP',moving_time:600,distance:1800,average_heartrate:120},
+  {type:'WORK',moving_time:180,distance:750,average_heartrate:155},
+  {type:'RECOVERY',moving_time:120,distance:300,average_heartrate:135},
+  {type:'WORK',moving_time:180,distance:720,average_heartrate:158},
+  {type:'COOLDOWN',moving_time:600,distance:1700,average_heartrate:125},
+]}};
+const blockMetric=comparison.metricForSession(intervalActivity,workout);
+if(!blockMetric.available||blockMetric.scope!=='work_blocks'||blockMetric.work_blocks!==2)throw new Error('La comparación no está aislando los bloques de trabajo.');
+if(Math.abs(blockMetric.pace_sec_per_km-244.9)>.1||Math.abs(blockMetric.avg_hr-156.5)>.1)throw new Error('Las medias ponderadas de bloques no son correctas.');
+if(Math.abs(blockMetric.ratio-(blockMetric.pace_sec_per_km/blockMetric.avg_hr))>.001)throw new Error('El índice ritmo/FC no es correcto.');
+const continuous=comparison.metricForSession({avg_pace_sec_per_km:300,avg_hr:150,raw_summary:{}},{title:'Rodaje Z2',sport:'Run',blocks:[]});
+if(!continuous.available||continuous.scope!=='whole_activity'||continuous.ratio!==2)throw new Error('La comparación continua Z2 no usa la actividad completa.');
+const identities=[
+  {identity:comparison.identity({title:'VO2max 6 x 3',sport:'Run',blocks:[{type:'runflow_meta',library_id:'RF-1'}]})},
+  {identity:comparison.identity({title:'VO2max 5 x 4',sport:'Run',blocks:[{type:'runflow_meta',library_id:'RF-2'}]})},
+  {identity:comparison.identity({title:'VO2max 6 x 3',sport:'Run',blocks:[{type:'runflow_meta',library_id:'RF-3'}]})},
+];
+const sameName=comparison.findPreviousComparable(identities,2);
+if(!sameName||sameName.match!=='same_name'||sameName.row!==identities[0])throw new Error('La comparación no prioriza sesiones del mismo nombre.');
+const sameType=comparison.findPreviousComparable(identities,1);
+if(!sameType||sameType.match!=='session_type'||sameType.row!==identities[0])throw new Error('La comparación no recurre al mismo tipo de sesión.');
 
 console.log(`OK: 307/307 fuente; Learning V1 validado; vínculo Athlete protegido; ${over60.length} sesiones no-largas >60 se excluirán operativamente; catálogo fuente bandas 45=${band45}, 60=${band60}.`);
