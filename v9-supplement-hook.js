@@ -3,9 +3,12 @@
 const http=require('http');
 const crypto=require('crypto');
 const {URL}=require('url');
+const {activityIntervals,findPreviousComparable,identity,metricForSession}=require('./session-comparison-metrics');
 const SUPABASE_URL=String(process.env.SUPABASE_URL||'').replace(/\/$/,'');
 const SUPABASE_ANON_KEY=String(process.env.SUPABASE_ANON_KEY||'');
 const SUPABASE_SERVICE_ROLE_KEY=String(process.env.SUPABASE_SERVICE_ROLE_KEY||'');
+const APP_ENCRYPTION_KEY=String(process.env.APP_ENCRYPTION_KEY||'');
+const INTERVALS_API_BASE='https://intervals.icu/api/v1';
 const IS_PROD=process.env.NODE_ENV==='production';
 
 function cookies(req){const o={};String(req.headers.cookie||'').split(';').forEach(p=>{const i=p.indexOf('=');if(i>=0)o[p.slice(0,i).trim()]=decodeURIComponent(p.slice(i+1).trim())});return o}
@@ -23,6 +26,12 @@ function today(){return new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Madrid
 function sportKey(v){v=String(v||'').toLowerCase();if(/strength|weight|fuerza/.test(v))return'strength';if(/trail/.test(v))return'trail';if(/run/.test(v))return'run';if(/ride|bike|cycl/.test(v))return'bike';if(/walk|hike/.test(v))return'walk';return'other'}
 function pctl(v,p){const a=v.map(Number).filter(Number.isFinite).sort((a,b)=>a-b);if(!a.length)return null;const x=(a.length-1)*p,l=Math.floor(x),h=Math.ceil(x);return l===h?a[l]:a[l]+(a[h]-a[l])*(x-l)}
 function obj(v){return v&&typeof v==='object'&&!Array.isArray(v)?v:{}}
+function encryptionKey(){if(!APP_ENCRYPTION_KEY||APP_ENCRYPTION_KEY.length<24)return null;try{const raw=Buffer.from(APP_ENCRYPTION_KEY,'base64');if(raw.length===32)return raw}catch{}return crypto.createHash('sha256').update(APP_ENCRYPTION_KEY,'utf8').digest()}
+function decryptSecret(record){const key=encryptionKey();if(!key||!record)return null;const decipher=crypto.createDecipheriv('aes-256-gcm',key,Buffer.from(record.secret_iv,'base64'));decipher.setAuthTag(Buffer.from(record.secret_tag,'base64'));return Buffer.concat([decipher.update(Buffer.from(record.secret_ciphertext,'base64')),decipher.final()]).toString('utf8')}
+async function intervalsKey(athleteId){const rows=await sb('athlete_integrations',`athlete_id=eq.${encodeURIComponent(athleteId)}&provider=eq.intervals&select=*&limit=1`).catch(()=>[]);return rows[0]?decryptSecret(rows[0]):null}
+async function intervalsDetail(apiKey,externalId){const data=await fetchJson(`${INTERVALS_API_BASE}/activity/${encodeURIComponent(externalId)}?intervals=true`,{headers:{Authorization:`Basic ${Buffer.from(`API_KEY:${apiKey}`).toString('base64')}`,Accept:'application/json'}});return data&&data.activity&&typeof data.activity==='object'?data.activity:data}
+async function ensureIntervals(athleteId,activity,apiKey){if(activityIntervals(activity).length||!apiKey||!activity?.intervals_activity_id||String(activity.intervals_activity_id).startsWith('runflow-'))return activity;try{const detail=await intervalsDetail(apiKey,activity.intervals_activity_id);if(!detail||typeof detail!=='object')return activity;await sb('activities',`id=eq.${encodeURIComponent(activity.id)}&athlete_id=eq.${encodeURIComponent(athleteId)}`,{method:'PATCH',body:{raw_summary:detail},prefer:'return=minimal'}).catch(()=>[]);return{...activity,raw_summary:detail}}catch{return activity}}
+function paceText(seconds){const value=Math.round(Number(seconds)||0);return value>0?`${Math.floor(value/60)}:${String(value%60).padStart(2,'0')}/km`:'—'}
 
 async function externalStrengthSync(athleteId,body){
   const effective=validDate(body.effective_date)||today();
@@ -62,18 +71,17 @@ async function reconcileFeedback(athleteId){
   return{created,replaced};
 }
 
-function norm(v){return String(v||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim()}
 async function comparisons(athleteId){
-  const activities=await sb('activities',`athlete_id=eq.${encodeURIComponent(athleteId)}&workout_id=not.is.null&select=*&order=activity_date.asc`).catch(()=>[]);if(activities.length<2)return{comparisons:[]};
-  const ids=[...new Set(activities.map(a=>a.workout_id).filter(Boolean))],workouts=await sb('workouts',`athlete_id=eq.${encodeURIComponent(athleteId)}&id=in.(${ids.join(',')})&select=id,title,session_objective,adaptation_target,blocks,sport`).catch(()=>[]),wk=new Map(workouts.map(w=>[String(w.id),w]));
-  const logs=await sb('manual_session_logs',`athlete_id=eq.${encodeURIComponent(athleteId)}&workout_id=in.(${ids.join(',')})&select=workout_id,rpe,actual_duration_min,created_at&order=created_at.asc`).catch(()=>[]),latestLog=new Map();logs.forEach(l=>latestLog.set(String(l.workout_id),l));
-  const groups=new Map();for(const a of activities){const w=wk.get(String(a.workout_id));if(!w)continue;const meta=(Array.isArray(w.blocks)?w.blocks:[]).find(b=>b?.comparison_group||b?.type==='runflow_library_meta');const group=meta?.comparison_group||norm(w.adaptation_target||w.session_objective||w.title);if(!group)continue;if(!groups.has(group))groups.set(group,[]);groups.get(group).push({a,w,log:latestLog.get(String(w.id))||null})}
-  const out=[];for(const[group,rows]of groups){if(rows.length<2)continue;const prev=rows[rows.length-2],cur=rows[rows.length-1],p={pace:Number(prev.a.avg_pace_sec_per_km)||null,hr:Number(prev.a.avg_hr)||null,rpe:Number(prev.log?.rpe)||null,duration:Number(prev.a.duration_sec||0)/60},c={pace:Number(cur.a.avg_pace_sec_per_km)||null,hr:Number(cur.a.avg_hr)||null,rpe:Number(cur.log?.rpe)||null,duration:Number(cur.a.duration_sec||0)/60};let pos=0,neg=0;const reasons=[];
-    if(c.pace&&p.pace&&c.rpe&&p.rpe){if(c.pace<p.pace&&c.rpe<=p.rpe){pos++;reasons.push('ritmo superior con RPE igual o menor')}if(c.pace>p.pace&&c.rpe>=p.rpe){neg++;reasons.push('ritmo inferior con RPE igual o mayor')}}
-    if(c.hr&&p.hr&&c.pace&&p.pace){if(c.hr<p.hr&&c.pace<=p.pace){pos++;reasons.push('FC menor sin perder ritmo')}if(c.hr>p.hr&&c.pace>=p.pace){neg++;reasons.push('FC mayor sin mejora de ritmo')}}
-    if(c.duration>p.duration&&c.rpe&&p.rpe&&c.rpe<=p.rpe){pos++;reasons.push('más trabajo con coste percibido similar o menor')}
-    const result=pos>neg?'PROGRESA':neg>pos?'CAE':'SE_MANTIENE';out.push({group,result,previous:{activity_id:prev.a.id,workout_id:prev.w.id,date:String(prev.a.activity_date).slice(0,10),title:prev.w.title,...p},current:{activity_id:cur.a.id,workout_id:cur.w.id,date:String(cur.a.activity_date).slice(0,10),title:cur.w.title,...c},explanation:reasons.length?reasons.join(' · '):'No hay una señal direccional suficientemente clara entre las dos exposiciones.'});
-  }return{comparisons:out.sort((a,b)=>String(b.current.date).localeCompare(String(a.current.date)))};
+  const activities=await sb('activities',`athlete_id=eq.${encodeURIComponent(athleteId)}&workout_id=not.is.null&select=*&order=activity_date.asc&limit=240`).catch(()=>[]);if(activities.length<2)return{comparisons:[],metric:'pace_sec_per_km_div_avg_hr'};
+  const ids=[...new Set(activities.map(a=>a.workout_id).filter(Boolean))],workouts=await sb('workouts',`athlete_id=eq.${encodeURIComponent(athleteId)}&id=in.(${ids.join(',')})&select=id,title,summary,structured_description,session_objective,adaptation_target,blocks,sport`).catch(()=>[]),wk=new Map(workouts.map(w=>[String(w.id),w]));
+  const rows=activities.map(a=>{const w=wk.get(String(a.workout_id));return w?{a,w,identity:identity(w)}:null}).filter(Boolean);
+  const pairs=[];for(let index=1;index<rows.length;index++){const previous=findPreviousComparable(rows,index);if(previous)pairs.push({previous:previous.row,current:rows[index],match:previous.match})}
+  const recent=pairs.slice(-6),key=await intervalsKey(athleteId),cache=new Map();
+  async function hydrated(row){const id=String(row.a.id);if(!cache.has(id))cache.set(id,ensureIntervals(athleteId,row.a,key));return{...row,a:await cache.get(id)}}
+  const ready=await Promise.all(recent.map(async pair=>({match:pair.match,previous:await hydrated(pair.previous),current:await hydrated(pair.current)})));
+  const out=[];let unavailable=0;for(const pair of ready){const prev=pair.previous,cur=pair.current,p=metricForSession(prev.a,prev.w),c=metricForSession(cur.a,cur.w);if(!p.available||!c.available){unavailable++;continue}const delta=Math.round((c.ratio-p.ratio)*10000)/10000,deltaPct=p.ratio?Math.round((delta/p.ratio)*1000)/10:null,result=delta<0?'MEJORA':delta>0?'EMPEORA':'IGUAL',type=cur.identity.type||cur.identity.comparison_group||cur.identity.name;
+    out.push({group:type,session_type:type,match:pair.match,result,metric:'pace_sec_per_km_div_avg_hr',delta,delta_pct:deltaPct,previous:{activity_id:prev.a.id,workout_id:prev.w.id,date:String(prev.a.activity_date).slice(0,10),title:prev.w.title,...p},current:{activity_id:cur.a.id,workout_id:cur.w.id,date:String(cur.a.activity_date).slice(0,10),title:cur.w.title,...c},explanation:`${paceText(p.pace_sec_per_km)} a ${p.avg_hr.toFixed(1)} ppm = ${p.ratio.toFixed(4)} → ${paceText(c.pace_sec_per_km)} a ${c.avg_hr.toFixed(1)} ppm = ${c.ratio.toFixed(4)} (${deltaPct>0?'+':''}${deltaPct?.toFixed(1)||'0.0'}%). ${c.scope==='work_blocks'?`Media de ${c.work_blocks} bloques de trabajo.`:'Actividad completa.'}`});
+  }return{comparisons:out.sort((a,b)=>String(b.current.date).localeCompare(String(a.current.date))),metric:'pace_sec_per_km_div_avg_hr',unavailable};
 }
 
 async function handle(req,res,url){const p=url.pathname,meth=req.method||'GET';let m=p.match(/^\/api\/v9\/coach\/athletes\/([^/]+)\/external-strength-sync$/);if(m&&meth==='POST'){const s=await session(req,res),id=decodeURIComponent(m[1]);await coach(s,id);json(res,200,await externalStrengthSync(id,await read(req)));return true}m=p.match(/^\/api\/v9\/coach\/athletes\/([^/]+)\/comparisons$/);if(m&&meth==='GET'){const s=await session(req,res),id=decodeURIComponent(m[1]);await coach(s,id);json(res,200,await comparisons(id));return true}if(p==='/api/v2/athlete/reconcile-feedback'&&meth==='POST'){const s=await session(req,res);role(s,'athlete');json(res,200,await reconcileFeedback(s.athlete_id));return true}return false}

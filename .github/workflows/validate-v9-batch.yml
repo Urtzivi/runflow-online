@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'v9-*.js'
+      - 'session-comparison-metrics.js'
       - 'athlete-link-recovery-hook.js'
       - 'public/coach-v9.html'
       - 'public/athlete.html'
