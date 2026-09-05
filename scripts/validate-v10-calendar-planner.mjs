@@ -10,12 +10,14 @@ const beta = read('public/coach-v9.html');
 const base = read('public/coach-base.html');
 const availability = read('public/js/coach-v9-profile-availability.js');
 const seasonLoader = read('public/js/coach-v9-season-planner.js');
+const login = read('public/js/login.js');
+const loginHtml = read('public/login.html');
 const server = read('server.js');
 const engine = read('v9-engine-hook.js');
 
 for (const html of [coach, beta]) {
   assert(html.includes('/css/coach-v10-calendar-planner.css?v=10.2.0'), 'Falta cargar el CSS del planificador V10.');
-  assert(html.includes('/js/coach-v10-calendar-planner.js?v=10.2.0'), 'Falta cargar el JavaScript del planificador V10.');
+  assert(html.includes('/js/coach-v10-calendar-planner.js?v=10.2.1'), 'Falta cargar el JavaScript del planificador V10.');
   assert(html.includes('/js/coach-v9-profile-availability.js?v=9.4.3'), 'Falta cargar la disponibilidad semanal actualizada.');
   assert(html.includes('/js/coach-v9-season-planner.js?v=9.3.1'), 'Falta cargar la corrección de semanas del deportista.');
 }
@@ -26,6 +28,8 @@ assert(planner.includes("planner.level = 'micro'"), 'Falta la navegación a micr
 assert(planner.includes('seasonMonths(season)'), 'El planificador no representa todos los meses de la temporada.');
 assert(planner.includes('Lista de mesociclos'), 'Falta la vista global de mesociclos.');
 assert(planner.includes('mesocycleConflict(start, end, id)'), 'El formulario no bloquea mesociclos solapados.');
+assert(planner.includes('refreshMesocycleMicrocycles'), 'Los microciclos no se recargan directamente tras guardarlos o abrir el mesociclo.');
+assert(planner.includes('/microcycles`'), 'Falta la carga directa de microciclos por mesociclo.');
 assert(planner.includes('RUNFLOW_V10_TECHNICAL_MACRO'), 'Falta la compatibilidad interna con macrociclos existentes.');
 assert(planner.includes("schema: 'runflow.microcycle.v1'"), 'Falta la plantilla de importación de sesiones.');
 assert(planner.includes('/week/publish'), 'Falta la publicación explícita de sesiones en Intervals.');
@@ -50,6 +54,12 @@ for (const marker of ['ATHLETE_AVAILABILITY_CONFLICT', 'assertWorkoutsFitAvailab
   assert(server.includes(marker), `El servidor no protege ficha/planificación: ${marker}`);
 }
 assert(server.includes('ensureMesocycleDatesAvailable'), 'El servidor no bloquea mesociclos solapados.');
+assert(server.includes("pathname === '/api/auth/magic-link'"), 'Falta el acceso Athlete mediante enlace por email.');
+assert(server.includes("pathname === '/api/auth/session'"), 'Falta convertir el enlace seguro en sesión Athlete.');
+assert(server.includes('create_user: false'), 'El acceso por email no debe crear cuentas públicas automáticamente.');
+assert(login.includes('requestAthleteAccess'), 'La pantalla Athlete no solicita el enlace de acceso.');
+assert(login.includes('acceptMagicLink'), 'La pantalla Athlete no acepta el enlace seguro recibido.');
+assert(loginHtml.includes('/js/login.js?v=2.6.0'), 'Falta publicar la nueva pantalla de acceso Athlete.');
 assert(engine.includes('dayAllowsWorkout'), 'La replanificación automática no respeta el tipo de actividad diario.');
 assert(styles.includes('max-height: calc(100vh - 36px)'), 'La ficha de mesociclo puede quedar fuera de la pantalla.');
 assert(styles.includes('position: sticky; bottom: 0'), 'El botón de guardado del ciclo no permanece accesible.');

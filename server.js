@@ -21,7 +21,7 @@ const APP_ENCRYPTION_KEY = String(process.env.APP_ENCRYPTION_KEY || '');
 const OPENAI_API_KEY = String(process.env.OPENAI_API_KEY || '');
 const OPENAI_MODEL = String(process.env.OPENAI_MODEL || 'gpt-5.6-terra');
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
-const APP_VERSION = 'Online Pilot 1.9.1 - Planificador sin solapamientos';
+const APP_VERSION = 'Online Pilot 1.9.2 - Microciclos visibles y acceso Athlete por email';
 const INTERVALS_API_BASE = 'https://intervals.icu/api/v1';
 
 const RUNFLOW_PLAN_SCHEMA = 'runflow.plan.v1';
@@ -433,6 +433,14 @@ async function authLogin(email, password) {
   return supabaseFetch('/auth/v1/token?grant_type=password', {
     method: 'POST',
     body: JSON.stringify({ email, password }),
+  }, SUPABASE_ANON_KEY);
+}
+
+async function authMagicLink(email) {
+  const redirect = `${APP_BASE_URL}/login.html?mode=athlete`;
+  return supabaseFetch(`/auth/v1/otp?redirect_to=${encodeURIComponent(redirect)}`, {
+    method: 'POST',
+    body: JSON.stringify({ email, create_user: false }),
   }, SUPABASE_ANON_KEY);
 }
 
@@ -4746,6 +4754,37 @@ async function api(req, res, url) {
     res.setHeader('Set-Cookie', authCookies(data.access_token, data.refresh_token, data.expires_in));
     const context = await prodUserContext(data.user.id);
     return sendJson(res, 200, { ok: true, user: { id: data.user.id, email: data.user.email, display_name: data.user.user_metadata && data.user.user_metadata.display_name, ...context } });
+  }
+
+  if (pathname === '/api/auth/magic-link' && method === 'POST') {
+    const body = await readJson(req);
+    const email = athleteAccessEmail(body.email);
+    if (DEMO_MODE) {
+      const athlete = demo.athletes.find(item => item.lifecycle_status !== 'inactive' && String(item.email || '').toLowerCase() === email);
+      const user = athlete?.user_id ? demo.users.find(item => item.id === athlete.user_id && item.roles.includes('athlete')) : null;
+      if (!user) return sendJson(res, 200, { ok: true, message: 'Si el correo pertenece a un deportista activo, recibirá un enlace de acceso.' });
+      res.setHeader('Set-Cookie', cookie('rf_demo_user', user.id, { maxAge: 60 * 60 * 24 * 7 }));
+      return sendJson(res, 200, { ok: true, demo: true, user: { id: user.id, email: user.email, display_name: user.display_name, roles: user.roles, athlete_id: user.athlete_id } });
+    }
+    const athletes = await prodRows('athletes', `email=ilike.${encodeURIComponent(email)}&lifecycle_status=eq.active&select=id,user_id&limit=2`);
+    if (athletes.length === 1 && athletes[0].user_id) {
+      const roles = await prodRows('user_roles', `user_id=eq.${encodeURIComponent(athletes[0].user_id)}&role=eq.athlete&select=role&limit=1`);
+      if (roles.length) await authMagicLink(email);
+    }
+    return sendJson(res, 200, { ok: true, message: 'Si el correo pertenece a un deportista activo, recibirá un enlace para entrar en RunFlow Athlete.' });
+  }
+
+  if (pathname === '/api/auth/session' && method === 'POST') {
+    if (DEMO_MODE) throw Object.assign(new Error('No disponible en modo demostración.'), { status: 400 });
+    const body = await readJson(req);
+    const accessToken = String(body.access_token || '');
+    const refreshToken = String(body.refresh_token || '');
+    if (!accessToken || !refreshToken) throw Object.assign(new Error('El enlace de acceso no es válido o ha caducado.'), { status: 400 });
+    const user = await authUser(accessToken);
+    const context = await prodUserContext(user.id);
+    if (!context.roles.includes('athlete') || !context.athlete_id) throw Object.assign(new Error('Esta cuenta no está vinculada a un deportista activo.'), { status: 403 });
+    res.setHeader('Set-Cookie', authCookies(accessToken, refreshToken, body.expires_in));
+    return sendJson(res, 200, { ok: true, user: { id: user.id, email: user.email, display_name: user.user_metadata && user.user_metadata.display_name, ...context } });
   }
 
   if (pathname === '/api/auth/accept-invite' && method === 'POST') {

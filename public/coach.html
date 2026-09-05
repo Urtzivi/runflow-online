@@ -60,7 +60,7 @@
           '/js/coach-v9-plan-v2-import.js?v=9.8.0',
           '/js/coach-v9-plan-v2-visibility-fix.js?v=9.8.1',
           '/js/coach-learning.js?v=1.0.0',
-          '/js/coach-v10-calendar-planner.js?v=10.2.0'
+          '/js/coach-v10-calendar-planner.js?v=10.2.1'
         ];
         await Promise.all(scripts.map(src=>new Promise(resolve=>{const p=document.createElement('link');p.rel='preload';p.as='script';p.href=src;p.onload=resolve;p.onerror=resolve;document.head.appendChild(p)})));
         window.fetch=(input,init)=>{
