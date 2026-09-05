@@ -21,7 +21,7 @@ const APP_ENCRYPTION_KEY = String(process.env.APP_ENCRYPTION_KEY || '');
 const OPENAI_API_KEY = String(process.env.OPENAI_API_KEY || '');
 const OPENAI_MODEL = String(process.env.OPENAI_MODEL || 'gpt-5.6-terra');
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
-const APP_VERSION = 'Online Pilot 1.9.2 - Microciclos visibles y acceso Athlete por email';
+const APP_VERSION = 'Online Pilot 1.9.3 - Dashboard Athlete tolerante a fallos';
 const INTERVALS_API_BASE = 'https://intervals.icu/api/v1';
 
 const RUNFLOW_PLAN_SCHEMA = 'runflow.plan.v1';
@@ -937,16 +937,23 @@ async function demoAthleteBundle(athleteId) {
 async function prodAthleteBundle(athleteId, weekStart = startOfWeek()) {
   const athleteRows = await prodRows('athletes', `id=eq.${encodeURIComponent(athleteId)}&select=*&limit=1`);
   if (!athleteRows.length) throw Object.assign(new Error('Deportista no encontrado.'), { status: 404 });
+  const optionalRows = async (label, promise) => {
+    try { return await promise; }
+    catch (error) {
+      console.error(`[athlete-dashboard] ${label}: ${error.message}`);
+      return [];
+    }
+  };
   const [profiles, zones, goals, weeks, metrics, performance] = await Promise.all([
-    prodRows('athlete_profiles', `athlete_id=eq.${encodeURIComponent(athleteId)}&select=*&limit=1`),
-    prodRows('training_zones', `athlete_id=eq.${encodeURIComponent(athleteId)}&select=*&order=kind.asc,zone_order.asc`),
-    prodRows('goals', `athlete_id=eq.${encodeURIComponent(athleteId)}&status=eq.active&select=*&order=goal_date.asc`),
-    prodRows('training_weeks', `athlete_id=eq.${encodeURIComponent(athleteId)}&week_start=eq.${weekStart}&select=*&limit=1`),
-    prodRows('daily_metrics', `athlete_id=eq.${encodeURIComponent(athleteId)}&select=*&order=metric_date.desc&limit=1`),
-    prodRows('performance_snapshots', `athlete_id=eq.${encodeURIComponent(athleteId)}&select=*&order=snapshot_date.desc&limit=1`).catch(() => []),
+    optionalRows('perfil', prodRows('athlete_profiles', `athlete_id=eq.${encodeURIComponent(athleteId)}&select=*&limit=1`)),
+    optionalRows('zonas', prodRows('training_zones', `athlete_id=eq.${encodeURIComponent(athleteId)}&select=*&order=kind.asc,zone_order.asc`)),
+    optionalRows('objetivos', prodRows('goals', `athlete_id=eq.${encodeURIComponent(athleteId)}&status=eq.active&select=*&order=goal_date.asc`)),
+    optionalRows('semana', prodRows('training_weeks', `athlete_id=eq.${encodeURIComponent(athleteId)}&week_start=eq.${weekStart}&select=*&limit=1`)),
+    optionalRows('metricas', prodRows('daily_metrics', `athlete_id=eq.${encodeURIComponent(athleteId)}&select=*&order=metric_date.desc&limit=1`)),
+    optionalRows('rendimiento', prodRows('performance_snapshots', `athlete_id=eq.${encodeURIComponent(athleteId)}&select=*&order=snapshot_date.desc&limit=1`)),
   ]);
   const week = weeks[0] || { week_start: weekStart, week_type: '', title: '', coach_comment: '', target_load: 0, status: 'draft' };
-  const workouts = week.id ? await prodRows('workouts', `training_week_id=eq.${encodeURIComponent(week.id)}&select=*&order=workout_date.asc`) : [];
+  const workouts = week.id ? await optionalRows('sesiones', prodRows('workouts', `training_week_id=eq.${encodeURIComponent(week.id)}&select=*&order=workout_date.asc`)) : [];
   return {
     ...athleteRows[0],
     app_access_status: athleteRows[0].user_id ? 'active' : 'pending',
@@ -5312,9 +5319,13 @@ async function api(req, res, url) {
     const weekStart = url.searchParams.get('week_start') || startOfWeek();
     const athlete = DEMO_MODE ? await demoAthleteBundle(session.athlete_id) : await prodAthleteBundle(session.athlete_id, weekStart);
     if (athlete.week && athlete.week.status === 'published') {
-      const decorated = await listCalendarWeeks(session.athlete_id, weekStart, addDays(weekStart, 6), false);
-      const published = decorated.find(item => item.week_start === weekStart && item.status === 'published');
-      if (published) athlete.week = published;
+      try {
+        const decorated = await listCalendarWeeks(session.athlete_id, weekStart, addDays(weekStart, 6), false);
+        const published = decorated.find(item => item.week_start === weekStart && item.status === 'published');
+        if (published) athlete.week = published;
+      } catch (error) {
+        console.error(`[athlete-dashboard] semana decorada: ${error.message}`);
+      }
     } else athlete.week = null;
     return sendJson(res, 200, { athlete });
   }

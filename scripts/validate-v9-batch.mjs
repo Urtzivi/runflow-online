@@ -9,7 +9,7 @@ const syntaxFiles = [
   'public/js/coach-v9-batch.js','public/js/coach-v9-supplement.js','public/js/coach-v9-season-planner.js','public/js/coach-v9-season-bridge.js',
   'public/js/coach-v9-profile-availability.js','public/js/coach-v9-hierarchy.js','public/js/coach-v9-stepwise-final.js','public/js/coach-v9-session-generator-fix.js',
   'public/js/coach-v9-manual-planning.js','public/js/coach-v9-contextual-recommender-v2.js','public/js/coach-v9-plan-v2-import.js','public/js/coach-learning.js',
-  'public/js/athlete-v2-beta.js','public/js/athlete-v2-complete.js','public/js/athlete-v2-fixes.js','public/js/athlete-learning.js',
+  'public/js/athlete.js','public/js/athlete-v2-beta.js','public/js/athlete-v2-complete.js','public/js/athlete-v2-fixes.js','public/js/athlete-learning.js',
 ];
 for (const file of syntaxFiles) execFileSync(process.execPath, ['--check', path.join(root, file)], { stdio:'inherit' });
 
@@ -31,6 +31,7 @@ const band60=sessions.filter(row=>!longSource(row)&&Number(row.tm??row.Tiempo_to
 
 for(const file of ['public/coach.html','public/coach-base.html','public/coach-v8.html','public/coach-v9.html','public/athlete.html','public/athlete-base.html','public/athlete-v2.html'])if(!fs.existsSync(path.join(root,file)))throw new Error(`Falta ${file}.`);
 const primaryCoach=fs.readFileSync(path.join(root,'public/coach.html'),'utf8');
+const server=fs.readFileSync(path.join(root,'server.js'),'utf8');
 for(const marker of ["location.replace('/login')",'/js/coach-v9-stepwise-final.js','/js/coach-v9-session-generator-fix.js','/js/coach-v9-manual-planning.js','/js/coach-v9-contextual-recommender-v2.js','/js/coach-v9-plan-v2-import.js','/js/coach-v9-supplement.js?v=9.3.0','/css/coach-v9-plan-v2-import.css','/coach-base.html','/js/coach-learning.js?v=1.0.0'])if(!primaryCoach.includes(marker))throw new Error(`Coach principal: falta ${marker}`);
 
 const manual=fs.readFileSync(path.join(root,'public/js/coach-v9-manual-planning.js'),'utf8');
@@ -44,8 +45,10 @@ for(const route of ['/seasons','/goals','/macrocycles','/mesocycles','/microcycl
 for(const rule of ['el primer mesociclo no empieza con el macro','hay hueco o solapamiento','el último mesociclo no llega al final del macro','el último micro no llega al final del meso','está fuera de'])if(!importer.includes(rule))throw new Error(`Falta validación jerárquica V2: ${rule}`);
 
 const athleteOfficial=fs.readFileSync(path.join(root,'public/athlete.html'),'utf8');
-for(const marker of ['/athlete-base.html','/js/athlete.js?v=2.4.2.2','/js/athlete-v2-beta.js?v=2.0.3','/js/athlete-v2-complete.js?v=2.2.0','/js/athlete-v2-fixes.js?v=2.1.0','/js/athlete-learning.js?v=2.3.0','/css/athlete-learning.css?v=2.3.0',"location.replace('/login?mode=athlete')","runflowAthleteVersion='2.3-learning'"])if(!athleteOfficial.includes(marker))throw new Error(`Athlete oficial: falta ${marker}`);
+for(const marker of ['/athlete-base.html','/js/athlete.js?v=2.4.2.3','/js/athlete-v2-beta.js?v=2.0.3','/js/athlete-v2-complete.js?v=2.2.0','/js/athlete-v2-fixes.js?v=2.1.0','/js/athlete-learning.js?v=2.3.0','/css/athlete-learning.css?v=2.3.0',"location.replace('/login?mode=athlete')","runflowAthleteVersion='2.3-learning'"])if(!athleteOfficial.includes(marker))throw new Error(`Athlete oficial: falta ${marker}`);
 if(athleteOfficial.includes('athlete-v2-beta-banner'))throw new Error('Athlete oficial no debe mostrar el banner beta.');
+const athleteJs=fs.readFileSync(path.join(root,'public/js/athlete.js'),'utf8');
+for(const marker of ['renderDashboardError','Error al cargar tus datos','Reintentar'])if(!athleteJs.includes(marker))throw new Error(`Athlete no conserva el error del dashboard: falta ${marker}`);
 const athleteBeta=fs.readFileSync(path.join(root,'public/athlete-v2.html'),'utf8');
 if(!athleteBeta.includes('/athlete-base.html')||!athleteBeta.includes('athlete-v2-beta-banner'))throw new Error('La ruta beta debe conservar su banner y usar la base preservada.');
 
@@ -68,6 +71,7 @@ const loginJs=fs.readFileSync(path.join(root,'public/js/login.js'),'utf8');
 const render=fs.readFileSync(path.join(root,'render.yaml'),'utf8');
 if(!loginHtml.includes('forgotPassword')||!loginJs.includes('/api/auth/recover')||!render.includes('-r ./auth-recovery-hook.js'))throw new Error('Recuperación de contraseña incompleta.');
 if(!render.includes('-r ./learning-api-hook.js')||!render.includes('-r ./library-policy-hook.js'))throw new Error('Los hooks de aprendizaje/biblioteca no están cargados en Render.');
+for(const marker of ['optionalRows(\'perfil\'','optionalRows(\'semana\'','optionalRows(\'sesiones\'','[athlete-dashboard] semana decorada'])if(!server.includes(marker))throw new Error(`Dashboard Athlete no tolera fallos parciales: falta ${marker}`);
 if(!render.includes('-r ./athlete-link-recovery-hook.js'))throw new Error('El hook de recuperación del vínculo Athlete no está cargado en Render.');
 
 const comparisonModule=await import(`file://${path.join(root,'session-comparison-metrics.js')}`);

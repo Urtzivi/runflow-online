@@ -365,13 +365,26 @@ function renderAll(){renderToday();renderWeek();renderProfile();renderPerformanc
 async function loadDashboard(weekStart=state.selectedWeekStart){
   const data=await api(`/api/athlete/dashboard?week_start=${weekStart}`); state.athlete=data.athlete; state.selectedWeekStart=weekStart; renderAll();
 }
+function renderDashboardError(error){
+  const detail=error?.message||'No se pudo cargar la información del deportista.';
+  $('hello').textContent='No se pudo cargar Athlete';
+  $('todayWorkoutTitle').textContent='Error al cargar tus datos';
+  $('todayWorkoutSummary').textContent=detail;
+  $('todayWorkoutMeta').innerHTML='<span>El error queda visible para poder identificarlo</span>';
+  $('openTodayWorkout').textContent='Reintentar';
+  $('openTodayWorkout').classList.remove('hidden');
+  $('openTodayWorkout').onclick=()=>location.reload();
+  $('weekRange').textContent='Datos no disponibles';
+  $('weekVisual').innerHTML=`<div class="empty-state">${escapeHtml(detail)}</div>`;
+  $('coachWeekMessage').textContent='Recarga la pantalla. Si continúa, comunica este mensaje exacto.';
+}
 async function init(){
   try{
     const me=await api('/api/auth/me'); state.user=me.user; if(!state.user.roles.includes('athlete'))return location.href='/coach';
     state.selectedWeekStart=isoMonday();
     await loadDashboard(state.selectedWeekStart);
     await Promise.allSettled([loadActivities(false),loadMessages(false),loadPerformance(true)]);
-  }catch(error){message(error.message,'error');}
+  }catch(error){message(error.message,'error');renderDashboardError(error);}
 }
 
 // RPE 1-10
