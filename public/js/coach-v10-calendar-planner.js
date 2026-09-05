@@ -41,6 +41,13 @@
   function mesocycles() {
     return macros().flatMap((macro, macroIndex) => (macro.mesocycles || []).map((meso, index) => ({ ...meso, _macro: macro, _colour: (macroIndex + index) % 6 })));
   }
+  function storedMesocycleById(id) {
+    for (const macro of macros()) {
+      const meso = (macro.mesocycles || []).find(item => String(item.id) === String(id));
+      if (meso) return meso;
+    }
+    return null;
+  }
   function microcycles(meso) { return meso?.microcycles || []; }
   function datesOverlap(firstStart, firstEnd, secondStart, secondEnd) {
     return firstStart <= secondEnd && firstEnd >= secondStart;
@@ -238,6 +245,27 @@
     catch (error) { notify(error.message, 'error'); }
   }
 
+  async function refreshMesocycleMicrocycles(mesocycleId) {
+    const stored = storedMesocycleById(mesocycleId);
+    if (!stored) throw new Error('No se encuentra el mesociclo seleccionado en la temporada actual.');
+    const response = await apiCall(`/api/coach/athletes/${encodeURIComponent(athleteId())}/mesocycles/${encodeURIComponent(mesocycleId)}/microcycles`);
+    stored.microcycles = response.microcycles || [];
+    return stored.microcycles;
+  }
+
+  async function openMesocycle(mesocycleId) {
+    planner.level = 'meso';
+    planner.mesocycleId = mesocycleId;
+    renderPlanner();
+    q('#v10SeasonPlanner')?.scrollIntoView({ behavior: 'smooth' });
+    try {
+      await refreshMesocycleMicrocycles(mesocycleId);
+      renderPlanner();
+    } catch (error) {
+      notify(`No se pudieron actualizar los microciclos: ${error.message}`, 'error');
+    }
+  }
+
   function openCycleForm(kind, item = null, parentId = null, initialDate = '') {
     const season = plan()?.season;
     if (!season) return notify('Primero crea una temporada.', 'error');
@@ -324,7 +352,15 @@
         await apiCall(id ? `/api/coach/athletes/${encodeURIComponent(athleteId())}/microcycles/${encodeURIComponent(id)}` : `/api/coach/athletes/${encodeURIComponent(athleteId())}/mesocycles/${encodeURIComponent(parentId)}/microcycles`, { method: id ? 'PUT' : 'POST', headers: { 'X-RunFlow-Planning-Origin': 'manual' }, body: JSON.stringify(payload) });
       }
       modal.classList.add('hidden');
-      await loadPlan(appState()?.selectedSeasonId || null); renderPlanner();
+      if (kind === 'microcycle') {
+        await refreshMesocycleMicrocycles(parentId);
+        planner.level = 'meso';
+        planner.mesocycleId = parentId;
+        renderPlanner();
+      } else {
+        await loadPlan(appState()?.selectedSeasonId || null);
+        renderPlanner();
+      }
       notify(`${kind === 'mesocycle' ? 'Mesociclo' : 'Microciclo'} guardado.`, 'success');
     } catch (error) { q('#v10CycleStatus').textContent = error.message; }
     finally { button.disabled = false; }
@@ -435,7 +471,7 @@
   function handleClick(event) {
     const target = event.target.closest('[data-v10-action],[data-v10-date],[data-v10-open-meso],[data-v10-edit-meso],[data-v10-new-micro],[data-v10-open-micro],[data-v10-edit-micro],[data-v10-manual-session],[data-v10-edit-session],[data-v10-import],[data-v10-template],[data-v10-publish],[data-v10-edit-goal]');
     if (!target) return;
-    if (target.dataset.v10OpenMeso) { event.stopPropagation(); planner.level = 'meso'; planner.mesocycleId = target.dataset.v10OpenMeso; renderPlanner(); q('#v10SeasonPlanner')?.scrollIntoView({ behavior: 'smooth' }); return; }
+    if (target.dataset.v10OpenMeso) { event.stopPropagation(); openMesocycle(target.dataset.v10OpenMeso); return; }
     if (target.dataset.v10OpenMicro) { planner.level = 'micro'; planner.microcycleId = target.dataset.v10OpenMicro; renderPlanner(); return; }
     if (target.dataset.v10EditMeso) return openCycleForm('mesocycle', mesocycleById(target.dataset.v10EditMeso));
     if (target.dataset.v10NewMicro) return openCycleForm('microcycle', null, target.dataset.v10NewMicro, mesocycleById(target.dataset.v10NewMicro)?.start_date || '');

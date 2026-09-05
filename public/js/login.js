@@ -37,8 +37,10 @@ function configureAthleteView() {
   if (brandSmall) brandSmall.textContent = 'Acceso deportista';
   if (eyebrow) eyebrow.textContent = 'Deportista';
   if (heading) heading.textContent = 'Entra en tu app';
-  if (helper) helper.textContent = 'Accede con el correo y la contraseña que te ha asignado tu entrenador.';
-  $('loginButton').textContent = 'Entrar en mi semana';
+  if (helper) helper.textContent = 'Escribe el correo configurado en tu ficha. Te enviaremos un enlace seguro para entrar, sin contraseña.';
+  $('passwordField').classList.add('hidden');
+  $('forgotPassword').classList.add('hidden');
+  $('loginButton').textContent = 'Enviarme enlace de acceso';
   $('email').value = '';
 }
 
@@ -65,6 +67,26 @@ async function login(email, password) {
   await routeUser(data.user);
 }
 
+async function requestAthleteAccess() {
+  const email = $('email').value.trim();
+  if (!email) throw new Error('Introduce el correo configurado en la ficha del deportista.');
+  const data = await json('/api/auth/magic-link', { method: 'POST', body: JSON.stringify({ email }) });
+  if (data.demo && data.user) return routeUser(data.user);
+  message(data.message || 'Revisa tu correo para entrar en RunFlow Athlete.', 'success');
+}
+
+async function acceptMagicLink() {
+  if (!athleteMode || !location.hash) return false;
+  const hash = new URLSearchParams(location.hash.slice(1));
+  const accessToken = hash.get('access_token');
+  const refreshToken = hash.get('refresh_token');
+  if (!accessToken || !refreshToken) return false;
+  history.replaceState(null, '', `${location.pathname}?mode=athlete`);
+  const data = await json('/api/auth/session', { method: 'POST', body: JSON.stringify({ access_token: accessToken, refresh_token: refreshToken, expires_in: hash.get('expires_in') }) });
+  await routeUser(data.user);
+  return true;
+}
+
 async function recoverPassword() {
   const email = $('email').value.trim();
   if (!email) throw new Error('Introduce primero el correo de tu cuenta.');
@@ -74,6 +96,7 @@ async function recoverPassword() {
 
 async function init() {
   configureAthleteView();
+  if (await acceptMagicLink()) return;
   const config = await json('/api/config');
   if (config.demo && !athleteMode) {
     $('demoHelp').classList.remove('hidden');
@@ -89,7 +112,7 @@ async function init() {
 
 $('loginButton').addEventListener('click', async () => {
   $('loginButton').disabled = true;
-  try { await login($('email').value, $('password').value); }
+  try { athleteMode ? await requestAthleteAccess() : await login($('email').value, $('password').value); }
   catch (error) { message(error.message, 'error'); }
   finally { $('loginButton').disabled = false; }
 });
@@ -106,4 +129,5 @@ $('demoButton').addEventListener('click', async () => {
   finally { $('demoButton').disabled = false; }
 });
 $('password').addEventListener('keydown', event => { if (event.key === 'Enter') $('loginButton').click(); });
+$('email').addEventListener('keydown', event => { if (athleteMode && event.key === 'Enter') $('loginButton').click(); });
 init().catch(error => message(error.message, 'error'));
