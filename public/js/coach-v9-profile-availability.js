@@ -130,10 +130,15 @@
   }
 
   function workoutKind(workout) {
-    const text = `${workout?.sport || ''} ${workout?.title || ''} ${workout?.adaptation_target || ''}`.toLowerCase();
-    if (workout?.is_strength || /strength|fuerza|gimnasio/.test(text)) return 'strength';
-    if (/ride|bike|cycling|bici/.test(text)) return 'bike';
-    if (/trail|montaña|mountain|desnivel/.test(text)) return 'trail';
+    const declaredSport = String(workout?.sport || workout?.type || '').toLowerCase();
+    if (workout?.is_strength || /strength|fuerza|gym|gimnasio/.test(declaredSport)) return 'strength';
+    if (/ride|bike|cycling|bici|ciclismo/.test(declaredSport)) return 'bike';
+    if (/trail|mountain|montaña/.test(declaredSport)) return 'trail';
+    if (/run|running|correr|carrera/.test(declaredSport)) return 'run';
+    const title = String(workout?.title || '').toLowerCase();
+    if (/strength|fuerza|gimnasio/.test(title)) return 'strength';
+    if (/ride|bike|cycling|bici|ciclismo/.test(title)) return 'bike';
+    if (/trail|montaña|mountain|desnivel/.test(title)) return 'trail';
     return 'run';
   }
 
