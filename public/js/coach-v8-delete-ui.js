@@ -4,8 +4,9 @@
 
   const athleteId=()=>q('#athleteSelect')?.value||q('#v8AthleteSelect')?.value||null;
   const stateSafe=()=>{try{return window.state||state}catch{return null}};
-  const labels={goal:'objetivo',macro:'macrociclo',meso:'mesociclo',micro:'microciclo'};
+  const labels={season:'temporada',goal:'objetivo',macro:'macrociclo',meso:'mesociclo',micro:'microciclo'};
   const routes={
+    season:id=>`seasons/${encodeURIComponent(id)}`,
     goal:id=>`goals/${encodeURIComponent(id)}`,
     macro:id=>`macrocycles/${encodeURIComponent(id)}`,
     meso:id=>`mesocycles/${encodeURIComponent(id)}`,
@@ -26,20 +27,32 @@
   async function remove(type,id,name){
     if(!routes[type])return;
     const label=labels[type]||'elemento';
-    const cascade=type==='macro'
-      ? '\n\nTambién se quitarán sus mesociclos, microciclos y sesiones planificadas.'
-      : type==='meso'
-        ? '\n\nTambién se quitarán sus microciclos y sesiones planificadas.'
-        : type==='micro'
-          ? '\n\nTambién se quitarán sus sesiones planificadas.'
-          : '';
+    const cascade=type==='season'
+      ? '\n\nTambién se quitarán sus objetivos, macrociclos, mesociclos, microciclos y sesiones planificadas.'
+      : type==='macro'
+        ? '\n\nTambién se quitarán sus mesociclos, microciclos y sesiones planificadas.'
+        : type==='meso'
+          ? '\n\nTambién se quitarán sus microciclos y sesiones planificadas.'
+          : type==='micro'
+            ? '\n\nTambién se quitarán sus sesiones planificadas.'
+            : '';
     const history=type==='goal'
       ? '\n\nEl histórico deportivo del atleta no se borra.'
       : '\n\nLas actividades ya realizadas, su carga y su histórico se conservarán.';
-    if(!window.confirm(`¿Quitar ${label} «${name||label}» de la planificación?${cascade}${history}`))return;
+    const warning=type==='season'?'\n\nEsta acción no se puede deshacer.':'';
+    if(!window.confirm(`¿Eliminar ${label} «${name||label}» de RunFlow?${cascade}${history}${warning}`))return;
+
+    if(type==='season'){
+      const confirmation=window.prompt(`Para confirmar el borrado de la temporada, escribe ELIMINAR.`,'');
+      if(String(confirmation||'').trim().toUpperCase()!=='ELIMINAR')return;
+    }
 
     await requestDelete(routes[type](id));
-    showToast(`${capitalize(label)} eliminado. El histórico realizado se conserva.`,'ok');
+    if(type==='season'){
+      const athlete=athleteId();
+      if(athlete)localStorage.removeItem(`runflow_plan_season_${athlete}`);
+    }
+    showToast(`${capitalize(label)} eliminada${type==='season'?'':'/o'}. El histórico realizado se conserva.`,'ok');
     setTimeout(()=>window.location.reload(),650);
   }
 
@@ -48,6 +61,26 @@
     let toast=q('#v8DeleteToast');
     if(!toast){toast=document.createElement('div');toast.id='v8DeleteToast';toast.className='v8-delete-toast';document.body.appendChild(toast);}
     toast.textContent=message;toast.dataset.type=type;toast.classList.add('show');setTimeout(()=>toast.classList.remove('show'),2200);
+  }
+
+  function installSeasonDelete(){
+    const edit=q('#editSeason');
+    const season=stateSafe()?.plan?.season;
+    if(!edit||!season?.id)return;
+    const parent=edit.parentElement;
+    if(!parent||parent.querySelector('[data-v8-season-remove]'))return;
+    const button=document.createElement('button');
+    button.type='button';
+    button.className='btn danger small v8-remove-btn';
+    button.textContent='Eliminar temporada';
+    button.dataset.v8SeasonRemove=season.id;
+    button.title='Elimina toda la estructura planificada de esta temporada. El histórico realizado se conserva.';
+    button.addEventListener('click',async event=>{
+      event.preventDefault();event.stopPropagation();button.disabled=true;
+      try{await remove('season',season.id,season.name||'temporada')}
+      catch(error){button.disabled=false;showToast(error.message,'error')}
+    });
+    parent.appendChild(button);
   }
 
   function installGuided(){
@@ -107,7 +140,7 @@
     },true);
   }
 
-  function install(){installGuided();installPlan();installSessionDelete();}
+  function install(){installSeasonDelete();installGuided();installPlan();installSessionDelete();}
   new MutationObserver(install).observe(document.documentElement,{subtree:true,childList:true});
   document.addEventListener('DOMContentLoaded',install,{once:true});
   setTimeout(install,800);

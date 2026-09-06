@@ -6,6 +6,8 @@ on:
       - 'v9-*.js'
       - 'session-comparison-metrics.js'
       - 'athlete-link-recovery-hook.js'
+      - 'plan-delete-hook.js'
+      - 'season-delete-hook.js'
       - 'public/coach-v9.html'
       - 'public/coach.html'
       - 'public/coach-base.html'
@@ -13,6 +15,7 @@ on:
       - 'public/athlete.html'
       - 'public/athlete-base.html'
       - 'public/athlete-v2.html'
+      - 'public/js/coach-v8-delete-ui.js'
       - 'public/js/coach-v9-*.js'
       - 'public/js/coach-v10-*.js'
       - 'public/js/coach.js'
@@ -38,6 +41,11 @@ jobs:
           node-version: '22'
       - name: Check Athlete auth recovery hook syntax
         run: node --check athlete-link-recovery-hook.js
+      - name: Check planning deletion syntax
+        run: |
+          node --check plan-delete-hook.js
+          node --check season-delete-hook.js
+          node --check public/js/coach-v8-delete-ui.js
       - name: Validate V9/V2 batch
         run: node scripts/validate-v9-batch.mjs
       - name: Check season calendar planner syntax
