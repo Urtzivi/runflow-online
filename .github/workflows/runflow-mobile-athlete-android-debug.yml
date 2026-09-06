@@ -2,6 +2,8 @@ name: RunFlow Athlete Android APK
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
 
 jobs:
   build-android:
@@ -51,6 +53,38 @@ jobs:
           npm install --no-save @capacitor/assets
           npx cap add android
           npx @capacitor/assets generate --android --assetPath resources --iconBackgroundColor '#B7F34A' --iconBackgroundColorDark '#B7F34A'
+          cat > android/app/src/main/java/com/runflow/athlete/MainActivity.java <<'EOF'
+          package com.runflow.athlete;
+
+          import android.graphics.Color;
+          import android.os.Bundle;
+          import android.view.View;
+          import android.view.Window;
+
+          import androidx.core.graphics.Insets;
+          import androidx.core.view.ViewCompat;
+          import androidx.core.view.WindowInsetsCompat;
+
+          import com.getcapacitor.BridgeActivity;
+
+          public class MainActivity extends BridgeActivity {
+            @Override
+            protected void onCreate(Bundle savedInstanceState) {
+              super.onCreate(savedInstanceState);
+
+              Window window = getWindow();
+              window.setNavigationBarColor(Color.rgb(244, 245, 239));
+
+              View content = findViewById(android.R.id.content);
+              ViewCompat.setOnApplyWindowInsetsListener(content, (view, windowInsets) -> {
+                Insets bars = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars());
+                view.setPadding(bars.left, bars.top, bars.right, bars.bottom);
+                return windowInsets;
+              });
+              ViewCompat.requestApplyInsets(content);
+            }
+          }
+          EOF
           npx cap sync android
 
       - name: Build debug APK
@@ -62,6 +96,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: RunFlow-Athlete-Android-debug
+          name: RunFlow-Athlete-V4-insets-debug
           path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
