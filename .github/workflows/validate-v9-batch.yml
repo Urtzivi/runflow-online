@@ -8,6 +8,7 @@ on:
       - 'athlete-link-recovery-hook.js'
       - 'plan-delete-hook.js'
       - 'season-delete-hook.js'
+      - 'season-delete-hook-v2.js'
       - 'public/coach-v9.html'
       - 'public/coach.html'
       - 'public/coach-base.html'
@@ -41,11 +42,12 @@ jobs:
           node-version: '22'
       - name: Check Athlete auth recovery hook syntax
         run: node --check athlete-link-recovery-hook.js
-      - name: Check planning deletion syntax
+      - name: Check planning deletion and overwrite syntax
         run: |
           node --check plan-delete-hook.js
-          node --check season-delete-hook.js
+          node --check season-delete-hook-v2.js
           node --check public/js/coach-v8-delete-ui.js
+          node --check public/js/coach-v9-season-overwrite-fix.js
       - name: Validate V9/V2 batch
         run: node scripts/validate-v9-batch.mjs
       - name: Check season calendar planner syntax
