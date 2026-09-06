@@ -752,20 +752,34 @@ function availabilityMode(day) {
   return 'flexible';
 }
 
+function availabilityTypes(day) {
+  const allowed = ['run', 'trail', 'bike', 'strength', 'gym'];
+  const multiple = Array.isArray(day && day.activity_types)
+    ? [...new Set(day.activity_types.map(value => sanitiseText(value, 30)).filter(value => allowed.includes(value)))].slice(0, 2)
+    : [];
+  if (multiple.length) return multiple;
+  const legacy = availabilityMode(day);
+  if (legacy === 'flexible') return allowed.filter(value => value !== 'gym');
+  return [legacy];
+}
+
 function workoutAvailabilityError(availability, workout) {
   const config = safeObject(availability);
   const days = Array.isArray(config.days) ? config.days : [];
-  const configured = config.configured === true || days.some(day => day && (day.activity_type || day.mode || hasOwn(day, 'can_train')));
+  const configured = config.configured === true || days.some(day => day && (day.activity_type || day.mode || day.activity_types || hasOwn(day, 'can_train')));
   if (!configured || !validDate(workout && workout.workout_date)) return null;
   const dayNumber = trainingDayNumber(workout.workout_date);
   const day = days.find(item => Number(item && item.day) === dayNumber);
   const dayName = TRAINING_DAY_NAMES[dayNumber - 1];
   if (!day) return `La disponibilidad del ${dayName} no está definida en la ficha del deportista.`;
   const mode = availabilityMode(day);
+  const types = availabilityTypes(day);
   const title = sanitiseText(workout.title || 'Sesión', 160);
   if (mode === 'unavailable' || day.can_train === false) return `No puedes colocar “${title}” el ${dayName}: el deportista no puede entrenar ese día.`;
   const kind = workoutAvailabilityKind(workout);
-  const allowed = mode === 'flexible'
+  const allowed = Array.isArray(day.activity_types) && day.activity_types.length
+    ? types.some(type => type === kind || (kind === 'strength' && type === 'gym'))
+    : mode === 'flexible'
     ? (kind === 'strength' ? day.strength !== false : kind === 'bike' ? day.bike === true : day.run !== false)
     : mode === 'run' ? kind === 'run'
       : mode === 'trail' ? kind === 'trail'
@@ -774,7 +788,7 @@ function workoutAvailabilityError(availability, workout) {
             : false;
   if (!allowed) {
     const labels = { run: 'correr', trail: 'trail/montaña', bike: 'bici', strength: 'fuerza', gym: 'gimnasio', flexible: 'actividad flexible' };
-    return `No puedes colocar “${title}” el ${dayName}: ese día está reservado para ${labels[mode] || 'otra actividad'}.`;
+    return `No puedes colocar “${title}” el ${dayName}: ese día admite ${types.map(type => labels[type] || type).join(' o ')}.`;
   }
   const duration = numberOrNull(workout.planned_duration_min, 0, 2000);
   const maximum = numberOrNull(day.max_minutes, 0, 2000);

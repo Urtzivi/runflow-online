@@ -90,7 +90,7 @@
       purpose: 'Contexto completo para diseñar una temporada RunFlow antes de importarla.',
       mandatory_planning_rules: [
         'La disponibilidad semanal es una restricción obligatoria, no una preferencia.',
-        'No programar una actividad distinta de activity_type en ese día.',
+        'No programar una actividad que no figure en activity_types para ese día.',
         'No superar max_minutes.',
         'Los días unavailable o can_train=false no admiten sesiones.',
         'Las sesiones de fuerza deben incluir video_url HTTPS en cada ejercicio.',
