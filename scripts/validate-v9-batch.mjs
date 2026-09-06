@@ -40,19 +40,20 @@ const recommender=fs.readFileSync(path.join(root,'public/js/coach-v9-contextual-
 for(const marker of ['SESIONES CONTEXTUALES','Recomendadas para este contexto','P1:','Carga asignada','Ver toda la biblioteca','Crear desde cero','dynamic-profile','/api/v9/library','activities?oldest=','max_minutes','mountain','strength'])if(!recommender.includes(marker))throw new Error(`Falta recomendador: ${marker}`);
 
 const importer=fs.readFileSync(path.join(root,'public/js/coach-v9-plan-v2-import.js'),'utf8');
-for(const marker of ['runflow.plan.v2','RUNFLOW_PLAN_V2','Case ID:','coach_approved','Importar plan completo','goal_key','macrocycles','mesocycles','microcycles','workouts','antes de su objetivo','alreadyImported','Aprobar este plan como caso de aprendizaje'])if(!importer.includes(marker))throw new Error(`Falta capacidad importador V2: ${marker}`);
+for(const marker of ['runflow.plan.v2','RUNFLOW_PLAN_V2','Case ID:','coach_approved','Cargar temporada completa','goal_key','macrocycles','mesocycles','microcycles','workouts','antes de su objetivo','alreadyImported','Aprobar este plan como caso de aprendizaje','strengthErrors','video_url https','runningErrors'])if(!importer.includes(marker))throw new Error(`Falta capacidad importador V2: ${marker}`);
 for(const route of ['/seasons','/goals','/macrocycles','/mesocycles','/microcycles'])if(!importer.includes(route))throw new Error(`El importador V2 no usa la ruta jerárquica ${route}.`);
 for(const rule of ['el primer mesociclo no empieza con el macro','hay hueco o solapamiento','el último mesociclo no llega al final del macro','el último micro no llega al final del meso','está fuera de'])if(!importer.includes(rule))throw new Error(`Falta validación jerárquica V2: ${rule}`);
 
 const athleteOfficial=fs.readFileSync(path.join(root,'public/athlete.html'),'utf8');
 const athleteBetaJs=fs.readFileSync(path.join(root,'public/js/athlete-v2-beta.js'),'utf8');
 const athleteFixesJs=fs.readFileSync(path.join(root,'public/js/athlete-v2-fixes.js'),'utf8');
-for(const marker of ['/athlete-base.html','/js/athlete.js?v=2.4.2.3','/js/athlete-v2-beta.js?v=2.0.4','/js/athlete-v2-complete.js?v=2.2.0','/js/athlete-v2-fixes.js?v=2.1.1','/js/athlete-learning.js?v=2.3.0','/css/athlete-learning.css?v=2.3.0',"location.replace('/login?mode=athlete')","runflowAthleteVersion='2.3-learning'"])if(!athleteOfficial.includes(marker))throw new Error(`Athlete oficial: falta ${marker}`);
+for(const marker of ['/athlete-base.html','/js/athlete.js?v=2.4.2.4','/js/athlete-v2-beta.js?v=2.0.4','/js/athlete-v2-complete.js?v=2.2.0','/js/athlete-v2-fixes.js?v=2.1.1','/js/athlete-learning.js?v=2.3.0','/css/athlete-v4.css?v=4.0.1','/css/athlete-learning.css?v=2.3.0',"location.replace('/login?mode=athlete')","runflowAthleteVersion='2.3-learning'"])if(!athleteOfficial.includes(marker))throw new Error(`Athlete oficial: falta ${marker}`);
 if(!athleteBetaJs.includes('if(!changedByBaseView)return'))throw new Error('Athlete V2: el observador de actividades puede reaccionar a sus propias tarjetas.');
 if(!athleteFixesJs.includes("help&&help.textContent!==helpText"))throw new Error('Athlete V2: la corrección de textos puede provocar un bucle de MutationObserver.');
 if(athleteOfficial.includes('athlete-v2-beta-banner'))throw new Error('Athlete oficial no debe mostrar el banner beta.');
 const athleteJs=fs.readFileSync(path.join(root,'public/js/athlete.js'),'utf8');
 for(const marker of ['renderDashboardError','Error al cargar tus datos','Reintentar'])if(!athleteJs.includes(marker))throw new Error(`Athlete no conserva el error del dashboard: falta ${marker}`);
+for(const marker of ['exercise.video_url','Ver vídeo explicativo','noopener noreferrer'])if(!athleteJs.includes(marker))throw new Error(`Athlete no muestra vídeos de fuerza: falta ${marker}`);
 const athleteBeta=fs.readFileSync(path.join(root,'public/athlete-v2.html'),'utf8');
 if(!athleteBeta.includes('/athlete-base.html')||!athleteBeta.includes('athlete-v2-beta-banner'))throw new Error('La ruta beta debe conservar su banner y usar la base preservada.');
 

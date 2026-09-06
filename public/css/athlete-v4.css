@@ -73,3 +73,5 @@ body.athlete-v2-body{background:radial-gradient(circle at 82% 6%,rgba(183,243,74
 .athlete-message-composer textarea,.athlete-message-composer select,input,select,textarea{background:#fff;color:var(--ath-v4-ink);border-color:var(--ath-v4-line)}
 .athlete-profile-metrics>div,.athlete-zone-list>div,.form-section{background:#f7f8f4!important;border-color:#e2e5df!important}
 @media(max-width:520px){.athlete-v2-hero{padding-bottom:26px}.today-workout-card{border-radius:22px}.athlete-section-card,.athlete-mini-card{border-radius:20px}}
+.athlete-exercise-video{display:inline-flex;margin-top:8px;color:#126f60;font-weight:800;text-decoration:none}
+.athlete-exercise-video::after{content:' ↗'}
