@@ -213,7 +213,12 @@
     if(!holder||holder.dataset.v2Observed)return;
     holder.dataset.v2Observed='1';
     let busy=false;
-    new MutationObserver(()=>{
+    new MutationObserver(mutations=>{
+      const changedByBaseView=mutations.some(mutation=>[...mutation.addedNodes,...mutation.removedNodes].some(node=>{
+        if(node.nodeType!==Node.ELEMENT_NODE)return false;
+        return !node.matches?.('[data-v2-manual-card],[data-v2-server-manual]');
+      }));
+      if(!changedByBaseView)return;
       if(busy)return;busy=true;
       requestAnimationFrame(()=>{renderManualCards();busy=false;});
     }).observe(holder,{childList:true});
