@@ -2,6 +2,11 @@ name: RunFlow Athlete Android APK
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/runflow-mobile-athlete-android-debug.yml'
 
 jobs:
   build-android:
