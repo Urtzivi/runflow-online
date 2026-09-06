@@ -78,6 +78,21 @@
   }
   function microStatus(micro) { return micro?.publication_status === 'published' ? 'Publicado' : 'Borrador'; }
   function statusClass(micro) { return micro?.publication_status === 'published' ? 'published' : 'draft'; }
+  function sessionStructureErrors(session) {
+    const strength = Boolean(session?.is_strength || /strength|fuerza/i.test(String(session?.sport || '')));
+    const blocks = Array.isArray(session?.blocks) ? session.blocks : [];
+    if (!strength) return blocks.length ? [] : ['necesita bloques estructurados compatibles con Intervals'];
+    const exercises = blocks.filter(block => block?.type === 'strength').flatMap(block => Array.isArray(block.exercises) ? block.exercises : []);
+    const errors = [];
+    if (!exercises.length) errors.push('necesita al menos un ejercicio de fuerza');
+    exercises.forEach((exercise, index) => {
+      if (!String(exercise?.name || '').trim()) errors.push(`ejercicio ${index + 1} sin nombre`);
+      if (!(Number(exercise?.sets) > 0)) errors.push(`${exercise?.name || `ejercicio ${index + 1}`} sin series`);
+      if (!String(exercise?.reps || '').trim()) errors.push(`${exercise?.name || `ejercicio ${index + 1}`} sin repeticiones o duración`);
+      if (!/^https:\/\//i.test(String(exercise?.video_url || ''))) errors.push(`${exercise?.name || `ejercicio ${index + 1}`} sin vídeo explicativo`);
+    });
+    return errors;
+  }
 
   function seasonMonths(season) {
     if (!season?.start_date || !season?.end_date) return [];
@@ -410,6 +425,8 @@
       if (workoutDate < micro.start_date || workoutDate > micro.end_date) throw new Error(`La sesión “${session.title || index + 1}” queda fuera de las fechas del microciclo.`);
       if (!String(session.title || '').trim()) throw new Error(`La sesión ${index + 1} necesita título.`);
       if (!String(session.structured_description || session.summary || '').trim() && !(Array.isArray(session.blocks) && session.blocks.length)) throw new Error(`La sesión “${session.title}” necesita descripción estructurada o bloques para poder publicarse en Intervals.`);
+      const structureErrors = sessionStructureErrors(session);
+      if (structureErrors.length) throw new Error(`La sesión “${session.title}” ${structureErrors.join(', ')}.`);
       return { ...session, id: crypto.randomUUID(), workout_date: workoutDate, sport: session.sport || 'Run', title: String(session.title).trim(), priority: ['A', 'B', 'C'].includes(session.priority) ? session.priority : 'B', structured_description: session.structured_description || session.summary || '', summary: session.summary || session.session_objective || '', blocks: Array.isArray(session.blocks) ? session.blocks : [], planned_load: Number(session.planned_load || 0) };
     });
   }
@@ -450,6 +467,10 @@
   async function publishMicro(micro) {
     if (!micro) return;
     if (!(micro.workouts || []).length) return notify('Añade al menos una sesión antes de publicar.', 'error');
+    for (const workout of micro.workouts) {
+      const structureErrors = sessionStructureErrors(workout);
+      if (structureErrors.length) return notify(`No se puede publicar “${workout.title}”: ${structureErrors.join(', ')}.`, 'error');
+    }
     if (window.RunFlowAvailability?.validateWorkout) {
       for (const workout of micro.workouts) {
         const result = await window.RunFlowAvailability.validateWorkout(workout);

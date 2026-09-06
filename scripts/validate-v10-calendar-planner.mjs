@@ -17,7 +17,7 @@ const engine = read('v9-engine-hook.js');
 
 for (const html of [coach, beta]) {
   assert(html.includes('/css/coach-v10-calendar-planner.css?v=10.2.0'), 'Falta cargar el CSS del planificador V10.');
-  assert(html.includes('/js/coach-v10-calendar-planner.js?v=10.2.1'), 'Falta cargar el JavaScript del planificador V10.');
+  assert(html.includes('/js/coach-v10-calendar-planner.js?v=10.3.0'), 'Falta cargar el JavaScript del planificador V10.');
   assert(html.includes('/js/coach-v9-profile-availability.js?v=9.4.3'), 'Falta cargar la disponibilidad semanal actualizada.');
   assert(html.includes('/js/coach-v9-season-planner.js?v=9.3.1'), 'Falta cargar la corrección de semanas del deportista.');
 }
@@ -33,6 +33,8 @@ assert(planner.includes('/microcycles`'), 'Falta la carga directa de microciclos
 assert(planner.includes('RUNFLOW_V10_TECHNICAL_MACRO'), 'Falta la compatibilidad interna con macrociclos existentes.');
 assert(planner.includes("schema: 'runflow.microcycle.v1'"), 'Falta la plantilla de importación de sesiones.');
 assert(planner.includes('/week/publish'), 'Falta la publicación explícita de sesiones en Intervals.');
+assert(planner.includes('sessionStructureErrors'), 'Falta validar la estructura publicable de cada sesión.');
+assert(planner.includes('sin vídeo explicativo'), 'Las sesiones de fuerza no exigen vídeo por ejercicio.');
 assert(planner.includes("publication_status: 'draft'"), 'La importación no protege el estado borrador.');
 assert(styles.includes('.v10-season-months'), 'Faltan los estilos del calendario de temporada.');
 assert(styles.includes('.v10-meso-overview'), 'Faltan los estilos del listado de mesociclos.');
