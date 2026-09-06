@@ -54,12 +54,12 @@ for (const marker of ['ATHLETE_AVAILABILITY_CONFLICT', 'assertWorkoutsFitAvailab
   assert(server.includes(marker), `El servidor no protege ficha/planificación: ${marker}`);
 }
 assert(server.includes('ensureMesocycleDatesAvailable'), 'El servidor no bloquea mesociclos solapados.');
-assert(server.includes("pathname === '/api/auth/magic-link'"), 'Falta el acceso Athlete mediante enlace por email.');
-assert(server.includes("pathname === '/api/auth/session'"), 'Falta convertir el enlace seguro en sesión Athlete.');
-assert(server.includes('create_user: false'), 'El acceso por email no debe crear cuentas públicas automáticamente.');
-assert(login.includes('requestAthleteAccess'), 'La pantalla Athlete no solicita el enlace de acceso.');
-assert(login.includes('acceptMagicLink'), 'La pantalla Athlete no acepta el enlace seguro recibido.');
-assert(loginHtml.includes('/js/login.js?v=2.6.0'), 'Falta publicar la nueva pantalla de acceso Athlete.');
+assert(server.includes("pathname === '/api/auth/athlete-email'"), 'Falta el acceso Athlete directo mediante email.');
+assert(server.includes('createAthleteSessionToken'), 'Falta crear una sesión Athlete firmada.');
+assert(server.includes("roles: ['athlete']"), 'La sesión directa no está limitada al rol Athlete.');
+assert(login.includes('requestAthleteAccess'), 'La pantalla Athlete no solicita el acceso por email.');
+assert(!login.includes('acceptMagicLink'), 'Athlete todavía depende de un enlace recibido por correo.');
+assert(loginHtml.includes('/js/login.js?v=2.7.0'), 'Falta publicar la nueva pantalla de acceso Athlete.');
 assert(engine.includes('dayAllowsWorkout'), 'La replanificación automática no respeta el tipo de actividad diario.');
 assert(styles.includes('max-height: calc(100vh - 36px)'), 'La ficha de mesociclo puede quedar fuera de la pantalla.');
 assert(styles.includes('position: sticky; bottom: 0'), 'El botón de guardado del ciclo no permanece accesible.');

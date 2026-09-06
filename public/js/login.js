@@ -37,10 +37,10 @@ function configureAthleteView() {
   if (brandSmall) brandSmall.textContent = 'Acceso deportista';
   if (eyebrow) eyebrow.textContent = 'Deportista';
   if (heading) heading.textContent = 'Entra en tu app';
-  if (helper) helper.textContent = 'Escribe el correo configurado en tu ficha. Te enviaremos un enlace seguro para entrar, sin contraseña.';
+  if (helper) helper.textContent = 'Escribe el correo configurado en tu ficha. No necesitas contraseña.';
   $('passwordField').classList.add('hidden');
   $('forgotPassword').classList.add('hidden');
-  $('loginButton').textContent = 'Enviarme enlace de acceso';
+  $('loginButton').textContent = 'Entrar';
   $('email').value = '';
 }
 
@@ -70,21 +70,8 @@ async function login(email, password) {
 async function requestAthleteAccess() {
   const email = $('email').value.trim();
   if (!email) throw new Error('Introduce el correo configurado en la ficha del deportista.');
-  const data = await json('/api/auth/magic-link', { method: 'POST', body: JSON.stringify({ email }) });
-  if (data.demo && data.user) return routeUser(data.user);
-  message(data.message || 'Revisa tu correo para entrar en RunFlow Athlete.', 'success');
-}
-
-async function acceptMagicLink() {
-  if (!athleteMode || !location.hash) return false;
-  const hash = new URLSearchParams(location.hash.slice(1));
-  const accessToken = hash.get('access_token');
-  const refreshToken = hash.get('refresh_token');
-  if (!accessToken || !refreshToken) return false;
-  history.replaceState(null, '', `${location.pathname}?mode=athlete`);
-  const data = await json('/api/auth/session', { method: 'POST', body: JSON.stringify({ access_token: accessToken, refresh_token: refreshToken, expires_in: hash.get('expires_in') }) });
+  const data = await json('/api/auth/athlete-email', { method: 'POST', body: JSON.stringify({ email }) });
   await routeUser(data.user);
-  return true;
 }
 
 async function recoverPassword() {
@@ -96,7 +83,6 @@ async function recoverPassword() {
 
 async function init() {
   configureAthleteView();
-  if (await acceptMagicLink()) return;
   const config = await json('/api/config');
   if (config.demo && !athleteMode) {
     $('demoHelp').classList.remove('hidden');
