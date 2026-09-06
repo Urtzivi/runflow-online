@@ -10,7 +10,7 @@ const syntaxFiles = [
   'public/js/coach-v9-profile-availability.js','public/js/coach-v9-hierarchy.js','public/js/coach-v9-stepwise-final.js','public/js/coach-v9-session-generator-fix.js',
   'public/js/coach-v9-manual-planning.js','public/js/coach-v9-contextual-recommender-v2.js','public/js/coach-v9-plan-v2-import.js','public/js/coach-learning.js',
   'public/js/coach-athlete-context-export.js',
-  'public/js/athlete.js','public/js/athlete-v2-beta.js','public/js/athlete-v2-complete.js','public/js/athlete-v2-fixes.js','public/js/athlete-learning.js',
+  'public/js/athlete.js','public/js/athlete-v2-beta.js','public/js/athlete-v2-complete.js','public/js/athlete-v2-fixes.js','public/js/athlete-learning.js','public/js/athlete-native-readiness-notifications.js',
 ];
 for (const file of syntaxFiles) execFileSync(process.execPath, ['--check', path.join(root, file)], { stdio:'inherit' });
 
@@ -51,7 +51,7 @@ for(const rule of ['el primer mesociclo no empieza con el macro','hay hueco o so
 const athleteOfficial=fs.readFileSync(path.join(root,'public/athlete.html'),'utf8');
 const athleteBetaJs=fs.readFileSync(path.join(root,'public/js/athlete-v2-beta.js'),'utf8');
 const athleteFixesJs=fs.readFileSync(path.join(root,'public/js/athlete-v2-fixes.js'),'utf8');
-for(const marker of ['/athlete-base.html','/js/athlete.js?v=2.4.2.4','/js/athlete-v2-beta.js?v=2.0.4','/js/athlete-v2-complete.js?v=2.2.0','/js/athlete-v2-fixes.js?v=2.1.1','/js/athlete-learning.js?v=2.3.0','/css/athlete-v4.css?v=4.0.1','/css/athlete-learning.css?v=2.3.0',"location.replace('/login?mode=athlete')","runflowAthleteVersion='2.3-learning'"])if(!athleteOfficial.includes(marker))throw new Error(`Athlete oficial: falta ${marker}`);
+for(const marker of ['/athlete-base.html','/js/athlete.js?v=2.4.2.4','/js/athlete-v2-beta.js?v=2.0.4','/js/athlete-v2-complete.js?v=2.2.0','/js/athlete-v2-fixes.js?v=2.1.1','/js/athlete-learning.js?v=2.4.0','/js/athlete-native-readiness-notifications.js?v=1.0.0','/css/athlete-v4.css?v=4.0.1','/css/athlete-learning.css?v=2.3.0',"location.replace('/login?mode=athlete')","runflowAthleteVersion='2.4-daily-readiness'"])if(!athleteOfficial.includes(marker))throw new Error(`Athlete oficial: falta ${marker}`);
 if(!athleteBetaJs.includes('if(!changedByBaseView)return'))throw new Error('Athlete V2: el observador de actividades puede reaccionar a sus propias tarjetas.');
 if(!athleteFixesJs.includes("help&&help.textContent!==helpText"))throw new Error('Athlete V2: la corrección de textos puede provocar un bucle de MutationObserver.');
 if(athleteOfficial.includes('athlete-v2-beta-banner'))throw new Error('Athlete oficial no debe mostrar el banner beta.');
