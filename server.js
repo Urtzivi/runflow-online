@@ -734,11 +734,11 @@ function trainingDayNumber(dateValue) {
 
 function workoutAvailabilityKind(workout) {
   const declaredSport = String(workout && (workout.sport || workout.type) || '').toLowerCase();
+  const title = String(workout && workout.title || '').toLowerCase();
   if (workout && workout.is_strength || /strength|fuerza|gym|gimnasio/.test(declaredSport)) return 'strength';
   if (/ride|bike|cycling|bici|ciclismo/.test(declaredSport)) return 'bike';
   if (/trail|mountain|montaña/.test(declaredSport)) return 'trail';
-  if (/run|running|correr|carrera/.test(declaredSport)) return 'run';
-  const title = String(workout && workout.title || '').toLowerCase();
+  if (/run|running|correr|carrera/.test(declaredSport)) return /trail|montaña|mountain|desnivel/.test(title) ? 'trail' : 'run';
   if (/strength|fuerza|gimnasio/.test(title)) return 'strength';
   if (/ride|bike|cycling|bici|ciclismo/.test(title)) return 'bike';
   if (/trail|montaña|mountain|desnivel/.test(title)) return 'trail';
