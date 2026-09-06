@@ -18,7 +18,7 @@ const engine = read('v9-engine-hook.js');
 for (const html of [coach, beta]) {
   assert(html.includes('/css/coach-v10-calendar-planner.css?v=10.2.1'), 'Falta cargar el CSS del planificador V10.');
   assert(html.includes('/js/coach-v10-calendar-planner.js?v=10.3.0'), 'Falta cargar el JavaScript del planificador V10.');
-  assert(html.includes('/js/coach-v9-profile-availability.js?v=9.4.6'), 'Falta cargar la disponibilidad semanal actualizada.');
+  assert(html.includes('/js/coach-v9-profile-availability.js?v=9.4.7'), 'Falta cargar la disponibilidad semanal actualizada.');
   assert(html.includes('/js/coach-v9-season-planner.js?v=9.3.1'), 'Falta cargar la corrección de semanas del deportista.');
 }
 
@@ -52,7 +52,10 @@ assert(availability.includes("['profile', 'profileView'].includes"), 'La disponi
 assert(availability.includes('controller.abort(), 12000'), 'La disponibilidad puede quedarse cargando sin límite de tiempo.');
 assert(availability.includes("workout?.sport || workout?.type") && availability.includes("adaptation_target") === false, 'La disponibilidad puede confundir el objetivo fisiológico con el deporte.');
 assert(server.includes("workout.sport || workout.type") && server.includes("const title = String(workout && workout.title"), 'El servidor no prioriza el deporte declarado al validar disponibilidad.');
-assert(engine.includes("workout?.sport||workout?.type") && engine.includes("const title=String(workout?.title"), 'El motor no prioriza el deporte declarado al validar disponibilidad.');
+assert(engine.includes("workout?.sport||workout?.type") && engine.includes("title=String(workout?.title"), 'El motor no prioriza el deporte declarado al validar disponibilidad.');
+assert(availability.includes("return /trail|montaña|mountain|desnivel/.test(title) ? 'trail' : 'run'"), 'Run + Tirada trail no se clasifica como trail en la ficha.');
+assert(server.includes("return /trail|montaña|mountain|desnivel/.test(title) ? 'trail' : 'run'"), 'Run + Tirada trail no se clasifica como trail en el servidor.');
+assert(engine.includes("return/trail|montaña|mountain|desnivel/.test(title)?'trail':'run'"), 'Run + Tirada trail no se clasifica como trail en el motor.');
 assert(seasonLoader.includes("replace(/View$/,'')"), 'El cargador no normaliza los nombres de vista internos.');
 assert(seasonLoader.includes('await loadCalendarMonth(false);lazy.week=true'), 'La semana queda bloqueada como cargada antes de recibir los datos.');
 assert(seasonLoader.includes("runflow:v9-athlete-ready',()=>setTimeout(()=>lazyFor(activeViewName())"), 'La vista activa no se recarga al cambiar de deportista.');
