@@ -18,7 +18,7 @@ const engine = read('v9-engine-hook.js');
 for (const html of [coach, beta]) {
   assert(html.includes('/css/coach-v10-calendar-planner.css?v=10.2.1'), 'Falta cargar el CSS del planificador V10.');
   assert(html.includes('/js/coach-v10-calendar-planner.js?v=10.3.0'), 'Falta cargar el JavaScript del planificador V10.');
-  assert(html.includes('/js/coach-v9-profile-availability.js?v=9.4.4'), 'Falta cargar la disponibilidad semanal actualizada.');
+  assert(html.includes('/js/coach-v9-profile-availability.js?v=9.4.5'), 'Falta cargar la disponibilidad semanal actualizada.');
   assert(html.includes('/js/coach-v9-season-planner.js?v=9.3.1'), 'Falta cargar la corrección de semanas del deportista.');
 }
 
@@ -45,7 +45,11 @@ for (const marker of ['activity_type', 'activity_types', 'modesFromStored', 'dat
   assert(availability.includes(marker), `Disponibilidad semanal incompleta: ${marker}`);
 }
 assert(availability.includes('v9hRetryAvailability'), 'La disponibilidad no permite reintentar si falla la carga.');
-assert(availability.includes("classList.contains('active')) setTimeout(render, 50)"), 'La disponibilidad no se recarga al cambiar de deportista.');
+assert(availability.includes("window.addEventListener('runflow:v9-athlete-ready', invalidateAndRender)"), 'La disponibilidad no se recarga al cambiar de deportista.');
+assert(availability.includes("q('#athleteSelect')?.addEventListener('change', invalidateAndRender)"), 'La disponibilidad no observa el selector de deportista.');
+assert(availability.includes('new MutationObserver'), 'La disponibilidad no detecta la apertura de la ficha.');
+assert(availability.includes("['profile', 'profileView'].includes"), 'La disponibilidad no admite los dos nombres internos de la ficha.');
+assert(availability.includes('controller.abort(), 12000'), 'La disponibilidad puede quedarse cargando sin límite de tiempo.');
 assert(seasonLoader.includes("replace(/View$/,'')"), 'El cargador no normaliza los nombres de vista internos.');
 assert(seasonLoader.includes('await loadCalendarMonth(false);lazy.week=true'), 'La semana queda bloqueada como cargada antes de recibir los datos.');
 assert(seasonLoader.includes("runflow:v9-athlete-ready',()=>setTimeout(()=>lazyFor(activeViewName())"), 'La vista activa no se recarga al cambiar de deportista.');

@@ -21,10 +21,21 @@
     try { return state?.athlete?.id || ''; } catch { return ''; }
   })();
   const apiCall = async (url, options = {}) => {
-    const response = await fetch(url, {
-      ...options,
-      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+    let response;
+    try {
+      response = await fetch(url, {
+        ...options,
+        signal: options.signal || controller.signal,
+        headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+      });
+    } catch (error) {
+      if (error?.name === 'AbortError') throw new Error('La ficha está tardando demasiado en responder. Pulsa Reintentar.');
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || 'No se pudo completar la operación.');
     return data;
@@ -174,7 +185,7 @@
   async function render() {
     const id = athleteId();
     const root = q('#profileView .layout > .card .card-body') || q('#profileView');
-    if (!id || !root) return;
+    if (!root) return;
     let card = q('#v9HierarchyAvailability');
     if (!card) {
       card = document.createElement('section');
@@ -183,6 +194,10 @@
       const experience = [...root.querySelectorAll('.form-section')].find(section => section.querySelector('#availability'));
       if (experience) experience.insertAdjacentElement('afterend', card);
       else root.prepend(card);
+    }
+    if (!id) {
+      card.innerHTML = '<div class="notice">Selecciona un deportista para cargar su disponibilidad semanal.</div>';
+      return;
     }
     let data;
     try {
@@ -279,6 +294,12 @@
     if (q('#profileView')?.classList.contains('active')) render();
   }
 
+  function invalidateAndRender() {
+    current = null;
+    currentAthleteId = '';
+    if (q('#profileView')?.classList.contains('active')) setTimeout(render, 0);
+  }
+
   window.RunFlowAvailability = {
     load,
     validateWorkout,
@@ -289,13 +310,14 @@
     if (event.target.closest('[data-v8-view="profile"],[data-view="profile"]')) setTimeout(onView, 100);
   }, true);
   window.addEventListener('runflow:v9-view', event => {
-    if (event.detail?.view === 'profileView') render();
+    if (['profile', 'profileView'].includes(event.detail?.view)) render();
   });
   window.addEventListener('runflow:v9-dynamic-ready', () => setTimeout(render, 0));
-  window.addEventListener('runflow:v9-athlete-ready', () => {
-    current = null;
-    currentAthleteId = '';
-    if (q('#profileView')?.classList.contains('active')) setTimeout(render, 50);
-  });
+  window.addEventListener('runflow:v9-athlete-ready', invalidateAndRender);
+  q('#athleteSelect')?.addEventListener('change', invalidateAndRender);
+  const profileView = q('#profileView');
+  if (profileView) new MutationObserver(mutations => {
+    if (mutations.some(mutation => mutation.attributeName === 'class') && profileView.classList.contains('active')) render();
+  }).observe(profileView, { attributes: true, attributeFilter: ['class'] });
   setTimeout(onView, 600);
 })();
