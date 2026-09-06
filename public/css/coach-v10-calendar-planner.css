@@ -104,8 +104,8 @@
 }
 
 /* Athlete availability is part of the V10 planning contract. */
-.v9-h-availability-card .v9-av-head { grid-template-columns: 90px minmax(220px, 1.2fr) minmax(130px, .55fr) minmax(240px, 1fr); gap: 12px; padding: 0 10px 7px; font-size: .68rem; }
-.v9-h-availability-row { grid-template-columns: 90px minmax(220px, 1.2fr) minmax(130px, .55fr) minmax(240px, 1fr); gap: 12px; border: 1px solid #edf0eb; padding: 10px; }
+.v9-h-availability-card .v9-av-head { grid-template-columns: 80px minmax(160px, 1fr) minmax(160px, 1fr) minmax(120px, .55fr) minmax(210px, 1fr); gap: 10px; padding: 0 10px 7px; font-size: .68rem; }
+.v9-h-availability-row { grid-template-columns: 80px minmax(160px, 1fr) minmax(160px, 1fr) minmax(120px, .55fr) minmax(210px, 1fr); gap: 10px; border: 1px solid #edf0eb; padding: 10px; }
 .v9-h-availability-row label { font-size: .74rem; }
 .v9-h-availability-row select, .v9-h-availability-row input[type=number] { width: 100%; margin-top: 4px; }
 .v9-h-availability-row b { font-size: .88rem; }
