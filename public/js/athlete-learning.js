@@ -1,13 +1,18 @@
 (() => {
 'use strict';
 const $=id=>document.getElementById(id);
-let checkinBundle=null,feedbackPrompted=false,booted=false;
+let checkinBundle=null,feedbackPrompted=false,booted=false,lastCheckinFetchDay=null;
 
 async function rfApi(url,opt={}){
   const response=await fetch(url,{credentials:'same-origin',...opt,headers:{'Content-Type':'application/json',...(opt.headers||{})}});
   const data=await response.json().catch(()=>({}));
   if(!response.ok)throw new Error(data.error||'No se pudo completar la operación.');
   return data;
+}
+function localDay(){
+  const d=new Date();
+  const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
 }
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function subjectiveLabel(score){return({1:'Muy fatigado',2:'Fatigado',3:'Normal',4:'Recuperado',5:'Muy recuperado'})[Number(score)]||'—'}
@@ -35,9 +40,9 @@ function modal(){
     </div>
   </div>`;
   document.body.appendChild(el);
-  let selected=null;
+  el._rfSelected=null;
   el.querySelectorAll('[data-rf-score]').forEach(button=>button.addEventListener('click',()=>{
-    selected=Number(button.dataset.rfScore);
+    el._rfSelected=Number(button.dataset.rfScore);
     el.querySelectorAll('[data-rf-score]').forEach(x=>x.classList.toggle('active',x===button));
     $('rfMorningSave').disabled=false;
   }));
@@ -45,12 +50,14 @@ function modal(){
   $('rfMorningLater').addEventListener('click',close);
   $('rfMorningSkip').addEventListener('click',close);
   $('rfMorningSave').addEventListener('click',async()=>{
-    if(!selected)return;
+    if(!el._rfSelected)return;
     const save=$('rfMorningSave');save.disabled=true;save.textContent='Guardando…';
     try{
-      checkinBundle=await rfApi('/api/v2/athlete/daily-checkin',{method:'POST',body:JSON.stringify({recovery_score:selected,comment:$('rfMorningComment').value})});
+      checkinBundle=await rfApi('/api/v2/athlete/daily-checkin',{method:'POST',body:JSON.stringify({recovery_score:el._rfSelected,comment:$('rfMorningComment').value})});
+      lastCheckinFetchDay=localDay();
       renderSubjective();
       el.classList.add('hidden');
+      document.dispatchEvent(new CustomEvent('runflow:daily-checkin-saved',{detail:{day:lastCheckinFetchDay}}));
       try{if(typeof message==='function')message('Sensación de hoy guardada.','success')}catch{}
       setTimeout(checkPendingFeedback,400);
     }catch(error){save.disabled=false;try{if(typeof message==='function')message(error.message,'error')}catch{alert(error.message)}}
@@ -71,9 +78,27 @@ function renderSubjective(){
 }
 function showMorning(){
   const el=modal(),stats=checkinBundle?.stats||{};
+  el._rfSelected=null;
+  el.querySelectorAll('[data-rf-score]').forEach(x=>x.classList.remove('active'));
+  if($('rfMorningSave'))$('rfMorningSave').disabled=true;
+  if($('rfMorningComment'))$('rfMorningComment').value='';
   const note=$('rfMorningBaseline');
   if(note)note.textContent=Number(stats.count)>0&&Number.isFinite(Number(stats.baseline_mean))?`Tu media personal hasta ahora es ${Number(stats.baseline_mean).toFixed(1)}/5. RunFlow comparará cada día contigo mismo, no con una media genérica.`:'Con tus respuestas iremos construyendo tu nivel habitual de recuperación.';
   el.classList.remove('hidden');
+}
+async function refreshDailyCheckin(forcePrompt=false){
+  try{
+    checkinBundle=await rfApi('/api/v2/athlete/daily-checkin');
+    lastCheckinFetchDay=localDay();
+    renderSubjective();
+    document.dispatchEvent(new CustomEvent('runflow:daily-checkin-state',{detail:{day:lastCheckinFetchDay,completed:Boolean(checkinBundle?.today)}}));
+    if(checkinBundle?.today){
+      const el=$('runflowMorningCheckin');if(el)el.classList.add('hidden');
+      return true;
+    }
+    if(forcePrompt||document.visibilityState==='visible')showMorning();
+    return false;
+  }catch(error){console.warn('[RunFlow Learning] check-in',error.message);return null}
 }
 async function checkPendingFeedback(){
   if(feedbackPrompted)return;
@@ -98,16 +123,21 @@ async function refreshIntervalsThenFeedback(){
 }
 async function boot(){
   if(booted)return;booted=true;
-  try{
-    checkinBundle=await rfApi('/api/v2/athlete/daily-checkin');
-    renderSubjective();
-    if(!checkinBundle.today)showMorning();
-    else setTimeout(checkPendingFeedback,500);
-    setTimeout(refreshIntervalsThenFeedback,1800);
-  }catch(error){console.warn('[RunFlow Learning] check-in',error.message)}
+  const completed=await refreshDailyCheckin(true);
+  if(completed)setTimeout(checkPendingFeedback,500);
+  setTimeout(refreshIntervalsThenFeedback,1800);
   const refresh=$('refreshAthleteActivities');if(refresh)refresh.addEventListener('click',()=>setTimeout(checkPendingFeedback,2500));
-  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')setTimeout(checkPendingFeedback,800)});
-  setInterval(checkPendingFeedback,5*60*1000);
+  document.addEventListener('visibilitychange',()=>{
+    if(document.visibilityState!=='visible')return;
+    const newDay=lastCheckinFetchDay!==localDay();
+    if(newDay)setTimeout(()=>refreshDailyCheckin(true),250);
+    else setTimeout(checkPendingFeedback,800);
+  });
+  document.addEventListener('runflow:open-morning-checkin',()=>refreshDailyCheckin(true));
+  setInterval(()=>{
+    if(lastCheckinFetchDay!==localDay()&&document.visibilityState==='visible')refreshDailyCheckin(true);
+    else checkPendingFeedback();
+  },5*60*1000);
 }
 function wait(attempt=0){
   let ready=false;try{ready=Boolean(state?.athlete&&$('todayView'))}catch{}
