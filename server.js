@@ -21,7 +21,7 @@ const APP_ENCRYPTION_KEY = String(process.env.APP_ENCRYPTION_KEY || '');
 const OPENAI_API_KEY = String(process.env.OPENAI_API_KEY || '');
 const OPENAI_MODEL = String(process.env.OPENAI_MODEL || 'gpt-5.6-terra');
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
-const APP_VERSION = 'Online Pilot 1.9.3 - Dashboard Athlete tolerante a fallos';
+const APP_VERSION = 'Online Pilot 1.9.4 - Acceso Athlete directo por email';
 const INTERVALS_API_BASE = 'https://intervals.icu/api/v1';
 
 const RUNFLOW_PLAN_SCHEMA = 'runflow.plan.v1';
@@ -256,7 +256,40 @@ function authCookies(accessToken, refreshToken, expiresIn = 3600) {
 }
 
 function clearAuthCookies() {
-  return [cookie('rf_access', '', { maxAge: 0 }), cookie('rf_refresh', '', { maxAge: 0 })];
+  return [cookie('rf_access', '', { maxAge: 0 }), cookie('rf_refresh', '', { maxAge: 0 }), cookie('rf_athlete', '', { maxAge: 0 })];
+}
+
+function athleteSessionSecret() {
+  return APP_ENCRYPTION_KEY || SUPABASE_SERVICE_ROLE_KEY;
+}
+
+function createAthleteSessionToken(athlete) {
+  const secret = athleteSessionSecret();
+  if (!secret) throw Object.assign(new Error('El acceso Athlete no está configurado en el servidor.'), { status: 503 });
+  const payload = Buffer.from(JSON.stringify({
+    athlete_id: athlete.id,
+    user_id: athlete.user_id || athlete.id,
+    email: String(athlete.email || '').toLowerCase(),
+    display_name: athlete.display_name || 'Deportista',
+    exp: Math.floor(Date.now() / 1000) + (60 * 60 * 24 * 30),
+  })).toString('base64url');
+  const signature = crypto.createHmac('sha256', secret).update(payload).digest('base64url');
+  return `${payload}.${signature}`;
+}
+
+function readAthleteSessionToken(token) {
+  const secret = athleteSessionSecret();
+  if (!secret || !token || !token.includes('.')) return null;
+  const [payload, signature] = token.split('.');
+  const expected = crypto.createHmac('sha256', secret).update(payload).digest();
+  let received;
+  try { received = Buffer.from(signature, 'base64url'); } catch { return null; }
+  if (received.length !== expected.length || !crypto.timingSafeEqual(received, expected)) return null;
+  try {
+    const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    if (!data.athlete_id || !data.email || Number(data.exp) <= Math.floor(Date.now() / 1000)) return null;
+    return data;
+  } catch { return null; }
 }
 
 function startOfWeek(input = new Date()) {
@@ -457,6 +490,13 @@ async function authUser(accessToken) {
 
 async function getProductionSession(req, res) {
   const cookies = parseCookies(req);
+  const athleteSession = readAthleteSessionToken(cookies.rf_athlete);
+  if (athleteSession) {
+    return {
+      user: { id: athleteSession.user_id, email: athleteSession.email, user_metadata: { display_name: athleteSession.display_name } },
+      runflowContext: { roles: ['athlete'], athlete_id: athleteSession.athlete_id },
+    };
+  }
   let access = cookies.rf_access;
   let refresh = cookies.rf_refresh;
   if (!access) return null;
@@ -509,6 +549,7 @@ async function requireSession(req, res) {
   const session = await getSession(req, res);
   if (!session) throw Object.assign(new Error('Debes iniciar sesión.'), { status: 401 });
   if (DEMO_MODE) return { ...session, roles: session.user.roles, athlete_id: session.user.athlete_id };
+  if (session.runflowContext) return { ...session, ...session.runflowContext };
   const context = await prodUserContext(session.user.id);
   return { ...session, ...context };
 }
@@ -4763,7 +4804,7 @@ async function api(req, res, url) {
     return sendJson(res, 200, { ok: true, user: { id: data.user.id, email: data.user.email, display_name: data.user.user_metadata && data.user.user_metadata.display_name, ...context } });
   }
 
-  if (pathname === '/api/auth/magic-link' && method === 'POST') {
+  if (pathname === '/api/auth/athlete-email' && method === 'POST') {
     const body = await readJson(req);
     const email = athleteAccessEmail(body.email);
     if (DEMO_MODE) {
@@ -4773,12 +4814,22 @@ async function api(req, res, url) {
       res.setHeader('Set-Cookie', cookie('rf_demo_user', user.id, { maxAge: 60 * 60 * 24 * 7 }));
       return sendJson(res, 200, { ok: true, demo: true, user: { id: user.id, email: user.email, display_name: user.display_name, roles: user.roles, athlete_id: user.athlete_id } });
     }
-    const athletes = await prodRows('athletes', `email=ilike.${encodeURIComponent(email)}&lifecycle_status=eq.active&select=id,user_id&limit=2`);
-    if (athletes.length === 1 && athletes[0].user_id) {
-      const roles = await prodRows('user_roles', `user_id=eq.${encodeURIComponent(athletes[0].user_id)}&role=eq.athlete&select=role&limit=1`);
-      if (roles.length) await authMagicLink(email);
-    }
-    return sendJson(res, 200, { ok: true, message: 'Si el correo pertenece a un deportista activo, recibirá un enlace para entrar en RunFlow Athlete.' });
+    const athletes = await prodRows('athletes', `email=ilike.${encodeURIComponent(email)}&lifecycle_status=eq.active&select=id,user_id,email,display_name&limit=2`);
+    if (athletes.length !== 1) throw Object.assign(new Error('No hay una única ficha de deportista activa con ese correo.'), { status: 401 });
+    const athlete = athletes[0];
+    const token = createAthleteSessionToken(athlete);
+    res.setHeader('Set-Cookie', [
+      cookie('rf_athlete', token, { maxAge: 60 * 60 * 24 * 30 }),
+      cookie('rf_access', '', { maxAge: 0 }),
+      cookie('rf_refresh', '', { maxAge: 0 }),
+    ]);
+    return sendJson(res, 200, { ok: true, user: {
+      id: athlete.user_id || athlete.id,
+      email: athlete.email,
+      display_name: athlete.display_name,
+      roles: ['athlete'],
+      athlete_id: athlete.id,
+    } });
   }
 
   if (pathname === '/api/auth/session' && method === 'POST') {
