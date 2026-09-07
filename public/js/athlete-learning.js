@@ -74,10 +74,21 @@ function installCheckinAction(){
     button.id='runflowOpenDailyCheckin';
     button.className='rf-open-checkin';
     button.type='button';
-    button.addEventListener('click',()=>refreshDailyCheckin(true));
     card.appendChild(button);
   }
-  button.textContent=checkinBundle?.today?'Editar check-in':'Cumplimentar check-in';
+  if(button.dataset.rfBound!=='true'){
+    button.dataset.rfBound='true';
+    button.addEventListener('click',event=>{event.stopPropagation();refreshDailyCheckin(true)});
+  }
+  if(card.dataset.rfBound!=='true'){
+    card.dataset.rfBound='true';
+    card.tabIndex=0;
+    card.setAttribute('role','button');
+    card.setAttribute('aria-label','Cumplimentar readiness diario');
+    card.addEventListener('click',()=>refreshDailyCheckin(true));
+    card.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();refreshDailyCheckin(true)}});
+  }
+  button.textContent=checkinBundle?.today?'Editar readiness diario':'Cumplimentar readiness diario';
   button.dataset.completed=checkinBundle?.today?'true':'false';
 }
 function renderSubjective(){
@@ -164,5 +175,6 @@ function wait(){
   if(ready)boot();else if(!booted)setTimeout(wait,500);
 }
 document.addEventListener('runflow:athlete-dashboard-ready',boot);
-wait();
+installCheckinAction();
+boot();
 })();
