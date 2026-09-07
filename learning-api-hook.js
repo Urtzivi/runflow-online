@@ -10,6 +10,7 @@ const { URL } = require('url');
 const SUPABASE_URL = String(process.env.SUPABASE_URL || '').replace(/\/$/, '');
 const SUPABASE_ANON_KEY = String(process.env.SUPABASE_ANON_KEY || '');
 const SUPABASE_SERVICE_ROLE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '');
+const APP_ENCRYPTION_KEY = String(process.env.APP_ENCRYPTION_KEY || '');
 const IS_PROD = process.env.NODE_ENV === 'production';
 const CHECKIN_PREFIX = 'RUNFLOW_DAILY_CHECKIN:';
 const EVENT_PREFIX = 'RUNFLOW_LEARNING_EVENT:';
@@ -98,8 +99,31 @@ async function authRefresh(refresh) {
   });
 }
 
+function readAthleteSessionToken(token) {
+  const secret = APP_ENCRYPTION_KEY || SUPABASE_SERVICE_ROLE_KEY;
+  if (!secret || !token || !token.includes('.')) return null;
+  const [payload, signature] = token.split('.');
+  const expected = crypto.createHmac('sha256', secret).update(payload).digest();
+  let received;
+  try { received = Buffer.from(signature, 'base64url'); } catch { return null; }
+  if (received.length !== expected.length || !crypto.timingSafeEqual(received, expected)) return null;
+  try {
+    const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    if (!data.athlete_id || !data.email || Number(data.exp) <= Math.floor(Date.now() / 1000)) return null;
+    return data;
+  } catch { return null; }
+}
+
 async function requireSession(req, res) {
   const cookies = parseCookies(req);
+  const athleteSession = readAthleteSessionToken(cookies.rf_athlete);
+  if (athleteSession) {
+    return {
+      user: { id: athleteSession.user_id, email: athleteSession.email },
+      roles: ['athlete'],
+      athlete_id: athleteSession.athlete_id,
+    };
+  }
   let access = cookies.rf_access;
   let refresh = cookies.rf_refresh;
   if (!access) throw Object.assign(new Error('Debes iniciar sesión.'), { status: 401 });
