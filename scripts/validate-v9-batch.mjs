@@ -81,7 +81,8 @@ const render=fs.readFileSync(path.join(root,'render.yaml'),'utf8');
 if(!loginHtml.includes('forgotPassword')||!loginJs.includes('/api/auth/recover')||!render.includes('-r ./auth-recovery-hook.js'))throw new Error('Recuperación de contraseña incompleta.');
 if(!render.includes('-r ./learning-api-hook.js')||!render.includes('-r ./library-policy-hook.js'))throw new Error('Los hooks de aprendizaje/biblioteca no están cargados en Render.');
 for(const marker of ['optionalRows(\'perfil\'','optionalRows(\'semana\'','optionalRows(\'sesiones\'','[athlete-dashboard] semana decorada'])if(!server.includes(marker))throw new Error(`Dashboard Athlete no tolera fallos parciales: falta ${marker}`);
-if(!render.includes('-r ./athlete-link-recovery-hook.js'))throw new Error('El hook de recuperación del vínculo Athlete no está cargado en Render.');\nif(!linkRecovery.includes("url.pathname.startsWith('/api/v2/athlete/')"))throw new Error('El vínculo Athlete no cubre las rutas V2 de readiness.');
+if(!render.includes('-r ./athlete-link-recovery-hook.js'))throw new Error('El hook de recuperación del vínculo Athlete no está cargado en Render.');
+if(!linkRecovery.includes("url.pathname.startsWith('/api/v2/athlete/')"))throw new Error('El vínculo Athlete no cubre las rutas V2 de readiness.');
 
 const comparisonModule=await import(`file://${path.join(root,'session-comparison-metrics.js')}`);
 const comparison=comparisonModule.default||comparisonModule;
