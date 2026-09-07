@@ -65,6 +65,21 @@ function modal(){
   });
   return el;
 }
+function installCheckinAction(){
+  const card=document.querySelector('.athlete-mini-card.recovery');
+  if(!card)return;
+  let button=$('runflowOpenDailyCheckin');
+  if(!button){
+    button=document.createElement('button');
+    button.id='runflowOpenDailyCheckin';
+    button.className='rf-open-checkin';
+    button.type='button';
+    button.addEventListener('click',()=>refreshDailyCheckin(true));
+    card.appendChild(button);
+  }
+  button.textContent=checkinBundle?.today?'Editar check-in':'Cumplimentar check-in';
+  button.dataset.completed=checkinBundle?.today?'true':'false';
+}
 function renderSubjective(){
   if(!checkinBundle)return;
   const card=document.querySelector('.athlete-mini-card.recovery');
@@ -72,16 +87,21 @@ function renderSubjective(){
   let line=$('runflowSubjectiveRecovery');
   if(!line){line=document.createElement('div');line.id='runflowSubjectiveRecovery';line.className='rf-subjective-line';card.appendChild(line)}
   const today=checkinBundle.today,stats=checkinBundle.stats||{};
+  installCheckinAction();
   if(!today){line.innerHTML='<span>Tu sensación</span><strong>Sin registrar hoy</strong>';return}
   const delta=Number(stats.delta_vs_baseline),deltaText=Number.isFinite(delta)&&Number(stats.count)>1?` · ${delta>0?'+':''}${delta.toFixed(1)} vs tu media`:'';
   line.innerHTML=`<span>Tu sensación</span><strong>${today.recovery_score}/5 · ${esc(subjectiveLabel(today.recovery_score))}</strong><small>${Number.isFinite(Number(stats.baseline_mean))?`Media personal ${Number(stats.baseline_mean).toFixed(1)}${deltaText}`:'Construyendo tu referencia personal'}</small>`;
 }
 function showMorning(){
   const el=modal(),stats=checkinBundle?.stats||{};
-  el._rfSelected=null;
-  el.querySelectorAll('[data-rf-score]').forEach(x=>x.classList.remove('active'));
-  if($('rfMorningSave'))$('rfMorningSave').disabled=true;
-  if($('rfMorningComment'))$('rfMorningComment').value='';
+  const today=checkinBundle?.today||null;
+  el._rfSelected=today?Number(today.recovery_score):null;
+  el.querySelectorAll('[data-rf-score]').forEach(x=>x.classList.toggle('active',Number(x.dataset.rfScore)===el._rfSelected));
+  if($('rfMorningSave')){
+    $('rfMorningSave').disabled=!el._rfSelected;
+    $('rfMorningSave').textContent=today?'Actualizar cómo me encuentro':'Guardar cómo me encuentro';
+  }
+  if($('rfMorningComment'))$('rfMorningComment').value=today?.comment||'';
   const note=$('rfMorningBaseline');
   if(note)note.textContent=Number(stats.count)>0&&Number.isFinite(Number(stats.baseline_mean))?`Tu media personal hasta ahora es ${Number(stats.baseline_mean).toFixed(1)}/5. RunFlow comparará cada día contigo mismo, no con una media genérica.`:'Con tus respuestas iremos construyendo tu nivel habitual de recuperación.';
   el.classList.remove('hidden');
@@ -92,12 +112,12 @@ async function refreshDailyCheckin(forcePrompt=false){
     lastCheckinFetchDay=localDay();
     renderSubjective();
     document.dispatchEvent(new CustomEvent('runflow:daily-checkin-state',{detail:{day:lastCheckinFetchDay,completed:Boolean(checkinBundle?.today)}}));
-    if(checkinBundle?.today){
+    if(checkinBundle?.today&&!forcePrompt){
       const el=$('runflowMorningCheckin');if(el)el.classList.add('hidden');
       return true;
     }
     if(forcePrompt||document.visibilityState==='visible')showMorning();
-    return false;
+    return Boolean(checkinBundle?.today);
   }catch(error){console.warn('[RunFlow Learning] check-in',error.message);return null}
 }
 async function checkPendingFeedback(){
@@ -139,9 +159,10 @@ async function boot(){
     else checkPendingFeedback();
   },5*60*1000);
 }
-function wait(attempt=0){
+function wait(){
   let ready=false;try{ready=Boolean(state?.athlete&&$('todayView'))}catch{}
-  if(ready)boot();else if(attempt<100)setTimeout(()=>wait(attempt+1),100);
+  if(ready)boot();else if(!booted)setTimeout(wait,500);
 }
+document.addEventListener('runflow:athlete-dashboard-ready',boot);
 wait();
 })();

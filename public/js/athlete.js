@@ -364,6 +364,7 @@ function populateMessageWorkoutOptions(){
 function renderAll(){renderToday();renderWeek();renderProfile();renderPerformance();populateMessageWorkoutOptions();}
 async function loadDashboard(weekStart=state.selectedWeekStart){
   const data=await api(`/api/athlete/dashboard?week_start=${weekStart}`); state.athlete=data.athlete; state.selectedWeekStart=weekStart; renderAll();
+  document.dispatchEvent(new CustomEvent('runflow:athlete-dashboard-ready',{detail:{weekStart}}));
 }
 function renderDashboardError(error){
   const detail=error?.message||'No se pudo cargar la información del deportista.';
