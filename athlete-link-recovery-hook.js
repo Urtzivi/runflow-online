@@ -119,7 +119,7 @@ http.createServer = function athleteLinkRecoveryCreateServer(listener) {
   return previousCreateServer.call(http, async (req, res) => {
     try {
       const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-      if (url.pathname.startsWith('/api/athlete/')) await repairAthleteLink(req);
+      if (url.pathname.startsWith('/api/athlete/') || url.pathname.startsWith('/api/v2/athlete/')) await repairAthleteLink(req);
     } catch (error) {
       console.error('[athlete-link-recovery]', error);
     }
