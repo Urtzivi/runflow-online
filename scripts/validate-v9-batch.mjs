@@ -62,7 +62,7 @@ const athleteBeta=fs.readFileSync(path.join(root,'public/athlete-v2.html'),'utf8
 if(!athleteBeta.includes('/athlete-base.html')||!athleteBeta.includes('athlete-v2-beta-banner'))throw new Error('La ruta beta debe conservar su banner y usar la base preservada.');
 
 const learningApi=fs.readFileSync(path.join(root,'learning-api-hook.js'),'utf8');
-for(const marker of ['/api/v2/athlete/daily-checkin','/api/v2/athlete/pending-feedback','learning-summary','RUNFLOW_DAILY_CHECKIN','RUNFLOW_LEARNING_EVENT','baseline_mean','pre_state','feedback'])if(!learningApi.includes(marker))throw new Error(`Learning API incompleta: ${marker}`);
+for(const marker of ['/api/v2/athlete/daily-checkin','/api/v2/athlete/pending-feedback','learning-summary','RUNFLOW_DAILY_CHECKIN','RUNFLOW_LEARNING_EVENT','baseline_mean','pre_state','feedback','cookies.rf_athlete','readAthleteSessionToken','crypto.timingSafeEqual'])if(!learningApi.includes(marker))throw new Error(`Learning API incompleta: ${marker}`);
 const coachLearning=fs.readFileSync(path.join(root,'public/js/coach-learning.js'),'utf8');
 for(const marker of ['manual','imported','runflow_generated','ai_accepted','ai_modified','learning-event'])if(!coachLearning.includes(marker))throw new Error(`Captura de decisiones incompleta: ${marker}`);
 const athleteLearning=fs.readFileSync(path.join(root,'public/js/athlete-learning.js'),'utf8');
