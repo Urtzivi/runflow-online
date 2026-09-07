@@ -78,15 +78,15 @@ function installCheckinAction(){
   }
   if(button.dataset.rfBound!=='true'){
     button.dataset.rfBound='true';
-    button.addEventListener('click',event=>{event.stopPropagation();refreshDailyCheckin(true)});
+    button.addEventListener('click',event=>{event.stopPropagation();showMorning();refreshDailyCheckin(true)});
   }
   if(card.dataset.rfBound!=='true'){
     card.dataset.rfBound='true';
     card.tabIndex=0;
     card.setAttribute('role','button');
     card.setAttribute('aria-label','Cumplimentar readiness diario');
-    card.addEventListener('click',()=>refreshDailyCheckin(true));
-    card.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();refreshDailyCheckin(true)}});
+    card.addEventListener('click',()=>{showMorning();refreshDailyCheckin(true)});
+    card.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();showMorning();refreshDailyCheckin(true)}});
   }
   button.textContent=checkinBundle?.today?'Editar readiness diario':'Cumplimentar readiness diario';
   button.dataset.completed=checkinBundle?.today?'true':'false';
@@ -129,7 +129,16 @@ async function refreshDailyCheckin(forcePrompt=false){
     }
     if(forcePrompt||document.visibilityState==='visible')showMorning();
     return Boolean(checkinBundle?.today);
-  }catch(error){console.warn('[RunFlow Learning] check-in',error.message);return null}
+  }catch(error){
+    console.warn('[RunFlow Learning] check-in',error.message);
+    if(forcePrompt){
+      showMorning();
+      const note=$('rfMorningBaseline');
+      if(note){note.className='rf-baseline-note rf-checkin-error';note.textContent=`No se pudo conectar con el readiness: ${error.message}`;}
+      try{if(typeof message==='function')message(error.message,'error')}catch{}
+    }
+    return null
+  }
 }
 async function checkPendingFeedback(){
   if(feedbackPrompted)return;
@@ -154,7 +163,7 @@ async function refreshIntervalsThenFeedback(){
 }
 async function boot(){
   if(booted)return;booted=true;
-  const completed=await refreshDailyCheckin(true);
+  const completed=await refreshDailyCheckin(false);
   if(completed)setTimeout(checkPendingFeedback,500);
   setTimeout(refreshIntervalsThenFeedback,1800);
   const refresh=$('refreshAthleteActivities');if(refresh)refresh.addEventListener('click',()=>setTimeout(checkPendingFeedback,2500));
