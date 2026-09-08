@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#06111b">
+  <title>RunFlow Fútbol</title>
+  <link rel="stylesheet" href="/css/football.css?v=1.0.0">
+</head>
+<body>
+  <main class="rf-football" id="footballApp">
+    <header class="topbar">
+      <div class="brand">RUNFLOW<small>FÚTBOL</small></div>
+      <button id="logout" class="icon-button" type="button" aria-label="Salir">↗</button>
+    </header>
+
+    <section class="view active" id="homeView">
+      <article class="hero">
+        <img src="https://images.pexels.com/photos/6078299/pexels-photo-6078299.jpeg?auto=compress&cs=tinysrgb&w=1200" alt="Futbolista entrenando">
+        <div class="hero-shade"></div>
+        <div class="hero-copy">
+          <span>HOY · PLAN INDIVIDUAL</span>
+          <h1 id="hello">¡Buenos días!</h1>
+          <p>Pequeños pasos, grandes futbolistas.</p>
+        </div>
+      </article>
+
+      <article class="card wellbeing-card">
+        <div class="card-title"><div><span class="eyebrow">Bienestar</span><h2>¿Cómo estás hoy?</h2></div><span id="wellbeingState" class="status">Sin registrar</span></div>
+        <div class="moods">
+          <button type="button" data-feeling="muy_bien">🔥<strong>Genial</strong></button>
+          <button type="button" data-feeling="bien">🙂<strong>Bien</strong></button>
+          <button type="button" data-feeling="normal">😐<strong>Regular</strong></button>
+          <button type="button" data-feeling="mal">😣<strong>Mal</strong></button>
+        </div>
+        <div class="wellbeing-extra">
+          <label>Energía <input id="energy" type="range" min="1" max="5" value="3"></label>
+          <label>Carga muscular <input id="soreness" type="range" min="1" max="5" value="2"></label>
+        </div>
+      </article>
+
+      <article class="card today-card">
+        <div class="today-copy"><span class="eyebrow">Sesión prevista</span><h2 id="todayTitle">Cargando...</h2><p id="todaySummary">Leyendo la planificación publicada en RunFlow Coach.</p><button id="openToday" class="primary" type="button">Ver sesión →</button></div>
+        <img src="https://images.pexels.com/photos/274506/pexels-photo-274506.jpeg?auto=compress&cs=tinysrgb&w=800" alt="Campo de fútbol">
+      </article>
+
+      <article class="challenge-card">
+        <div><span class="eyebrow">Reto del día ⚽</span><h2 id="challengeTitle">20 controles orientados</h2><p id="challengeText">5 minutos. Primer toque y salida a ambos perfiles.</p></div>
+        <button id="completeChallenge" class="challenge-button" type="button">Hecho ✓</button>
+      </article>
+
+      <section class="quick-grid">
+        <button class="quick-card" type="button" data-view="log"><span>＋</span><strong>Registrar actividad</strong><small>Fútbol · fuerza · partido</small></button>
+        <button class="quick-card" type="button" data-view="evolution"><span>↗</span><strong>Tu semana</strong><small>Carga · RPE · minutos</small></button>
+      </section>
+    </section>
+
+    <section class="view" id="trainingView">
+      <div class="section-head"><button class="back" data-view="home" type="button">‹</button><div><span class="eyebrow">Entrenamiento</span><h1 id="trainingTitle">Sesión</h1></div></div>
+      <article class="video-card">
+        <img src="https://images.pexels.com/photos/12913353/pexels-photo-12913353.jpeg?auto=compress&cs=tinysrgb&w=1000" alt="Preparación física">
+        <button type="button" id="videoPlaceholder">▶</button>
+      </article>
+      <article class="card session-detail">
+        <h2>Objetivo de hoy</h2><p id="trainingSummary">La sesión publicada por el entrenador aparecerá aquí.</p>
+        <div id="trainingBlocks" class="blocks"></div>
+      </article>
+      <button class="primary full" type="button" data-view="log">Finalizar y registrar</button>
+    </section>
+
+    <section class="view" id="logView">
+      <div class="section-head"><button class="back" data-view="home" type="button">‹</button><div><span class="eyebrow">Después de entrenar</span><h1>Registrar actividad</h1></div></div>
+      <article class="card form-card">
+        <label>Tipo<select id="activityKind"><option value="football_training">Entrenamiento de fútbol</option><option value="strength">Fuerza / gimnasio</option><option value="match">Partido</option></select></label>
+        <label id="durationField">Duración (min)<input id="activityDuration" type="number" min="1" max="360" inputmode="numeric"></label>
+        <label id="minutesField" class="hidden">Minutos jugados<input id="matchMinutes" type="number" min="0" max="180" inputmode="numeric"></label>
+        <label>RPE (1–10)<input id="activityRpe" type="number" min="1" max="10" inputmode="numeric"></label>
+        <label>Molestia/dolor (0–10)<input id="activityPain" type="number" min="0" max="10" value="0" inputmode="numeric"></label>
+        <label>Nota opcional<textarea id="activityNote" rows="3" placeholder="Cómo fue la sesión, molestias, sensaciones..."></textarea></label>
+        <button id="saveActivity" class="primary full" type="button">Guardar en RunFlow</button>
+        <p id="saveStatus" class="muted"></p>
+      </article>
+    </section>
+
+    <section class="view" id="evolutionView">
+      <div class="section-head"><button class="back" data-view="home" type="button">‹</button><div><span class="eyebrow">Evolución</span><h1>Esta semana</h1></div></div>
+      <section class="metrics-grid">
+        <article class="metric"><span>Carga</span><strong id="weekLoad">0</strong><small>min × RPE</small></article>
+        <article class="metric"><span>RPE medio</span><strong id="weekRpe">—</strong><small>últimos 7 días</small></article>
+        <article class="metric"><span>Fútbol</span><strong id="weekFootball">0</strong><small>sesiones</small></article>
+        <article class="metric"><span>Fuerza</span><strong id="weekStrength">0</strong><small>sesiones</small></article>
+        <article class="metric"><span>Partidos</span><strong id="weekMatches">0</strong><small>partidos</small></article>
+        <article class="metric"><span>Minutos</span><strong id="weekMinutes">0</strong><small>actividad</small></article>
+      </section>
+      <article class="card history-card"><div class="card-title"><div><span class="eyebrow">Historial</span><h2>Últimos registros</h2></div></div><div id="recentList" class="recent-list"></div></article>
+    </section>
+
+    <nav class="bottom-nav">
+      <button class="active" data-view="home" type="button"><b>⌂</b><span>Inicio</span></button>
+      <button data-view="training" type="button"><b>⚒</b><span>Entreno</span></button>
+      <button data-view="log" type="button"><b>＋</b><span>Registrar</span></button>
+      <button data-view="evolution" type="button"><b>▥</b><span>Evolución</span></button>
+    </nav>
+    <div id="toast" class="toast"></div>
+  </main>
+  <script src="/js/football.js?v=1.0.0"></script>
+</body>
+</html>
