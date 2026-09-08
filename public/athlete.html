@@ -36,7 +36,7 @@
           const footballResponse=await fetch('/api/athlete/football/summary',{credentials:'same-origin',cache:'no-store'});
           if(footballResponse.ok){
             const football=await footballResponse.json();
-            if(football?.mode)return location.replace('/football');
+            if(football?.mode)return location.replace('/football.html');
           }
         }catch(error){console.warn('[RunFlow Athlete] football mode check',error);}
         const base=await fetch('/athlete-base.html',{credentials:'same-origin',cache:'no-store'});
