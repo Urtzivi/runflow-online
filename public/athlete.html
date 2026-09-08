@@ -32,6 +32,13 @@
         const data=await response.json();
         if(!Array.isArray(data?.user?.roles)||!data.user.roles.includes('athlete'))return fail();
         localStorage.setItem('runflow_client','athlete');
+        try{
+          const footballResponse=await fetch('/api/athlete/football/summary',{credentials:'same-origin',cache:'no-store'});
+          if(footballResponse.ok){
+            const football=await footballResponse.json();
+            if(football?.mode)return location.replace('/football.html');
+          }
+        }catch(error){console.warn('[RunFlow Athlete] football mode check',error);}
         const base=await fetch('/athlete-base.html',{credentials:'same-origin',cache:'no-store'});
         if(!base.ok)throw new Error('No se pudo cargar Athlete base');
         const html=await base.text();
