@@ -57,7 +57,32 @@ async function createProposal(session,athleteId,body){await coachAthlete(session
 async function proposals(coachId,status){const rows=await sb('workout_templates',`coach_user_id=eq.${encodeURIComponent(coachId)}&category=eq.${encodeURIComponent(PROPOSAL)}&select=id,athlete_id,name,template_data,created_at&order=created_at.desc`);return rows.map(x=>({id:x.id,athlete_id:x.athlete_id,name:x.name,created_at:x.created_at,...x.template_data})).filter(x=>!status||x.status===status)}
 async function proposalStatus(coachId,id,status){if(!['approved','rejected'].includes(status))throw Object.assign(new Error('Estado no válido.'),{status:400});const rows=await sb('workout_templates',`id=eq.${encodeURIComponent(id)}&coach_user_id=eq.${encodeURIComponent(coachId)}&category=eq.${encodeURIComponent(PROPOSAL)}&select=template_data&limit=1`);if(!rows.length)throw Object.assign(new Error('Propuesta no encontrada.'),{status:404});const data={...rows[0].template_data,status,reviewed_at:new Date().toISOString()};await sb('workout_templates',`id=eq.${encodeURIComponent(id)}`,{method:'PATCH',body:{template_data:data,updated_at:new Date().toISOString()},prefer:'return=minimal'});return{id,...data}}
 
-async function handle(req,res,url){const path=url.pathname,method=req.method||'GET';if(!path.startsWith('/api/assistant/')&&!path.startsWith('/api/coach/assistant'))return false;
+
+const MCP_TOOLS=[
+  {name:'list_athletes',description:'Lista los deportistas activos que gestiona el entrenador.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true,destructiveHint:false}},
+  {name:'get_daily_report',description:'Obtiene la sesión planificada, actividad realizada y feedback de un deportista para una fecha.',inputSchema:{type:'object',properties:{athlete_id:{type:'string'},date:{type:'string',description:'Fecha YYYY-MM-DD; si se omite usa hoy en Europe/Madrid.'}},required:['athlete_id'],additionalProperties:false},annotations:{readOnlyHint:true,destructiveHint:false}},
+  {name:'create_week_proposal',description:'Crea una propuesta semanal para revisión del entrenador. Nunca publica ni modifica directamente el calendario.',inputSchema:{type:'object',properties:{athlete_id:{type:'string'},week_start:{type:'string'},title:{type:'string'},reason:{type:'string'},week_type:{type:'string'},coach_comment:{type:'string'},target_load:{type:'number'},workouts:{type:'array',items:{type:'object'}}},required:['athlete_id','week_start','title','reason','workouts'],additionalProperties:false},annotations:{readOnlyHint:false,destructiveHint:false}}
+];
+function mcpResult(id,value){return{jsonrpc:'2.0',id,result:{content:[{type:'text',text:JSON.stringify(value)}],structuredContent:value,isError:false}}}
+async function handleMcp(req,res){
+  if(req.method!=='POST')throw Object.assign(new Error('MCP requiere POST.'),{status:405});
+  const message=await readJson(req),id=message.id??null;
+  if(message.method==='initialize'){sendJson(res,200,{jsonrpc:'2.0',id,result:{protocolVersion:'2025-06-18',capabilities:{tools:{listChanged:false}},serverInfo:{name:'runflow-assistant',version:'1.0.0'}}});return true}
+  if(message.method==='notifications/initialized'){res.writeHead(202,{'Cache-Control':'no-store'});res.end();return true}
+  if(message.method==='ping'){sendJson(res,200,{jsonrpc:'2.0',id,result:{}});return true}
+  if(message.method==='tools/list'){await assistantSession(req,'read');sendJson(res,200,{jsonrpc:'2.0',id,result:{tools:MCP_TOOLS}});return true}
+  if(message.method==='tools/call'){
+    const name=message.params?.name,args=message.params?.arguments||{},scope=name==='create_week_proposal'?'draft':'read';
+    const session=await assistantSession(req,scope);
+    if(name==='list_athletes'){const rows=await athletes(session.coach_user_id);await audit(session,'mcp_athletes_read',{count:rows.length});sendJson(res,200,mcpResult(id,{athletes:rows}));return true}
+    if(name==='get_daily_report'){const report=await dailyReport(session.coach_user_id,safe(args.athlete_id,80),args.date);await audit(session,'mcp_daily_report_read',{athlete_id:args.athlete_id,date:report.date});sendJson(res,200,mcpResult(id,report));return true}
+    if(name==='create_week_proposal'){const athleteId=safe(args.athlete_id,80);const proposal=await createProposal(session,athleteId,args);sendJson(res,200,mcpResult(id,{proposal}));return true}
+    sendJson(res,200,{jsonrpc:'2.0',id,error:{code:-32601,message:'Herramienta MCP no encontrada.'}});return true
+  }
+  sendJson(res,200,{jsonrpc:'2.0',id,error:{code:-32601,message:'Método MCP no encontrado.'}});return true
+}
+
+async function handle(req,res,url){const path=url.pathname,method=req.method||'GET';if(path==='/mcp')return handleMcp(req,res);if(!path.startsWith('/api/assistant/')&&!path.startsWith('/api/coach/assistant'))return false;
   if(path==='/api/coach/assistant-access'){const session=await coachSession(req,res);if(method==='GET'){sendJson(res,200,{credentials:await listCredentials(session.user.id)});return true}if(method==='POST'){sendJson(res,201,await createCredential(session,await readJson(req)));return true}}
   let match=path.match(/^\/api\/coach\/assistant-access\/([^/]+)$/);if(match&&method==='DELETE'){const session=await coachSession(req,res);await revokeCredential(session.user.id,decodeURIComponent(match[1]));sendJson(res,200,{ok:true});return true}
   if(path==='/api/coach/assistant-proposals'&&method==='GET'){const session=await coachSession(req,res);sendJson(res,200,{proposals:await proposals(session.user.id,url.searchParams.get('status'))});return true}
