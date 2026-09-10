@@ -849,6 +849,9 @@ function normaliseWorkout(item, athleteId, weekStart, index) {
   if (hasOwn(source, 'planned_elevation_m')) workout.planned_elevation_m = numberOrNull(source.planned_elevation_m, 0, 100000);
   if (typeof source.is_strength === 'boolean') workout.is_strength = source.is_strength;
 
+  const structuredDuration = structuredWorkoutDurationMin(workout);
+  if (structuredDuration !== null) workout.planned_duration_min = structuredDuration;
+
   return workout;
 }
 
@@ -3193,6 +3196,34 @@ function intervalsDurationToken(value, unit = 'm') {
   return `${cleaned}m`;
 }
 
+function structuredWorkoutDurationMin(workout) {
+  if (!workout || String(workout.sport || 'Run') === 'Strength') return null;
+  const blocks = Array.isArray(workout.blocks) ? workout.blocks : [];
+  if (!blocks.length) return null;
+  let seconds = 0;
+  for (const block of blocks) {
+    if (!block || typeof block !== 'object') continue;
+    if (block.type === 'warmup' || block.type === 'cooldown') {
+      seconds += Math.max(0, Number(block.duration_min || 0)) * 60;
+    } else if (block.type === 'activation') {
+      const reps = Math.max(1, Math.round(Number(block.repetitions || 1)));
+      seconds += reps * (Math.max(0, Number(block.work_sec || 0)) + Math.max(0, Number(block.recovery_sec || 0)));
+    } else if (block.type === 'central') {
+      if (String(block.work_unit || 'm') === 'km') return null;
+      const reps = Math.max(1, Math.round(Number(block.repetitions || 1)));
+      const workFactor = String(block.work_unit || 'm') === 's' ? 1 : 60;
+      const recoveryFactor = String(block.recovery_unit || 'm') === 's' ? 1 : 60;
+      seconds += reps * Math.max(0, Number(block.work_value || 0)) * workFactor;
+      if (reps > 1) seconds += reps * Math.max(0, Number(block.recovery_value || 0)) * recoveryFactor;
+    } else if (block.type === 'steady') {
+      if (!block.duration_min && String(block.work_unit || 'm') === 'km') return null;
+      const factor = block.duration_min || String(block.work_unit || 'm') !== 's' ? 60 : 1;
+      seconds += Math.max(0, Number(block.duration_min || block.work_value || 0)) * factor;
+    }
+  }
+  return seconds > 0 ? Math.round((seconds / 60) * 100) / 100 : null;
+}
+
 function compileIntervalsWorkoutDescription(workout) {
   const sport = String(workout && workout.sport || 'Run');
   const blocks = Array.isArray(workout && workout.blocks) ? workout.blocks : [];
@@ -3278,10 +3309,26 @@ function buildIntervalsEvent(workout) {
     external_id: `runflow-workout-${workout.id}`,
   };
   const load = numberOrNull(workout.planned_load, 0, 1000);
-  const duration = numberOrNull(workout.planned_duration_min, 0, 2000);
+  const duration = structuredWorkoutDurationMin(workout) ?? numberOrNull(workout.planned_duration_min, 0, 2000);
   if (load !== null) event.icu_training_load = load;
   if (duration !== null) event.moving_time = Math.round(duration * 60);
   return event;
+}
+
+function sameIntervalsDescription(actual, expected) {
+  const clean = value => String(value || '').replace(/\r/g, '').split('\n').map(line => line.trim()).filter(Boolean).join('\n');
+  return clean(actual) === clean(expected);
+}
+
+async function verifyIntervalsEvent(apiKey, eventId, expected) {
+  if (eventId === null || eventId === undefined) throw Object.assign(new Error('Intervals no devolvió el identificador de la sesión sincronizada.'), { status: 502, code: 'INTERVALS_SYNC_UNVERIFIED' });
+  const actual = await intervalsFetch(apiKey, `/athlete/0/events/${encodeURIComponent(eventId)}`);
+  const expectedDuration = Number(expected.moving_time || 0);
+  const actualDuration = Number(actual && actual.moving_time || 0);
+  if (!actual || !sameIntervalsDescription(actual.description, expected.description) || (expectedDuration > 0 && actualDuration !== expectedDuration)) {
+    throw Object.assign(new Error('Intervals no ha guardado la misma estructura y duración que RunFlow. La sincronización queda marcada como fallida.'), { status: 502, code: 'INTERVALS_SYNC_MISMATCH' });
+  }
+  return true;
 }
 
 async function intervalsEventsForRange(apiKey, oldest, newest) {
@@ -3364,6 +3411,7 @@ async function syncWeekToIntervals(athleteId, week, deletedWorkouts = []) {
           method: 'PUT',
           body: JSON.stringify(event),
         });
+        await verifyIntervalsEvent(apiKey, result && result.id !== undefined ? result.id : workout.intervals_event_id, event);
         results.push(result);
         await saveIntervalsEventId(athleteId, workout.id, result && result.id !== undefined ? result.id : workout.intervals_event_id);
         workout.intervals_event_id = String(result && result.id !== undefined ? result.id : workout.intervals_event_id);
@@ -3382,6 +3430,7 @@ async function syncWeekToIntervals(athleteId, week, deletedWorkouts = []) {
         method: 'PUT',
         body: JSON.stringify(event),
       });
+      await verifyIntervalsEvent(apiKey, result && result.id !== undefined ? result.id : legacy.id, event);
       results.push(result);
       await saveIntervalsEventId(athleteId, workout.id, result && result.id !== undefined ? result.id : legacy.id);
       workout.intervals_event_id = String(result && result.id !== undefined ? result.id : legacy.id);
@@ -3403,6 +3452,7 @@ async function syncWeekToIntervals(athleteId, week, deletedWorkouts = []) {
     for (let index = 0; index < pendingCreate.length; index += 1) {
       const entry = pendingCreate[index];
       const result = bulkRows[index] || null;
+      await verifyIntervalsEvent(apiKey, result && result.id, entry.event);
       results.push(result);
       if (result && result.id !== undefined) {
         await saveIntervalsEventId(athleteId, entry.workout.id, result.id);
@@ -3418,6 +3468,7 @@ async function syncWeekToIntervals(athleteId, week, deletedWorkouts = []) {
     updated,
     deleted,
     legacy_adopted: legacyAdopted,
+    verified: candidates.length,
     result: results,
   };
 }
