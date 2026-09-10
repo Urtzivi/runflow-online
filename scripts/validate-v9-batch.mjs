@@ -5,11 +5,11 @@ import { execFileSync } from 'node:child_process';
 
 const root = process.cwd();
 const syntaxFiles = [
-  'auth-recovery-hook.js','athlete-link-recovery-hook.js','learning-api-hook.js','library-policy-hook.js','session-comparison-metrics.js','v9-engine-hook.js','v9-supplement-hook.js','public/js/login.js','public/js/activate.js',
+  'auth-recovery-hook.js','athlete-link-recovery-hook.js','learning-api-hook.js','assistant-api-hook.js','library-policy-hook.js','session-comparison-metrics.js','v9-engine-hook.js','v9-supplement-hook.js','public/js/login.js','public/js/activate.js',
   'public/js/coach-v9-batch.js','public/js/coach-v9-supplement.js','public/js/coach-v9-season-planner.js','public/js/coach-v9-season-bridge.js',
   'public/js/coach-v9-profile-availability.js','public/js/coach-v9-hierarchy.js','public/js/coach-v9-stepwise-final.js','public/js/coach-v9-session-generator-fix.js',
   'public/js/coach-v9-manual-planning.js','public/js/coach-v9-contextual-recommender-v2.js','public/js/coach-v9-plan-v2-import.js','public/js/coach-learning.js',
-  'public/js/coach-athlete-context-export.js',
+  'public/js/coach-athlete-context-export.js','public/js/coach-assistant.js',
   'public/js/athlete.js','public/js/athlete-v2-beta.js','public/js/athlete-v2-complete.js','public/js/athlete-v2-fixes.js','public/js/athlete-learning.js','public/js/athlete-native-readiness-notifications.js',
 ];
 for (const file of syntaxFiles) execFileSync(process.execPath, ['--check', path.join(root, file)], { stdio:'inherit' });
@@ -63,6 +63,10 @@ if(!athleteBeta.includes('/athlete-base.html')||!athleteBeta.includes('athlete-v
 
 const learningApi=fs.readFileSync(path.join(root,'learning-api-hook.js'),'utf8');
 for(const marker of ['/api/v2/athlete/daily-checkin','/api/v2/athlete/pending-feedback','learning-summary','RUNFLOW_DAILY_CHECKIN','RUNFLOW_LEARNING_EVENT','baseline_mean','pre_state','feedback','cookies.rf_athlete','readAthleteSessionToken','crypto.timingSafeEqual'])if(!learningApi.includes(marker))throw new Error(`Learning API incompleta: ${marker}`);
+const assistantApi=fs.readFileSync(path.join(root,'assistant-api-hook.js'),'utf8');
+for(const marker of ['/api/assistant/athletes','daily-report','assistant-proposals','assistant-access','ALLOWED_SCOPES','crypto.timingSafeEqual','status:\'proposed\'','status:\'draft\''])if(!assistantApi.includes(marker))throw new Error(`Assistant API incompleta: ${marker}`);
+const coachAssistant=fs.readFileSync(path.join(root,'public/js/coach-assistant.js'),'utf8');
+for(const marker of ['Crear credencial','Aprobar y pasar a borrador',"status==='published'","status:'draft'",'Revocar'])if(!coachAssistant.includes(marker))throw new Error(`Control Assistant de Coach incompleto: ${marker}`);
 const coachLearning=fs.readFileSync(path.join(root,'public/js/coach-learning.js'),'utf8');
 for(const marker of ['manual','imported','runflow_generated','ai_accepted','ai_modified','learning-event'])if(!coachLearning.includes(marker))throw new Error(`Captura de decisiones incompleta: ${marker}`);
 const athleteLearning=fs.readFileSync(path.join(root,'public/js/athlete-learning.js'),'utf8');
@@ -78,6 +82,7 @@ for(const marker of ['user_id=eq.','email=ilike.','matches.length !== 1','authAd
 const loginHtml=fs.readFileSync(path.join(root,'public/login.html'),'utf8');
 const loginJs=fs.readFileSync(path.join(root,'public/js/login.js'),'utf8');
 const render=fs.readFileSync(path.join(root,'render.yaml'),'utf8');
+if(!render.includes('-r ./assistant-api-hook.js')||!primaryCoach.includes('/js/coach-assistant.js?v=1.0.0'))throw new Error('Asistente RunFlow no está cargado en producción.');
 if(!loginHtml.includes('forgotPassword')||!loginJs.includes('/api/auth/recover')||!render.includes('-r ./auth-recovery-hook.js'))throw new Error('Recuperación de contraseña incompleta.');
 if(!render.includes('-r ./learning-api-hook.js')||!render.includes('-r ./library-policy-hook.js'))throw new Error('Los hooks de aprendizaje/biblioteca no están cargados en Render.');
 for(const marker of ['optionalRows(\'perfil\'','optionalRows(\'semana\'','optionalRows(\'sesiones\'','[athlete-dashboard] semana decorada'])if(!server.includes(marker))throw new Error(`Dashboard Athlete no tolera fallos parciales: falta ${marker}`);
