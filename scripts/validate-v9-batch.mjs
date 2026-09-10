@@ -64,7 +64,7 @@ if(!athleteBeta.includes('/athlete-base.html')||!athleteBeta.includes('athlete-v
 const learningApi=fs.readFileSync(path.join(root,'learning-api-hook.js'),'utf8');
 for(const marker of ['/api/v2/athlete/daily-checkin','/api/v2/athlete/pending-feedback','learning-summary','RUNFLOW_DAILY_CHECKIN','RUNFLOW_LEARNING_EVENT','baseline_mean','pre_state','feedback','cookies.rf_athlete','readAthleteSessionToken','crypto.timingSafeEqual'])if(!learningApi.includes(marker))throw new Error(`Learning API incompleta: ${marker}`);
 const assistantApi=fs.readFileSync(path.join(root,'assistant-api-hook.js'),'utf8');
-for(const marker of ['/api/assistant/athletes','daily-report','assistant-proposals','assistant-access','ALLOWED_SCOPES','crypto.timingSafeEqual','status:\'proposed\'','status:\'draft\''])if(!assistantApi.includes(marker))throw new Error(`Assistant API incompleta: ${marker}`);
+for(const marker of ['/api/assistant/athletes','daily-report','assistant-proposals','assistant-access','ALLOWED_SCOPES','crypto.timingSafeEqual','status:\'proposed\'','status:\'draft\'','path===\'/mcp\'','tools/list','tools/call','create_week_proposal','readOnlyHint'])if(!assistantApi.includes(marker))throw new Error(`Assistant API incompleta: ${marker}`);
 const coachAssistant=fs.readFileSync(path.join(root,'public/js/coach-assistant.js'),'utf8');
 for(const marker of ['Crear credencial','Aprobar y pasar a borrador',"status==='published'","status:'draft'",'Revocar'])if(!coachAssistant.includes(marker))throw new Error(`Control Assistant de Coach incompleto: ${marker}`);
 const coachLearning=fs.readFileSync(path.join(root,'public/js/coach-learning.js'),'utf8');
