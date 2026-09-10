@@ -6,6 +6,8 @@ on:
       - 'v9-*.js'
       - 'session-comparison-metrics.js'
       - 'athlete-link-recovery-hook.js'
+      - 'assistant-api-hook.js'
+      - 'public/js/coach-assistant.js'
       - 'plan-delete-hook.js'
       - 'season-delete-hook.js'
       - 'season-delete-hook-v2.js'
