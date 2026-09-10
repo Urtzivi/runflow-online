@@ -6,6 +6,7 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
 const planner = read('public/js/coach-v10-calendar-planner.js');
 const styles = read('public/css/coach-v10-calendar-planner.css');
 const coach = read('public/coach.html');
+const coachJs = read('public/js/coach.js');
 const beta = read('public/coach-v9.html');
 const base = read('public/coach-base.html');
 const availability = read('public/js/coach-v9-profile-availability.js');
@@ -65,6 +66,10 @@ for (const marker of ['v10AvailabilityStatus', 'validateWorkout', 'El archivo no
 for (const marker of ['ATHLETE_AVAILABILITY_CONFLICT', 'assertWorkoutsFitAvailability', 'availabilityTypes', 'day.activity_types', 'synchroniseAthleteAccessEmail', 'existingProfiles']) {
   assert(server.includes(marker), `El servidor no protege ficha/planificación: ${marker}`);
 }
+for (const marker of ['structuredWorkoutDurationMin', 'verifyIntervalsEvent', 'INTERVALS_SYNC_MISMATCH', 'verified: candidates.length']) {
+  assert(server.includes(marker), `Falta proteger la integridad de la sincronización: ${marker}`);
+}
+assert(coachJs.includes('sincronizadas · ${data.intervals?.verified ?? 0} verificadas'), 'Coach no muestra cuántas sesiones se verificaron tras sincronizar.');
 assert(server.includes('ensureMesocycleDatesAvailable'), 'El servidor no bloquea mesociclos solapados.');
 assert(server.includes("pathname === '/api/auth/athlete-email'"), 'Falta el acceso Athlete directo mediante email.');
 assert(server.includes('createAthleteSessionToken'), 'Falta crear una sesión Athlete firmada.');
