@@ -631,7 +631,7 @@ async function persistCalendarWeek(weekStart, publish = false, quiet = false) {
     renderSummary();
   }
   if (!quiet) {
-    const extra = data.intervals?.skipped ? ` ${data.intervals.reason}` : (shouldPublish ? ` Intervals: ${data.intervals?.exported ?? 0} sincronizadas · ${data.intervals?.created ?? 0} nuevas · ${data.intervals?.updated ?? 0} actualizadas${Number(data.intervals?.deleted || 0) ? ` · ${data.intervals.deleted} eliminadas` : ''}.` : '');
+    const extra = data.intervals?.skipped ? ` ${data.intervals.reason}` : (shouldPublish ? ` Intervals: ${data.intervals?.exported ?? 0} sincronizadas · ${data.intervals?.verified ?? 0} verificadas · ${data.intervals?.created ?? 0} nuevas · ${data.intervals?.updated ?? 0} actualizadas${Number(data.intervals?.deleted || 0) ? ` · ${data.intervals.deleted} eliminadas` : ''}.` : '');
     showMessage(`${shouldPublish ? 'Semana publicada.' : 'Semana guardada.'}${extra}`, 'success');
   }
   renderCalendar();
