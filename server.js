@@ -1328,7 +1328,8 @@ async function listWorkoutTemplates(session, athleteId = null) {
   }
   const filters = [`coach_user_id=eq.${encodeURIComponent(session.user.id)}`];
   if (athleteId) filters.push(`or=(athlete_id.is.null,athlete_id.eq.${encodeURIComponent(athleteId)})`);
-  const rows = await prodRows('workout_templates', `${filters.join('&')}&select=*&order=updated_at.desc`);
+  const rows = (await prodRows('workout_templates', `${filters.join('&')}&select=*&order=updated_at.desc`))
+    .filter(item => !String(item.category || '').startsWith('__runflow_assistant_'));
   return [
     ...rows.map(item => ({ ...item, source: 'custom', editable: true })),
     ...system,
