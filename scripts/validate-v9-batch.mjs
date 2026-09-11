@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 
 const root = process.cwd();
 const syntaxFiles = [
-  'auth-recovery-hook.js','athlete-link-recovery-hook.js','learning-api-hook.js','assistant-api-hook.js','library-policy-hook.js','session-comparison-metrics.js','v9-engine-hook.js','v9-supplement-hook.js','public/js/login.js','public/js/activate.js',
+  'auth-recovery-hook.js','athlete-link-recovery-hook.js','learning-api-hook.js','assistant-api-hook.js','library-policy-hook.js','session-comparison-metrics.js','v9-engine-hook.js','v9-supplement-hook.js','v9-reschedule-hook.js','public/js/login.js','public/js/activate.js',
   'public/js/coach-v9-batch.js','public/js/coach-v9-supplement.js','public/js/coach-v9-season-planner.js','public/js/coach-v9-season-bridge.js',
   'public/js/coach-v9-profile-availability.js','public/js/coach-v9-hierarchy.js','public/js/coach-v9-stepwise-final.js','public/js/coach-v9-session-generator-fix.js',
   'public/js/coach-v9-manual-planning.js','public/js/coach-v9-contextual-recommender-v2.js','public/js/coach-v9-plan-v2-import.js','public/js/coach-learning.js',
@@ -63,6 +63,8 @@ if(!athleteBeta.includes('/athlete-base.html')||!athleteBeta.includes('athlete-v
 
 const learningApi=fs.readFileSync(path.join(root,'learning-api-hook.js'),'utf8');
 for(const marker of ['/api/v2/athlete/daily-checkin','/api/v2/athlete/pending-feedback','learning-summary','RUNFLOW_DAILY_CHECKIN','RUNFLOW_LEARNING_EVENT','baseline_mean','pre_state','feedback','cookies.rf_athlete','readAthleteSessionToken','crypto.timingSafeEqual'])if(!learningApi.includes(marker))throw new Error(`Learning API incompleta: ${marker}`);
+const rescheduleApi=fs.readFileSync(path.join(root,'v9-reschedule-hook.js'),'utf8');
+for(const marker of ['readAthleteSessionToken','c.rf_athlete','crypto.timingSafeEqual','if(!access&&refresh)'])if(!rescheduleApi.includes(marker))throw new Error(`Reprogramación Athlete sin recuperación de sesión: ${marker}`);
 const assistantApi=fs.readFileSync(path.join(root,'assistant-api-hook.js'),'utf8');
 for(const marker of ['/api/assistant/athletes','daily-report','assistant-proposals','assistant-access','ALLOWED_SCOPES','crypto.timingSafeEqual','status:\'proposed\'','status:\'draft\'','path===\'/mcp\'','tools/list','tools/call','create_week_proposal','readOnlyHint'])if(!assistantApi.includes(marker))throw new Error(`Assistant API incompleta: ${marker}`);
 const coachAssistant=fs.readFileSync(path.join(root,'public/js/coach-assistant.js'),'utf8');
