@@ -51,8 +51,11 @@ for(const rule of ['el primer mesociclo no empieza con el macro','hay hueco o so
 const athleteOfficial=fs.readFileSync(path.join(root,'public/athlete.html'),'utf8');
 const athleteBetaJs=fs.readFileSync(path.join(root,'public/js/athlete-v2-beta.js'),'utf8');
 const athleteFixesJs=fs.readFileSync(path.join(root,'public/js/athlete-v2-fixes.js'),'utf8');
-for(const marker of ['/athlete-base.html','/js/athlete.js?v=2.4.2.4','/js/athlete-v2-beta.js?v=2.0.4','/js/athlete-v2-complete.js?v=2.2.0','/js/athlete-v2-fixes.js?v=2.1.1','/js/athlete-learning.js?v=2.4.3','/js/athlete-native-readiness-notifications.js?v=1.0.0','/css/athlete-v4.css?v=4.0.1','/css/athlete-learning.css?v=2.3.2',"location.replace('/login?mode=athlete')","runflowAthleteVersion='2.4.3-daily-readiness'"])if(!athleteOfficial.includes(marker))throw new Error(`Athlete oficial: falta ${marker}`);
+for(const marker of ['/athlete-base.html','/js/athlete.js?v=2.4.2.4','/js/athlete-v2-beta.js?v=2.0.5','/js/athlete-v2-complete.js?v=2.2.1','/js/athlete-v2-fixes.js?v=2.1.1','/js/athlete-learning.js?v=2.4.3','/js/athlete-native-readiness-notifications.js?v=1.0.0','/css/athlete-v4.css?v=4.0.1','/css/athlete-learning.css?v=2.3.2',"location.replace('/login?mode=athlete')","runflowAthleteVersion='2.4.4-session-actions'"])if(!athleteOfficial.includes(marker))throw new Error(`Athlete oficial: falta ${marker}`);
 if(!athleteBetaJs.includes('if(!changedByBaseView)return'))throw new Error('Athlete V2: el observador de actividades puede reaccionar a sus propias tarjetas.');
+for(const marker of ['data-v2-sport="walk"','Paseo / senderismo',"credentials:'include'"])if(!athleteBetaJs.includes(marker))throw new Error(`Actividad manual Athlete incompleta: ${marker}`);
+const athleteCompleteJs=fs.readFileSync(path.join(root,'public/js/athlete-v2-complete.js'),'utf8');
+for(const marker of ["credentials:'include'","r.status===401","/api/auth/me"])if(!athleteCompleteJs.includes(marker))throw new Error(`Acciones Athlete sin recuperación de sesión cliente: ${marker}`);
 if(!athleteFixesJs.includes("help&&help.textContent!==helpText"))throw new Error('Athlete V2: la corrección de textos puede provocar un bucle de MutationObserver.');
 if(athleteOfficial.includes('athlete-v2-beta-banner'))throw new Error('Athlete oficial no debe mostrar el banner beta.');
 const athleteJs=fs.readFileSync(path.join(root,'public/js/athlete.js'),'utf8');
@@ -65,6 +68,8 @@ const learningApi=fs.readFileSync(path.join(root,'learning-api-hook.js'),'utf8')
 for(const marker of ['/api/v2/athlete/daily-checkin','/api/v2/athlete/pending-feedback','learning-summary','RUNFLOW_DAILY_CHECKIN','RUNFLOW_LEARNING_EVENT','baseline_mean','pre_state','feedback','cookies.rf_athlete','readAthleteSessionToken','crypto.timingSafeEqual'])if(!learningApi.includes(marker))throw new Error(`Learning API incompleta: ${marker}`);
 const rescheduleApi=fs.readFileSync(path.join(root,'v9-reschedule-hook.js'),'utf8');
 for(const marker of ['readAthleteSessionToken','c.rf_athlete','crypto.timingSafeEqual','if(!access&&refresh)'])if(!rescheduleApi.includes(marker))throw new Error(`Reprogramación Athlete sin recuperación de sesión: ${marker}`);
+const athleteV2Api=fs.readFileSync(path.join(root,'v9-engine-hook.js'),'utf8');
+for(const marker of ['readAthleteSessionToken','cookies.rf_athlete','crypto.timingSafeEqual','if(!access&&refresh)'])if(!athleteV2Api.includes(marker))throw new Error(`API Athlete V2 sin recuperación de sesión: ${marker}`);
 const assistantApi=fs.readFileSync(path.join(root,'assistant-api-hook.js'),'utf8');
 for(const marker of ['/api/assistant/athletes','daily-report','assistant-proposals','assistant-access','ALLOWED_SCOPES','crypto.timingSafeEqual','status:\'proposed\'','status:\'draft\'','path===\'/mcp\'','tools/list','tools/call','create_week_proposal','readOnlyHint'])if(!assistantApi.includes(marker))throw new Error(`Assistant API incompleta: ${marker}`);
 const coachAssistant=fs.readFileSync(path.join(root,'public/js/coach-assistant.js'),'utf8');
