@@ -1,6 +1,6 @@
 (() => {
   const q=(s,r=document)=>r.querySelector(s);
-  const apiV2=async(url,options={})=>{const r=await fetch(url,{...options,headers:{'Content-Type':'application/json',...(options.headers||{})}});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'No se pudo completar la operación.');return d;};
+  const apiV2=async(url,options={})=>{const request=()=>fetch(url,{...options,credentials:'include',headers:{'Content-Type':'application/json',...(options.headers||{})}});let r=await request();if(r.status===401){await fetch('/api/auth/me',{credentials:'include',cache:'no-store'}).catch(()=>null);r=await request();}const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'No se pudo completar la operación.');return d;};
   const st=()=>{try{return state}catch{return null}};
   const today=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`};
   let manualRows=[],bannerAt=0,metricsAt=0,manualAt=0;
