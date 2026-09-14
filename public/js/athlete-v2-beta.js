@@ -51,7 +51,7 @@
         <p class="v2-manual-help">RunFlow calcula desde ahora la carga interna sRPE de la actividad como duración real × RPE. La conversión a la carga RunFlow definitiva que alimentará Aptitud, Fatiga y Forma se incorporará con el motor V9.</p>
         <label class="athlete-field-label">Tipo de actividad</label>
         <div class="v2-sport-grid">
-          <button type="button" data-v2-sport="walk">🚶<span>Caminar</span></button>
+          <button type="button" data-v2-sport="walk">🥾<span>Paseo / senderismo</span></button>
           <button type="button" data-v2-sport="strength">🏋️<span>Fuerza</span></button>
           <button type="button" data-v2-sport="bike">🚴<span>Bici</span></button>
           <button type="button" data-v2-sport="run">🏃<span>Running</span></button>
@@ -124,7 +124,7 @@
   function closeModal(){document.getElementById('v2ManualActivityModal').classList.add('hidden');}
 
   async function postManual(payload){
-    const response=await fetch('/api/athlete/manual-log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const response=await fetch('/api/athlete/manual-log',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     const data=await response.json().catch(()=>({}));
     if(!response.ok)throw new Error(data.error||'No se pudo guardar la actividad.');
     return data;
