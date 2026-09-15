@@ -5494,6 +5494,7 @@ function serveStatic(req, res, url) {
   if (pathname === '/') pathname = '/index.html';
   if (pathname === '/coach') pathname = '/coach.html';
   if (pathname === '/athlete') pathname = '/athlete.html';
+  if (pathname === '/football') pathname = '/football.html';
   if (pathname === '/login') pathname = '/login.html';
   if (pathname === '/activate') pathname = '/activate.html';
   const filePath = path.normalize(path.join(PUBLIC_DIR, pathname));
