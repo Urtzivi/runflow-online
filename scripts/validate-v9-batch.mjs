@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 
 const root = process.cwd();
 const syntaxFiles = [
-  'auth-recovery-hook.js','athlete-link-recovery-hook.js','learning-api-hook.js','assistant-api-hook.js','library-policy-hook.js','session-comparison-metrics.js','v9-engine-hook.js','v9-supplement-hook.js','v9-reschedule-hook.js','public/js/login.js','public/js/activate.js',
+  'auth-recovery-hook.js','athlete-link-recovery-hook.js','learning-api-hook.js','assistant-api-hook.js','football-api-hook.js','library-policy-hook.js','session-comparison-metrics.js','v9-engine-hook.js','v9-supplement-hook.js','v9-reschedule-hook.js','public/js/login.js','public/js/activate.js','public/js/football.js','public/js/coach-football-integration.js',
   'public/js/coach-v9-batch.js','public/js/coach-v9-supplement.js','public/js/coach-v9-season-planner.js','public/js/coach-v9-season-bridge.js',
   'public/js/coach-v9-profile-availability.js','public/js/coach-v9-hierarchy.js','public/js/coach-v9-stepwise-final.js','public/js/coach-v9-session-generator-fix.js',
   'public/js/coach-v9-manual-planning.js','public/js/coach-v9-contextual-recommender-v2.js','public/js/coach-v9-plan-v2-import.js','public/js/coach-learning.js',
@@ -109,9 +109,19 @@ for(const marker of ['user_id=eq.','email=ilike.','matches.length !== 1','authAd
 
 const loginHtml=fs.readFileSync(path.join(root,'public/login.html'),'utf8');
 const loginJs=fs.readFileSync(path.join(root,'public/js/login.js'),'utf8');
+const footballHtml=fs.readFileSync(path.join(root,'public/football.html'),'utf8');
+const footballJs=fs.readFileSync(path.join(root,'public/js/football.js'),'utf8');
+const footballApi=fs.readFileSync(path.join(root,'football-api-hook.js'),'utf8');
+const coachFootball=fs.readFileSync(path.join(root,'public/js/coach-football-integration.js'),'utf8');
 const render=fs.readFileSync(path.join(root,'render.yaml'),'utf8');
 if(!render.includes('-r ./assistant-api-hook.js')||!primaryCoach.includes('/js/coach-assistant.js?v=1.0.0'))throw new Error('Asistente RunFlow no está cargado en producción.');
 if(!loginHtml.includes('forgotPassword')||!loginJs.includes('/api/auth/recover')||!render.includes('-r ./auth-recovery-hook.js'))throw new Error('Recuperación de contraseña incompleta.');
+for(const marker of ['/api/athlete/football/summary',"athleteHome = '/football'"])if(!loginJs.includes(marker))throw new Error(`Login Athlete no enruta Fútbol: falta ${marker}`);
+for(const marker of ['todayTitle','wellbeingState','saveActivity','RunFlow Fútbol'])if(!footballHtml.includes(marker))throw new Error(`Athlete Fútbol incompleto: falta ${marker}`);
+for(const marker of ['/api/athlete/dashboard','/api/athlete/football/summary','Europe/Madrid','state.today=workouts.find'])if(!footballJs.includes(marker))throw new Error(`Cliente Fútbol incompleto: falta ${marker}`);
+for(const marker of ['/api/athlete/football/summary','football-mode','manual_session_logs'])if(!footballApi.includes(marker))throw new Error(`API Fútbol incompleta: falta ${marker}`);
+for(const marker of ['footballAthleteLink','Abrir Athlete Fútbol'])if(!coachFootball.includes(marker))throw new Error(`Coach Fútbol incompleto: falta ${marker}`);
+if(!render.includes('-r ./football-api-hook.js'))throw new Error('La API de Fútbol no está cargada en Render.');
 if(!render.includes('-r ./learning-api-hook.js')||!render.includes('-r ./library-policy-hook.js'))throw new Error('Los hooks de aprendizaje/biblioteca no están cargados en Render.');
 for(const marker of ['optionalRows(\'perfil\'','optionalRows(\'semana\'','optionalRows(\'sesiones\'','[athlete-dashboard] semana decorada'])if(!server.includes(marker))throw new Error(`Dashboard Athlete no tolera fallos parciales: falta ${marker}`);
 if(!render.includes('-r ./athlete-link-recovery-hook.js'))throw new Error('El hook de recuperación del vínculo Athlete no está cargado en Render.');
