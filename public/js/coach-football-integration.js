@@ -7,7 +7,7 @@
     const summary=document.getElementById('summaryView');
     if(!summary)return;
     const panel=document.createElement('section');panel.id='footballCoachPanel';panel.className='card';panel.style.marginTop='18px';
-    panel.innerHTML=`<div class="card-head"><div><p class="eyebrow">Módulo específico</p><h2>Fútbol</h2><p>Bienestar, carga, RPE, partidos y fuerza del deportista.</p></div><button id="footballModeButton" class="btn secondary" type="button">Activar Fútbol</button></div><div class="card-body"><div class="grid grid-4"><article class="metric"><span>Carga 7 días</span><strong id="footballCoachLoad">—</strong><small>min × RPE</small></article><article class="metric"><span>RPE medio</span><strong id="footballCoachRpe">—</strong><small>7 días</small></article><article class="metric"><span>Fútbol</span><strong id="footballCoachSessions">—</strong><small>sesiones</small></article><article class="metric"><span>Partidos</span><strong id="footballCoachMatches">—</strong><small>7 días</small></article></div><p id="footballCoachStatus" class="muted small" style="margin:12px 0 0">Selecciona un deportista.</p></div>`;
+    panel.innerHTML=`<div class="card-head"><div><p class="eyebrow">Módulo específico</p><h2>Fútbol</h2><p>Bienestar, carga, RPE, partidos y fuerza del deportista.</p></div><div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end"><a id="footballAthleteLink" class="btn soft hidden" href="/football" target="_blank" rel="noopener">Abrir Athlete Fútbol</a><button id="footballModeButton" class="btn secondary" type="button">Activar Fútbol</button></div></div><div class="card-body"><div class="grid grid-4"><article class="metric"><span>Carga 7 días</span><strong id="footballCoachLoad">—</strong><small>min × RPE</small></article><article class="metric"><span>RPE medio</span><strong id="footballCoachRpe">—</strong><small>7 días</small></article><article class="metric"><span>Fútbol</span><strong id="footballCoachSessions">—</strong><small>sesiones</small></article><article class="metric"><span>Partidos</span><strong id="footballCoachMatches">—</strong><small>7 días</small></article></div><p id="footballCoachStatus" class="muted small" style="margin:12px 0 0">Selecciona un deportista.</p></div>`;
     summary.appendChild(panel);
     byId('footballModeButton').addEventListener('click',toggleMode);
   }
@@ -17,6 +17,7 @@
       const data=await api(`/api/coach/athletes/${encodeURIComponent(athleteId)}/football-summary`);
       byId('footballModeButton').textContent=data.mode?'Fútbol activado ✓':'Activar Fútbol';
       byId('footballModeButton').className=`btn ${data.mode?'soft':'secondary'}`;
+      byId('footballAthleteLink')?.classList.toggle('hidden',!data.mode);
       byId('footballCoachLoad').textContent=Math.round(Number(data.week?.load||0));
       byId('footballCoachRpe').textContent=data.week?.avg_rpe??'—';
       byId('footballCoachSessions').textContent=data.week?.football??0;
