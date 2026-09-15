@@ -116,7 +116,7 @@ const coachFootball=fs.readFileSync(path.join(root,'public/js/coach-football-int
 const render=fs.readFileSync(path.join(root,'render.yaml'),'utf8');
 if(!render.includes('-r ./assistant-api-hook.js')||!primaryCoach.includes('/js/coach-assistant.js?v=1.0.0'))throw new Error('Asistente RunFlow no está cargado en producción.');
 if(!loginHtml.includes('forgotPassword')||!loginJs.includes('/api/auth/recover')||!render.includes('-r ./auth-recovery-hook.js'))throw new Error('Recuperación de contraseña incompleta.');
-for(const marker of ['/api/athlete/football/summary',"athleteHome = '/football'"])if(!loginJs.includes(marker))throw new Error(`Login Athlete no enruta Fútbol: falta ${marker}`);
+for(const marker of ['/api/athlete/football/summary',"location.replace('/football.html')"])if(!athleteOfficial.includes(marker))throw new Error(`Athlete no enruta Fútbol: falta ${marker}`);
 for(const marker of ['todayTitle','wellbeingState','saveActivity','RunFlow Fútbol'])if(!footballHtml.includes(marker))throw new Error(`Athlete Fútbol incompleto: falta ${marker}`);
 for(const marker of ['/api/athlete/dashboard','/api/athlete/football/summary','Europe/Madrid','state.today=workouts.find'])if(!footballJs.includes(marker))throw new Error(`Cliente Fútbol incompleto: falta ${marker}`);
 for(const marker of ['/api/athlete/football/summary','football-mode','manual_session_logs'])if(!footballApi.includes(marker))throw new Error(`API Fútbol incompleta: falta ${marker}`);
