@@ -19,9 +19,9 @@
     const first=String(athlete.display_name||'').trim().split(/\s+/)[0]||'';
     $('hello').textContent=`¡Buenos días${first?`, ${first}`:''}!`;
     const week=athlete.week;
-    const todayKey=new Date().toISOString().slice(0,10);
+    const todayKey=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Madrid',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
     const workouts=Array.isArray(week?.workouts)?week.workouts:[];
-    state.today=workouts.find(w=>String(w.workout_date).slice(0,10)===todayKey)||workouts[0]||null;
+    state.today=workouts.find(w=>String(w.workout_date).slice(0,10)===todayKey)||null;
     if(state.today){
       $('todayTitle').textContent=state.today.title||'Sesión programada';
       $('todaySummary').textContent=state.today.summary||'Sesión publicada desde RunFlow Coach.';
