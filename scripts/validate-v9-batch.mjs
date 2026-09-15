@@ -121,6 +121,7 @@ for(const marker of ['todayTitle','wellbeingState','saveActivity','RunFlow Fútb
 for(const marker of ['/api/athlete/dashboard','/api/athlete/football/summary','Europe/Madrid','state.today=workouts.find'])if(!footballJs.includes(marker))throw new Error(`Cliente Fútbol incompleto: falta ${marker}`);
 for(const marker of ['/api/athlete/football/summary','football-mode','manual_session_logs'])if(!footballApi.includes(marker))throw new Error(`API Fútbol incompleta: falta ${marker}`);
 for(const marker of ['footballAthleteLink','Abrir Athlete Fútbol'])if(!coachFootball.includes(marker))throw new Error(`Coach Fútbol incompleto: falta ${marker}`);
+if(!server.includes("if (pathname === '/football') pathname = '/football.html'"))throw new Error('Falta la ruta limpia /football.');
 if(!render.includes('-r ./football-api-hook.js'))throw new Error('La API de Fútbol no está cargada en Render.');
 if(!render.includes('-r ./learning-api-hook.js')||!render.includes('-r ./library-policy-hook.js'))throw new Error('Los hooks de aprendizaje/biblioteca no están cargados en Render.');
 for(const marker of ['optionalRows(\'perfil\'','optionalRows(\'semana\'','optionalRows(\'sesiones\'','[athlete-dashboard] semana decorada'])if(!server.includes(marker))throw new Error(`Dashboard Athlete no tolera fallos parciales: falta ${marker}`);
