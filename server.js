@@ -1011,11 +1011,14 @@ async function prodAthleteBundle(athleteId, weekStart = startOfWeek()) {
     optionalRows('perfil', prodRows('athlete_profiles', `athlete_id=eq.${encodeURIComponent(athleteId)}&select=*&limit=1`)),
     optionalRows('zonas', prodRows('training_zones', `athlete_id=eq.${encodeURIComponent(athleteId)}&select=*&order=kind.asc,zone_order.asc`)),
     optionalRows('objetivos', prodRows('goals', `athlete_id=eq.${encodeURIComponent(athleteId)}&status=eq.active&select=*&order=goal_date.asc`)),
-    optionalRows('semana', prodRows('training_weeks', `athlete_id=eq.${encodeURIComponent(athleteId)}&week_start=eq.${weekStart}&select=*&limit=1`)),
+    optionalRows('semana', prodRows('training_weeks', `athlete_id=eq.${encodeURIComponent(athleteId)}&week_start=eq.${weekStart}&select=*&order=updated_at.desc`)),
     optionalRows('metricas', prodRows('daily_metrics', `athlete_id=eq.${encodeURIComponent(athleteId)}&select=*&order=metric_date.desc&limit=1`)),
     optionalRows('rendimiento', prodRows('performance_snapshots', `athlete_id=eq.${encodeURIComponent(athleteId)}&select=*&order=snapshot_date.desc&limit=1`)),
   ]);
-  const week = weeks[0] || { week_start: weekStart, week_type: '', title: '', coach_comment: '', target_load: 0, status: 'draft' };
+  // Los datos históricos pueden contener más de una fila para la misma semana.
+  // Athlete debe recibir primero la versión publicada; dentro del mismo estado,
+  // la consulta ya viene ordenada por la actualización más reciente.
+  const week = weeks.find(item => item.status === 'published') || weeks[0] || { week_start: weekStart, week_type: '', title: '', coach_comment: '', target_load: 0, status: 'draft' };
   const workouts = week.id ? await optionalRows('sesiones', prodRows('workouts', `training_week_id=eq.${encodeURIComponent(week.id)}&select=*&order=workout_date.asc`)) : [];
   return {
     ...athleteRows[0],
