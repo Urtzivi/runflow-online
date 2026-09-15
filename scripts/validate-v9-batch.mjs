@@ -34,6 +34,7 @@ const band60=sessions.filter(row=>!longSource(row)&&Number(row.tm??row.Tiempo_to
 for(const file of ['public/coach.html','public/coach-base.html','public/coach-v8.html','public/coach-v9.html','public/athlete.html','public/athlete-base.html','public/athlete-v2.html'])if(!fs.existsSync(path.join(root,file)))throw new Error(`Falta ${file}.`);
 const primaryCoach=fs.readFileSync(path.join(root,'public/coach.html'),'utf8');
 const server=fs.readFileSync(path.join(root,'server.js'),'utf8');
+if(!server.includes("weeks.find(item => item.status === 'published') || weeks[0]"))throw new Error('Athlete no prioriza la semana publicada cuando existen duplicados históricos.');
 const targetCompilerStart=server.indexOf('function normaliseIntervalsTarget');
 const targetCompilerEnd=server.indexOf('function structuredWorkoutDurationMin',targetCompilerStart);
 const workoutCompilerStart=server.indexOf('function compileIntervalsWorkoutDescription');
