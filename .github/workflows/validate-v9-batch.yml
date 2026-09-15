@@ -10,6 +10,7 @@ on:
       - 'football-api-hook.js'
       - 'public/football.html'
       - 'public/js/football.js'
+      - 'public/js/football-live.js'
       - 'public/js/coach-football-integration.js'
       - 'public/css/football.css'
       - 'public/js/coach-assistant.js'
