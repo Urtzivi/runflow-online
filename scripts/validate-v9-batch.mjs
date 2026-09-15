@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
+import vm from 'node:vm';
 import { execFileSync } from 'node:child_process';
 
 const root = process.cwd();
@@ -33,6 +34,26 @@ const band60=sessions.filter(row=>!longSource(row)&&Number(row.tm??row.Tiempo_to
 for(const file of ['public/coach.html','public/coach-base.html','public/coach-v8.html','public/coach-v9.html','public/athlete.html','public/athlete-base.html','public/athlete-v2.html'])if(!fs.existsSync(path.join(root,file)))throw new Error(`Falta ${file}.`);
 const primaryCoach=fs.readFileSync(path.join(root,'public/coach.html'),'utf8');
 const server=fs.readFileSync(path.join(root,'server.js'),'utf8');
+const targetCompilerStart=server.indexOf('function normaliseIntervalsTarget');
+const targetCompilerEnd=server.indexOf('function structuredWorkoutDurationMin',targetCompilerStart);
+const workoutCompilerStart=server.indexOf('function compileIntervalsWorkoutDescription');
+const workoutCompilerEnd=server.indexOf('function buildIntervalsEvent',workoutCompilerStart);
+if([targetCompilerStart,targetCompilerEnd,workoutCompilerStart,workoutCompilerEnd].some(index=>index<0))throw new Error('No se encuentra el compilador de sesiones para Intervals.');
+const compilerContext={};
+vm.runInNewContext(`
+  const sanitiseText=(value,max=10000)=>String(value??'').slice(0,max);
+  ${server.slice(targetCompilerStart,targetCompilerEnd)}
+  ${server.slice(workoutCompilerStart,workoutCompilerEnd)}
+  result=compileIntervalsWorkoutDescription({
+    sport:'Run',session_objective:'Umbral',adaptation_target:'Umbral',
+    blocks:[
+      {type:'warmup',duration_min:15,target:'Z1-Z2 Pace'},
+      {type:'central',name:'Trabajo de umbral',repetitions:3,work_value:8,work_unit:'m',target:'RPE 7/10',recovery_value:2,recovery_unit:'m',recovery_target:'Z1 Pace'},
+      {type:'cooldown',duration_min:10,target:'Z1 Pace'}
+    ]
+  });
+`,compilerContext);
+if(!compilerContext.result.includes('Trabajo de umbral 3x\n- 8m Z4 Pace\n- 2m Z1 Pace'))throw new Error(`Intervals pierde la intensidad del bloque principal:\n${compilerContext.result}`);
 for(const marker of ["location.replace('/login')",'/js/coach-v9-stepwise-final.js','/js/coach-v9-session-generator-fix.js','/js/coach-v9-manual-planning.js','/js/coach-v9-contextual-recommender-v2.js','/js/coach-v9-plan-v2-import.js','/js/coach-v9-supplement.js?v=9.3.0','/css/coach-v9-plan-v2-import.css','/coach-base.html','/js/coach-learning.js?v=1.0.0','/js/coach-athlete-context-export.js?v=1.0.0'])if(!primaryCoach.includes(marker))throw new Error(`Coach principal: falta ${marker}`);
 
 const planningContextExport=fs.readFileSync(path.join(root,'public/js/coach-athlete-context-export.js'),'utf8');

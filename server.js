@@ -3181,9 +3181,22 @@ function normaliseIntervalsTarget(target, sport = 'Run') {
 
   if (/\b(Pace|HR|FTP)\b/i.test(value) || /%/.test(value) || /\d:\d{2}/.test(value)) return value;
   if (/progresiv/i.test(value)) return sport === 'Run' || sport === 'TrailRun' ? 'Z3-Z4 Pace' : '';
+  if (/umbral|threshold/i.test(value)) return sport === 'Run' || sport === 'TrailRun' ? 'Z4 Pace' : '';
+  if (/vo\s*[₂2]?\s*max/i.test(value)) return sport === 'Run' || sport === 'TrailRun' ? 'Z5 Pace' : '';
+  if (/tempo/i.test(value)) return sport === 'Run' || sport === 'TrailRun' ? 'Z3-Z4 Pace' : '';
+  if (/fuerte\s+controlad/i.test(value)) return sport === 'Run' || sport === 'TrailRun' ? 'Z4 Pace' : '';
   if (/suave|trote/i.test(value)) return sport === 'Run' || sport === 'TrailRun' ? 'Z1 Pace' : '';
   if (/aer[oó]bic/i.test(value)) return sport === 'Run' || sport === 'TrailRun' ? 'Z2 Pace' : '';
   return '';
+}
+
+function resolveIntervalsTarget(candidates, sport = 'Run') {
+  for (const candidate of candidates.flat()) {
+    if (candidate === null || candidate === undefined || candidate === '') continue;
+    const normalised = normaliseIntervalsTarget(candidate, sport);
+    if (normalised) return normalised;
+  }
+  return sport === 'Run' || sport === 'TrailRun' ? 'Z2 Pace' : 'Z2';
 }
 
 function intervalsDurationToken(value, unit = 'm') {
@@ -3230,10 +3243,10 @@ function compileIntervalsWorkoutDescription(workout) {
   if (sport === 'Strength') return sanitiseText(workout.structured_description || workout.summary, 10000);
 
   const lines = [];
-  const pushStep = (duration, target) => {
+  const pushStep = (duration, ...targetCandidates) => {
     if (!duration) return;
-    const normalised = normaliseIntervalsTarget(target, sport);
-    lines.push(`- ${duration}${normalised ? ` ${normalised}` : ''}`);
+    const normalised = resolveIntervalsTarget(targetCandidates, sport);
+    lines.push(`- ${duration} ${normalised}`);
   };
 
   blocks.forEach(block => {
@@ -3243,7 +3256,7 @@ function compileIntervalsWorkoutDescription(workout) {
       if (duration) {
         if (lines.length) lines.push('');
         lines.push('Calentamiento');
-        pushStep(duration, block.target || 'Z1');
+        pushStep(duration, block.target, 'Z1');
       }
       return;
     }
@@ -3255,8 +3268,8 @@ function compileIntervalsWorkoutDescription(workout) {
       if (!work) return;
       if (lines.length) lines.push('');
       lines.push(reps > 1 ? `Activacion ${reps}x` : 'Activacion');
-      pushStep(work, block.target || 'Z4');
-      if (recovery) pushStep(recovery, block.recovery_target || 'Z1');
+      pushStep(work, block.target, block.name, workout.session_objective, 'Z4');
+      if (recovery) pushStep(recovery, block.recovery_target, 'Z1');
       return;
     }
 
@@ -3269,8 +3282,8 @@ function compileIntervalsWorkoutDescription(workout) {
       const name = sanitiseText(block.name || 'Bloque principal', 100) || 'Bloque principal';
       if (reps > 1) lines.push(`${name} ${reps}x`);
       else lines.push(name);
-      pushStep(work, block.target || 'Z2');
-      if (recovery) pushStep(recovery, block.recovery_target || 'Z1');
+      pushStep(work, block.target, name, workout.session_objective, workout.adaptation_target, 'Z2');
+      if (recovery) pushStep(recovery, block.recovery_target, 'Z1');
       return;
     }
 
@@ -3279,7 +3292,7 @@ function compileIntervalsWorkoutDescription(workout) {
       if (!duration) return;
       if (lines.length) lines.push('');
       lines.push(sanitiseText(block.name || 'Bloque principal', 100) || 'Bloque principal');
-      pushStep(duration, block.target || 'Z2');
+      pushStep(duration, block.target, block.name, workout.session_objective, workout.adaptation_target, 'Z2');
       return;
     }
 
@@ -3288,7 +3301,7 @@ function compileIntervalsWorkoutDescription(workout) {
       if (duration) {
         if (lines.length) lines.push('');
         lines.push('Vuelta a la calma');
-        pushStep(duration, block.target || 'Z1');
+        pushStep(duration, block.target, 'Z1');
       }
     }
   });
