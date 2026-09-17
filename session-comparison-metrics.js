@@ -46,6 +46,172 @@ function activityIntervals(activity) {
   return candidates.find(Array.isArray) || [];
 }
 
+function paceText(seconds) {
+  const value = number(seconds);
+  if (!value) return null;
+  const rounded = Math.round(value);
+  return `${Math.floor(rounded / 60)}:${String(rounded % 60).padStart(2, '0')}/km`;
+}
+
+function secondsFor(value, unit) {
+  const amount = number(value);
+  if (!amount) return null;
+  const normalisedUnit = normalise(unit);
+  if (['s', 'sec', 'seg', 'second', 'seconds'].includes(normalisedUnit)) return amount;
+  if (['m', 'min', 'minute', 'minutes'].includes(normalisedUnit)) return amount * 60;
+  return null;
+}
+
+function plannedSteps(workout) {
+  const result = [];
+  const blocks = Array.isArray(workout && workout.blocks) ? workout.blocks : [];
+  for (const block of blocks) {
+    const type = String(block && block.type || '').toLowerCase();
+    if (type === 'warmup' || type === 'cooldown') {
+      result.push({
+        phase: type,
+        kind: 'transition',
+        label: type === 'warmup' ? 'Calentamiento' : 'Vuelta a la calma',
+        repetition: null,
+        duration_seconds: secondsFor(block.duration_min, 'm'),
+        distance_m: null,
+        target: block.target || null,
+      });
+      continue;
+    }
+    if (type === 'activation') {
+      const repetitions = Math.max(1, Math.round(number(block.repetitions) || 1));
+      for (let repetition = 1; repetition <= repetitions; repetition += 1) {
+        result.push({ phase: 'activation', kind: 'work', label: 'Activación', repetition, duration_seconds: secondsFor(block.work_sec, 's'), distance_m: null, target: block.target || null });
+        if (number(block.recovery_sec)) result.push({ phase: 'activation_recovery', kind: 'recovery', label: 'Recuperación activación', repetition, duration_seconds: secondsFor(block.recovery_sec, 's'), distance_m: null, target: block.recovery_target || null });
+      }
+      continue;
+    }
+    if (!['central', 'steady'].includes(type)) continue;
+    const repetitions = Math.max(1, Math.round(number(block.repetitions) || 1));
+    for (let repetition = 1; repetition <= repetitions; repetition += 1) {
+      result.push({
+        phase: 'work', kind: 'work', label: block.name || 'Bloque de trabajo', repetition,
+        duration_seconds: secondsFor(block.work_value || block.duration_min, block.work_unit || (block.duration_min ? 'm' : null)),
+        distance_m: normalise(block.work_unit) === 'km' && number(block.work_value) ? number(block.work_value) * 1000 : null,
+        target: block.target || null,
+      });
+      if (number(block.recovery_value)) result.push({
+        phase: 'recovery', kind: 'recovery', label: 'Recuperación', repetition,
+        duration_seconds: secondsFor(block.recovery_value, block.recovery_unit),
+        distance_m: normalise(block.recovery_unit) === 'km' ? number(block.recovery_value) * 1000 : null,
+        target: block.recovery_target || null,
+      });
+    }
+  }
+  return result;
+}
+
+function intervalDetail(interval, index, planned = null, source = 'intervals') {
+  const values = intervalValues(interval);
+  const maxHr = firstNumber(interval, ['max_heartrate', 'max_hr', 'maximum_hr']);
+  const elevation = firstNumber(interval, ['total_elevation_gain', 'elevation_gain', 'icu_elevation_gain']);
+  return {
+    index: index + 1,
+    source,
+    phase: planned && planned.phase || intervalKind(interval),
+    kind: planned && planned.kind || intervalKind(interval),
+    label: planned && planned.label || String(interval && (interval.name || interval.type) || `Bloque ${index + 1}`),
+    repetition: planned && planned.repetition || null,
+    planned_duration_seconds: planned && planned.duration_seconds || null,
+    planned_distance_m: planned && planned.distance_m || null,
+    planned_target: planned && planned.target || null,
+    duration_seconds: values.duration ? Math.round(values.duration) : null,
+    distance_m: values.distance ? Math.round(values.distance) : null,
+    pace_sec_per_km: values.pace ? Math.round(values.pace * 10) / 10 : null,
+    pace: paceText(values.pace),
+    average_hr: values.hr ? Math.round(values.hr * 10) / 10 : null,
+    max_hr: maxHr ? Math.round(maxHr) : null,
+    elevation_gain_m: elevation ? Math.round(elevation * 10) / 10 : null,
+  };
+}
+
+function streamData(activity, type) {
+  const raw = activity && activity.raw_summary && typeof activity.raw_summary === 'object' ? activity.raw_summary : {};
+  const streams = Array.isArray(activity && activity.streams) ? activity.streams : Array.isArray(raw.streams) ? raw.streams : [];
+  return streams.find(item => normalise(item && item.type) === normalise(type))?.data || [];
+}
+
+function reconstructFromStreams(activity, steps) {
+  if (!steps.length || steps.some(step => !step.duration_seconds)) return [];
+  const time = streamData(activity, 'time');
+  const distance = streamData(activity, 'distance');
+  const hr = streamData(activity, 'heartrate');
+  const speed = streamData(activity, 'velocity_smooth');
+  const altitude = streamData(activity, 'altitude');
+  if (!time.length) return [];
+  let cursor = Number(time[0] || 0);
+  return steps.map((step, index) => {
+    const end = cursor + step.duration_seconds;
+    const indices = [];
+    for (let i = 0; i < time.length; i += 1) if (Number(time[i]) >= cursor && Number(time[i]) < end) indices.push(i);
+    cursor = end;
+    if (!indices.length) return intervalDetail({}, index, step, 'streams');
+    const first = indices[0], last = indices[indices.length - 1];
+    const duration = Math.max(0, Number(time[last]) - Number(time[first]));
+    const metres = distance.length ? Math.max(0, Number(distance[last]) - Number(distance[first])) : null;
+    const validHr = indices.map(i => Number(hr[i])).filter(value => Number.isFinite(value) && value > 0);
+    const validSpeed = indices.map(i => Number(speed[i])).filter(value => Number.isFinite(value) && value > 0);
+    const validAltitude = indices.map(i => Number(altitude[i])).filter(Number.isFinite);
+    const avgSpeed = validSpeed.length ? validSpeed.reduce((sum, value) => sum + value, 0) / validSpeed.length : null;
+    const avgHr = validHr.length ? validHr.reduce((sum, value) => sum + value, 0) / validHr.length : null;
+    const pace = metres && duration ? duration / (metres / 1000) : avgSpeed ? 1000 / avgSpeed : null;
+    return intervalDetail({
+      moving_time: duration || step.duration_seconds,
+      distance: metres,
+      average_speed: avgSpeed,
+      average_heartrate: avgHr,
+      max_heartrate: validHr.length ? Math.max(...validHr) : null,
+      elevation_gain: validAltitude.length ? Math.max(0, Math.max(...validAltitude) - Math.min(...validAltitude)) : null,
+    }, index, step, 'streams');
+  });
+}
+
+function detailedBlocks(activity, workout) {
+  const intervals = activityIntervals(activity);
+  const steps = plannedSteps(workout);
+  if (!intervals.length) return reconstructFromStreams(activity, steps);
+  const rows = [];
+  let plannedIndex = 0;
+  for (let index = 0; index < intervals.length; index += 1) {
+    const interval = intervals[index];
+    const kind = intervalKind(interval);
+    let match = steps[plannedIndex] || null;
+    if (match && kind !== 'unknown' && match.kind !== kind) {
+      const candidate = steps.findIndex((step, stepIndex) => stepIndex >= plannedIndex && step.kind === kind);
+      if (candidate >= 0) { plannedIndex = candidate; match = steps[plannedIndex]; }
+    }
+    rows.push(intervalDetail(interval, index, match, 'intervals'));
+    if (match) plannedIndex += 1;
+  }
+  return rows;
+}
+
+function compareDetailedBlocks(currentRows, previousRows) {
+  const current = (currentRows || []).filter(row => row.kind === 'work' && number(row.pace_sec_per_km));
+  const previous = (previousRows || []).filter(row => row.kind === 'work' && number(row.pace_sec_per_km));
+  const count = Math.min(current.length, previous.length);
+  const rows = [];
+  for (let index = 0; index < count; index += 1) {
+    const now = current[index], before = previous[index];
+    rows.push({
+      repetition: now.repetition || index + 1,
+      current_pace_sec_per_km: now.pace_sec_per_km,
+      previous_pace_sec_per_km: before.pace_sec_per_km,
+      pace_change_sec_per_km: Math.round((now.pace_sec_per_km - before.pace_sec_per_km) * 10) / 10,
+      current_avg_hr: now.average_hr,
+      previous_avg_hr: before.average_hr,
+      hr_change: number(now.average_hr) && number(before.average_hr) ? Math.round((now.average_hr - before.average_hr) * 10) / 10 : null,
+    });
+  }
+  return rows;
+}
+
 function looksLikeBlockSession(workout, intervals) {
   const blocks = Array.isArray(workout && workout.blocks) ? workout.blocks : [];
   if (blocks.some(block => ['central', 'activation'].includes(String(block && block.type || '').toLowerCase()))) return true;
@@ -179,10 +345,14 @@ function findPreviousComparable(rows, currentIndex) {
 
 module.exports = {
   activityIntervals,
+  compareDetailedBlocks,
+  detailedBlocks,
   findPreviousComparable,
   identity,
   intervalKind,
   metricForSession,
   normalise,
+  paceText,
+  plannedSteps,
   sessionType,
 };

@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { URL } = require('url');
+const { compareDetailedBlocks, detailedBlocks, findPreviousComparable, identity } = require('./session-comparison-metrics');
 
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -4703,12 +4704,17 @@ async function activityReview(session, athleteId, activityId) {
 async function getActivityDetail(session, athleteId, externalId) {
   let stored = await activityRowByExternalId(athleteId, externalId);
   let raw = stored && stored.raw_summary ? stored.raw_summary : {};
+  let streams = [];
 
   if (!DEMO_MODE) {
     const apiKey = await getIntervalsKey(athleteId);
     if (apiKey) {
-      const response = await intervalsFetch(apiKey, `/activity/${encodeURIComponent(externalId)}?intervals=true`);
+      const [response, streamsResponse] = await Promise.all([
+        intervalsFetch(apiKey, `/activity/${encodeURIComponent(externalId)}?intervals=true`),
+        intervalsFetch(apiKey, `/activity/${encodeURIComponent(externalId)}/streams.json`).catch(() => []),
+      ]);
       raw = unwrapIntervalsObject(response);
+      streams = unwrapIntervalsData(streamsResponse);
       const normalised = normaliseActivityRow(athleteId, raw);
       await prodRows('activities', 'on_conflict=athlete_id,intervals_activity_id', {
         method: 'POST',
@@ -4753,10 +4759,40 @@ async function getActivityDetail(session, athleteId, externalId) {
   }
 
   return {
-    activity: { ...stored, raw_summary: raw, intervals: summariseIntervals(raw) },
+    activity: { ...stored, raw_summary: raw, streams, intervals: summariseIntervals(raw) },
     planned,
     recovery,
     review: await activityReview(session, athleteId, stored.id),
+  };
+}
+
+async function previousComparableDetail(session, athleteId, currentDetail) {
+  const currentWorkout = currentDetail && currentDetail.planned;
+  const currentActivity = currentDetail && currentDetail.activity;
+  if (!currentWorkout || !currentActivity || DEMO_MODE) return null;
+  const currentDate = String(currentActivity.activity_date || '').slice(0, 10);
+  const activities = await prodRows('activities', `athlete_id=eq.${encodeURIComponent(athleteId)}&workout_id=not.is.null&activity_date=lt.${currentDate}T23:59:59&select=*&order=activity_date.asc&limit=240`).catch(() => []);
+  const workoutIds = [...new Set(activities.map(item => item.workout_id).filter(Boolean))];
+  if (!workoutIds.length) return null;
+  const workouts = await prodRows('workouts', `athlete_id=eq.${encodeURIComponent(athleteId)}&id=in.(${workoutIds.join(',')})&select=id,title,summary,structured_description,session_objective,adaptation_target,blocks,sport`).catch(() => []);
+  const byId = new Map(workouts.map(workout => [String(workout.id), workout]));
+  const rows = activities.map(activity => {
+    const workout = byId.get(String(activity.workout_id));
+    return workout ? { activity, workout, identity: identity(workout) } : null;
+  }).filter(Boolean);
+  rows.push({ activity: currentActivity, workout: currentWorkout, identity: identity(currentWorkout) });
+  const comparable = findPreviousComparable(rows, rows.length - 1);
+  if (!comparable) return null;
+  const previous = await getActivityDetail(session, athleteId, comparable.row.activity.intervals_activity_id);
+  const currentBlocks = detailedBlocks(currentActivity, currentWorkout);
+  const previousBlocks = detailedBlocks(previous.activity, previous.planned || comparable.row.workout);
+  return {
+    match: comparable.match,
+    date: String(previous.activity.activity_date || '').slice(0, 10),
+    title: previous.planned && previous.planned.title || previous.activity.name,
+    activity_id: previous.activity.intervals_activity_id,
+    blocks: previousBlocks,
+    block_comparison: compareDetailedBlocks(currentBlocks, previousBlocks),
   };
 }
 
@@ -4765,6 +4801,8 @@ function ruleBasedAnalysis(detail) {
   const hasPlanned = Boolean(detail.planned);
   const planned = detail.planned || {};
   const intervals = activity.intervals || [];
+  const blockAnalysis = detailedBlocks(activity, planned);
+  const workBlocks = blockAnalysis.filter(item => item.kind === 'work' && Number.isFinite(Number(item.pace_sec_per_km)));
   const paces = intervals.map(item => {
     const match = String(item.pace || '').match(/^(\d+):(\d+)/);
     return match ? Number(match[1]) * 60 + Number(match[2]) : null;
@@ -4774,6 +4812,10 @@ function ruleBasedAnalysis(detail) {
   const plannedLoad = Number(planned.planned_load);
   const loadDelta = Number.isFinite(actualLoad) && Number.isFinite(plannedLoad) && plannedLoad > 0 ? ((actualLoad - plannedLoad) / plannedLoad) * 100 : null;
   const latestRecovery = detail.recovery && detail.recovery[detail.recovery.length - 1];
+  const firstWork = workBlocks[0] || null;
+  const lastWork = workBlocks[workBlocks.length - 1] || null;
+  const workPaceChange = firstWork && lastWork && workBlocks.length > 1 ? roundOrNull(Number(lastWork.pace_sec_per_km) - Number(firstWork.pace_sec_per_km), 1) : null;
+  const workHrChange = firstWork && lastWork && workBlocks.length > 1 && Number.isFinite(Number(firstWork.average_hr)) && Number.isFinite(Number(lastWork.average_hr)) ? roundOrNull(Number(lastWork.average_hr) - Number(firstWork.average_hr), 1) : null;
   let score = 80;
   const alerts = [];
   if (Number.isFinite(loadDelta) && loadDelta > 20) { score -= 10; alerts.push({ level: 'warning', title: 'Carga por encima de lo previsto', detail: `La carga realizada supera en ${Math.round(loadDelta)} % la programada.` }); }
@@ -4785,9 +4827,11 @@ function ruleBasedAnalysis(detail) {
     status: score >= 85 ? 'muy_bien_asimilada' : score >= 70 ? 'bien_asimilada' : score >= 50 ? 'cumplida_con_fatiga' : 'revisar',
     headline: score >= 85 ? 'Sesión muy bien ejecutada' : score >= 70 ? 'Sesión bien asimilada' : score >= 50 ? 'Sesión cumplida con fatiga' : 'Sesión que requiere revisión',
     summary: hasPlanned ? 'La actividad se ha comparado con la sesión programada, la carga y los datos de recuperación disponibles.' : 'No se ha encontrado una sesión programada equivalente; la valoración se apoya en la ejecución y la carga disponible.',
-    execution_analysis: intervals.length ? `Se han detectado ${intervals.length} intervalos. ${Number.isFinite(variability) ? `La variabilidad aproximada del ritmo es del ${variability.toFixed(1)} %.` : 'No hay suficientes ritmos para estimar su regularidad.'}` : 'No se han recibido intervalos detallados para esta actividad.',
-    physiological_analysis: activity.avg_hr ? `La frecuencia cardiaca media fue de ${Math.round(activity.avg_hr)} ppm y la máxima de ${Math.round(activity.max_hr || activity.avg_hr)} ppm.` : 'No hay datos suficientes de frecuencia cardiaca.',
+    execution_analysis: blockAnalysis.length ? `Se han analizado ${blockAnalysis.length} bloques (${workBlocks.length} de trabajo) por separado. ${Number.isFinite(variability) ? `La variabilidad aproximada del ritmo entre parciales es del ${variability.toFixed(1)} %.` : 'La tabla de bloques conserva ritmo, pulso y objetivo de cada parcial.'}` : 'No se han recibido intervalos ni streams suficientes para reconstruir los bloques.',
+    physiological_analysis: workBlocks.length ? `En los bloques de trabajo, el ritmo cambió ${workPaceChange === null ? '—' : `${workPaceChange > 0 ? '+' : ''}${workPaceChange} s/km`} entre el primero y el último, y la FC media ${workHrChange === null ? 'no pudo compararse' : `cambió ${workHrChange > 0 ? '+' : ''}${workHrChange} ppm`}. La media global de toda la actividad se conserva como contexto, no como criterio principal de las series.` : activity.avg_hr ? `La frecuencia cardiaca media fue de ${Math.round(activity.avg_hr)} ppm y la máxima de ${Math.round(activity.max_hr || activity.avg_hr)} ppm.` : 'No hay datos suficientes de frecuencia cardiaca.',
     context_analysis: latestRecovery ? `El estado de recuperación previo figura con una nota de ${latestRecovery.readiness_score ?? '—'}/100.` : 'No hay datos recientes de sueño, HRV y pulso en reposo.',
+    block_analysis: blockAnalysis,
+    comparison_evidence: detail.comparable || null,
     alerts,
     recommendation: { action: score >= 70 ? 'mantener' : 'recuperar', next_24_48h: score >= 70 ? 'Mantener la sesión suave o de recuperación prevista, sin añadir carga.' : 'Priorizar recuperación y revisar molestias antes de la siguiente intensidad.', next_quality_session: score >= 80 ? 'Mantener el siguiente estímulo de calidad previsto.' : 'No progresar la siguiente sesión de calidad hasta revisar la respuesta.' },
     confidence: intervals.length && latestRecovery ? 'alta' : intervals.length || latestRecovery ? 'media' : 'baja',
@@ -4824,7 +4868,7 @@ async function openAiAnalysis(context) {
     headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({
       model: OPENAI_MODEL, store: false, reasoning: { effort: 'low' }, max_output_tokens: 2200,
-      instructions: 'Eres el módulo de análisis de RunFlow Coach para running y trail. Compara lo programado, lo realizado, la carga, la recuperación y los parámetros individuales. No inventes datos ni diagnostiques. Explica las limitaciones y recuerda que la decisión final es del entrenador. Responde en castellano claro.',
+      instructions: 'Eres el módulo de análisis de RunFlow Coach para running y trail. En sesiones estructuradas analiza por separado calentamiento, cada repetición de trabajo, cada recuperación y vuelta a la calma usando block_analysis; no juzgues series con el ritmo o la FC globales. Compara cada bloque con su objetivo planificado y, cuando comparable_session exista, con la sesión previa realmente comparable. Valora homogeneidad, deriva de ritmo/FC, recuperación entre repeticiones, cumplimiento, carga, readiness, RPE y dolor. No inventes datos, ritmos objetivo ni diagnósticos. Si falta un dato, dilo. La guía propone y el entrenador decide. Responde en castellano claro y suficientemente detallado para entregar feedback útil al atleta.',
       input: JSON.stringify(context),
       text: { format: { type: 'json_schema', name: 'runflow_session_analysis', strict: true, schema: AI_ANALYSIS_SCHEMA } },
     }),
@@ -5328,6 +5372,7 @@ async function api(req, res, url) {
     await ensureCoachAccess(session, athleteId);
     const body = await readJson(req);
     const detail = await getActivityDetail(session, athleteId, externalId);
+    detail.comparable = await previousComparableDetail(session, athleteId, detail).catch(error => ({ unavailable: true, reason: error.message }));
     const athlete = DEMO_MODE ? await demoAthleteBundle(athleteId) : await prodAthleteBundle(athleteId, startOfWeek(new Date(detail.activity.activity_date)));
     const rules = ruleBasedAnalysis(detail);
     let generated = { analysis: rules, source: 'rules', usage: null, response_id: null };
@@ -5354,7 +5399,9 @@ async function api(req, res, url) {
           max_hr: detail.activity.max_hr,
           avg_pace: secondsToPace(detail.activity.avg_pace_sec_per_km),
           intervals: detail.activity.intervals,
+          block_analysis: rules.block_analysis,
         },
+        comparable_session: detail.comparable,
         recovery_history: detail.recovery,
         rule_based_preanalysis: rules,
         coach_context: sanitiseText(body.context, 3000),
@@ -5365,6 +5412,8 @@ async function api(req, res, url) {
         generated = { analysis: rules, source: 'rules', usage: null, response_id: null, openai_error: error.message };
       }
     }
+    generated.analysis.block_analysis = rules.block_analysis;
+    generated.analysis.comparison_evidence = rules.comparison_evidence;
     const review = await saveReview(session, athleteId, detail.activity.id, {
       id: detail.review && detail.review.id,
       decision: detail.review && detail.review.decision,
