@@ -170,6 +170,24 @@ const reconstructed=comparison.detailedBlocks({raw_summary:{},streams:[
   {type:'velocity_smooth',data:Array.from({length:361},()=>3)},
 ]},{title:'2 x 3',sport:'Run',blocks:[{type:'central',name:'Trabajo',repetitions:2,work_value:3,work_unit:'m',target:'Z4'}]});
 if(reconstructed.length!==2||!reconstructed.every(x=>x.source==='streams'&&x.pace_sec_per_km))throw new Error('No se reconstruyen los bloques desde streams cuando faltan intervalos.');
+const thresholdSeconds=2655;
+const thresholdTime=Array.from({length:thresholdSeconds+1},(_,i)=>i);
+const thresholdSpeed=thresholdTime.map(second=>second<900?1000/309:second<1380?1000/251:second<1500?1000/334:second<1980?1000/265:second<2100?1000/327:1000/336);
+const thresholdDistance=[];let accumulatedDistance=0;thresholdSpeed.forEach((value,index)=>{if(index)accumulatedDistance+=value;thresholdDistance.push(accumulatedDistance)});
+const thresholdHr=thresholdTime.map(second=>second<900?105+(second/900)*11:second<1380?127+((second-900)/480)*15:second<1500?142-((second-1380)/120)*16:second<1980?132+((second-1500)/480)*18:second<2100?149-((second-1980)/120)*24:131-((second-2100)/555)*11);
+const partialThreshold=comparison.detailedBlocks({duration_sec:thresholdSeconds,raw_summary:{},streams:[
+  {type:'time',data:thresholdTime},{type:'distance',data:thresholdDistance},{type:'heartrate',data:thresholdHr},
+  {type:'velocity_smooth',data:thresholdSpeed},{type:'cadence',data:thresholdTime.map(()=>82)},{type:'altitude',data:thresholdTime.map(()=>50)},
+]},{title:"Umbral · 3 × 8'",sport:'Run',blocks:[
+  {type:'warmup',duration_min:15,target:'Z1-Z2 / RPE 2-3'},
+  {type:'central',name:'Trabajo de umbral',repetitions:3,work_value:8,work_unit:'m',target:'umbral controlado',recovery_value:2,recovery_unit:'m',recovery_target:'Trote muy suave'},
+  {type:'cooldown',duration_min:10,target:'Z1 muy suave'},
+]});
+const thresholdWork=partialThreshold.filter(x=>x.kind==='work');
+if(partialThreshold.length!==8||thresholdWork.filter(x=>x.completion_status==='complete').length!==2||thresholdWork[2].completion_status!=='not_started')throw new Error('La reconstrucción no identifica 2 de 3 bloques de umbral y conserva el tercero como no iniciado.');
+if(Math.abs(thresholdWork[0].pace_sec_per_km-251)>1||Math.abs(thresholdWork[1].pace_sec_per_km-265)>1)throw new Error('La reconstrucción no agrega correctamente el ritmo de los bloques planificados.');
+if(!Number.isFinite(thresholdWork[0].start_hr)||!Number.isFinite(thresholdWork[0].end_hr)||!Number.isFinite(thresholdWork[0].pace_variability_percent))throw new Error('El análisis fino no expone evolución de pulso y ritmo dentro del bloque.');
+if(partialThreshold.at(-1).phase!=='cooldown'||partialThreshold.at(-1).duration_seconds!==555)throw new Error('La reconstrucción confunde la vuelta a la calma con el bloque de umbral omitido.');
 const blockComparison=comparison.compareDetailedBlocks(detailed,detailed);
 if(blockComparison.length!==2||blockComparison.some(x=>x.pace_change_sec_per_km!==0||x.hr_change!==0))throw new Error('La comparación repetición a repetición no es estable.');
 
