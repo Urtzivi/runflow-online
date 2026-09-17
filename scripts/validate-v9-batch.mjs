@@ -156,5 +156,21 @@ const sameName=comparison.findPreviousComparable(identities,2);
 if(!sameName||sameName.match!=='same_name'||sameName.row!==identities[0])throw new Error('La comparación no prioriza sesiones del mismo nombre.');
 const sameType=comparison.findPreviousComparable(identities,1);
 if(!sameType||sameType.match!=='session_type'||sameType.row!==identities[0])throw new Error('La comparación no recurre al mismo tipo de sesión.');
+const detailed=comparison.detailedBlocks(intervalActivity,{title:'Umbral 2 x 3',sport:'Run',blocks:[
+  {type:'warmup',duration_min:10,target:'Z1-Z2'},
+  {type:'central',name:'Umbral',repetitions:2,work_value:3,work_unit:'m',target:'Z4',recovery_value:2,recovery_unit:'m',recovery_target:'Z1'},
+  {type:'cooldown',duration_min:10,target:'Z1'},
+]});
+if(detailed.length!==5||detailed.filter(x=>x.kind==='work').length!==2)throw new Error('El análisis detallado no separa trabajo y recuperaciones.');
+if(detailed[1].planned_target!=='Z4'||detailed[1].pace!=='4:00/km'||detailed[1].average_hr!==155)throw new Error('El análisis detallado no conserva objetivo, ritmo y pulso por bloque.');
+const reconstructed=comparison.detailedBlocks({raw_summary:{},streams:[
+  {type:'time',data:Array.from({length:361},(_,i)=>i)},
+  {type:'distance',data:Array.from({length:361},(_,i)=>i*3)},
+  {type:'heartrate',data:Array.from({length:361},(_,i)=>130+Math.floor(i/180)*5)},
+  {type:'velocity_smooth',data:Array.from({length:361},()=>3)},
+]},{title:'2 x 3',sport:'Run',blocks:[{type:'central',name:'Trabajo',repetitions:2,work_value:3,work_unit:'m',target:'Z4'}]});
+if(reconstructed.length!==2||!reconstructed.every(x=>x.source==='streams'&&x.pace_sec_per_km))throw new Error('No se reconstruyen los bloques desde streams cuando faltan intervalos.');
+const blockComparison=comparison.compareDetailedBlocks(detailed,detailed);
+if(blockComparison.length!==2||blockComparison.some(x=>x.pace_change_sec_per_km!==0||x.hr_change!==0))throw new Error('La comparación repetición a repetición no es estable.');
 
 console.log(`OK: 307/307 fuente; Learning V1 validado; vínculo Athlete protegido; ${over60.length} sesiones no-largas >60 se excluirán operativamente; catálogo fuente bandas 45=${band45}, 60=${band60}.`);
