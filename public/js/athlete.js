@@ -11,6 +11,12 @@ const state = {
   messageWorkoutId: '',
 };
 const dayNames = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+let feedbackRecorder = null;
+let feedbackStream = null;
+let feedbackChunks = [];
+let feedbackTimer = null;
+let feedbackStartedAt = 0;
+let discardFeedbackAudio = false;
 
 async function api(url, options = {}) {
   const response = await fetch(url, { ...options, headers: { 'Content-Type': 'application/json', ...(options.headers || {}) } });
@@ -285,6 +291,7 @@ function openWorkout(id){
 
 function feelingLabel(value){return ({muy_bien:'Muy buenas sensaciones',bien:'Buenas sensaciones',normal:'Sensaciones normales',mal:'Malas sensaciones'})[value]||value||'';}
 function resetFeedbackForm(){
+  cancelFeedbackRecording();
   const current=state.selectedWorkout?.manual_log||{};
   $('logStatus').value=current.status||'completed';
   document.querySelectorAll('[data-log-status]').forEach(button=>button.classList.toggle('active',button.dataset.logStatus===$('logStatus').value));
@@ -297,7 +304,81 @@ function resetFeedbackForm(){
   $('logPain').value=current.pain??0;
   $('logPainArea').value=current.pain_area||'';
   $('logComment').value=current.comment||'';
+  $('feedbackAudioStatus').textContent='Hasta 2 minutos. Podrás revisar la transcripción.';
   updateSrpePreview();
+}
+
+function feedbackAudioMime(){
+  if(typeof MediaRecorder==='undefined')return '';
+  return ['audio/webm;codecs=opus','audio/webm','audio/mp4'].find(type=>MediaRecorder.isTypeSupported(type))||'';
+}
+function setFeedbackRecordingUi(recording){
+  $('recordFeedbackAudio').classList.toggle('hidden',recording);
+  $('recordFeedbackAudio').setAttribute('aria-pressed',String(recording));
+  $('stopFeedbackAudio').classList.toggle('hidden',!recording);
+  $('saveLog').disabled=recording;
+}
+function clearFeedbackRecordingResources(){
+  if(feedbackTimer)clearInterval(feedbackTimer);
+  feedbackTimer=null;
+  if(feedbackStream)feedbackStream.getTracks().forEach(track=>track.stop());
+  feedbackStream=null;
+  feedbackRecorder=null;
+  setFeedbackRecordingUi(false);
+}
+function cancelFeedbackRecording(){
+  discardFeedbackAudio=true;
+  if(feedbackRecorder&&feedbackRecorder.state!=='inactive')feedbackRecorder.stop();
+  else clearFeedbackRecordingResources();
+}
+async function transcribeFeedbackBlob(blob){
+  $('feedbackAudioStatus').textContent='Transcribiendo la nota de voz…';
+  const contentType=String(blob.type||'audio/webm').split(';')[0];
+  const response=await fetch('/api/athlete/transcribe-feedback',{method:'POST',credentials:'same-origin',headers:{'Content-Type':contentType},body:blob});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok){
+    if(response.status===401)location.href='/login?mode=athlete';
+    throw new Error(data.error||'No se pudo transcribir la nota de voz.');
+  }
+  const transcription=String(data.text||'').trim();
+  if(!transcription)throw new Error('No se ha detectado voz en la grabación.');
+  const previous=$('logComment').value.trim();
+  $('logComment').value=previous?`${previous}\n\n${transcription}`:transcription;
+  $('logComment').focus();
+  $('feedbackAudioStatus').textContent='Transcripción lista. Revísala antes de guardar.';
+}
+async function startFeedbackRecording(){
+  try{
+    if(!navigator.mediaDevices?.getUserMedia||typeof MediaRecorder==='undefined')throw new Error('Este dispositivo no permite grabar audio desde RunFlow.');
+    const mimeType=feedbackAudioMime();
+    feedbackStream=await navigator.mediaDevices.getUserMedia({audio:true});
+    feedbackChunks=[];
+    discardFeedbackAudio=false;
+    feedbackRecorder=new MediaRecorder(feedbackStream,mimeType?{mimeType}:undefined);
+    feedbackRecorder.addEventListener('dataavailable',event=>{if(event.data?.size)feedbackChunks.push(event.data);});
+    feedbackRecorder.addEventListener('stop',async()=>{
+      const shouldDiscard=discardFeedbackAudio;
+      const blob=new Blob(feedbackChunks,{type:feedbackRecorder?.mimeType||mimeType||'audio/webm'});
+      clearFeedbackRecordingResources();
+      feedbackChunks=[];
+      if(shouldDiscard)return;
+      $('saveLog').disabled=true;
+      try{await transcribeFeedbackBlob(blob);}catch(error){$('feedbackAudioStatus').textContent=error.message;}finally{$('saveLog').disabled=false;}
+    });
+    feedbackRecorder.start(1000);
+    feedbackStartedAt=Date.now();
+    setFeedbackRecordingUi(true);
+    const updateTime=()=>{
+      const elapsed=Math.min(120,Math.floor((Date.now()-feedbackStartedAt)/1000));
+      $('feedbackAudioStatus').textContent=`Grabando… ${Math.floor(elapsed/60)}:${String(elapsed%60).padStart(2,'0')} / 2:00`;
+      if(elapsed>=120&&feedbackRecorder?.state==='recording')feedbackRecorder.stop();
+    };
+    updateTime();
+    feedbackTimer=setInterval(updateTime,1000);
+  }catch(error){
+    clearFeedbackRecordingResources();
+    $('feedbackAudioStatus').textContent=error.name==='NotAllowedError'?'Necesitamos permiso para usar el micrófono.':error.message;
+  }
 }
 function updateSrpePreview(){
   const duration=Number($('logDuration').value||0),rpe=Number($('logRpe').value||0);
@@ -406,7 +487,9 @@ $('refreshAthleteActivities').addEventListener('click',()=>loadActivities(true))
 $('closeDetail').addEventListener('click',()=>$('sessionDetail').classList.add('hidden'));
 $('sessionDetail').addEventListener('click',event=>{if(event.target===$('sessionDetail'))$('sessionDetail').classList.add('hidden');});
 $('openLog').addEventListener('click',()=>{resetFeedbackForm();$('sessionDetail').classList.add('hidden');$('logModal').classList.remove('hidden');});
-$('closeLog').addEventListener('click',()=>$('logModal').classList.add('hidden'));
+$('closeLog').addEventListener('click',()=>{cancelFeedbackRecording();$('logModal').classList.add('hidden');});
+$('recordFeedbackAudio').addEventListener('click',startFeedbackRecording);
+$('stopFeedbackAudio').addEventListener('click',()=>{discardFeedbackAudio=false;if(feedbackRecorder?.state==='recording')feedbackRecorder.stop();});
 $('closeAthleteActivity').addEventListener('click',()=>$('athleteActivityModal').classList.add('hidden'));
 $('athleteActivityModal').addEventListener('click',event=>{if(event.target===$('athleteActivityModal'))$('athleteActivityModal').classList.add('hidden');});
 $('messageCoachFromWorkout').addEventListener('click',()=>{state.messageWorkoutId=state.selectedWorkout?.id||'';populateMessageWorkoutOptions();$('sessionDetail').classList.add('hidden');switchView('messages');setTimeout(()=>$('athleteMessageText').focus(),150);});
