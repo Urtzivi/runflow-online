@@ -21,6 +21,7 @@ const APP_BASE_URL = String(process.env.APP_BASE_URL || `http://127.0.0.1:${PORT
 const APP_ENCRYPTION_KEY = String(process.env.APP_ENCRYPTION_KEY || '');
 const OPENAI_API_KEY = String(process.env.OPENAI_API_KEY || '');
 const OPENAI_MODEL = String(process.env.OPENAI_MODEL || 'gpt-5.6-terra');
+const OPENAI_TRANSCRIBE_MODEL = String(process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-mini-transcribe');
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
 const APP_VERSION = 'Online Pilot 1.9.4 - Acceso Athlete directo por email';
 const INTERVALS_API_BASE = 'https://intervals.icu/api/v1';
@@ -222,6 +223,24 @@ function readJson(req, maxBytes = 1_000_000) {
         reject(Object.assign(new Error('JSON no válido.'), { status: 400 }));
       }
     });
+    req.on('error', reject);
+  });
+}
+
+function readBuffer(req, maxBytes = 8_000_000) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on('data', chunk => {
+      size += chunk.length;
+      if (size > maxBytes) {
+        reject(Object.assign(new Error('El audio es demasiado grande.'), { status: 413 }));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
     req.on('error', reject);
   });
 }
@@ -4882,6 +4901,35 @@ async function openAiAnalysis(context) {
   return { analysis: JSON.parse(output), usage: data.usage || null, response_id: data.id || null };
 }
 
+async function transcribeFeedbackAudio(req) {
+  if (!OPENAI_API_KEY) throw Object.assign(new Error('La transcripción de voz no está configurada.'), { status: 503 });
+  const mime = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+  const extensions = {
+    'audio/webm': 'webm', 'audio/ogg': 'ogg', 'audio/mp4': 'm4a',
+    'audio/mpeg': 'mp3', 'audio/wav': 'wav', 'audio/x-wav': 'wav',
+  };
+  const extension = extensions[mime];
+  if (!extension) throw Object.assign(new Error('Este formato de audio no es compatible.'), { status: 415 });
+  const audio = await readBuffer(req);
+  if (!audio.length) throw Object.assign(new Error('No se ha recibido ningún audio.'), { status: 400 });
+  const form = new FormData();
+  form.append('file', new Blob([audio], { type: mime }), `feedback.${extension}`);
+  form.append('model', OPENAI_TRANSCRIBE_MODEL);
+  form.append('language', 'es');
+  form.append('response_format', 'json');
+  form.append('prompt', 'Nota de voz de un deportista después de entrenar. Transcribe fielmente en español, sin interpretar, resumir ni añadir información.');
+  const response = await fetch(`${OPENAI_API_BASE}/audio/transcriptions`, {
+    method: 'POST', headers: { Authorization: `Bearer ${OPENAI_API_KEY}` }, body: form,
+  });
+  const raw = await response.text();
+  let data = {};
+  try { data = raw ? JSON.parse(raw) : {}; } catch { data = {}; }
+  if (!response.ok) throw Object.assign(new Error(data && data.error && data.error.message || `No se pudo transcribir el audio (HTTP ${response.status}).`), { status: 502 });
+  const text = sanitiseText(data.text, 1800);
+  if (!text) throw Object.assign(new Error('No se ha detectado voz en la grabación.'), { status: 422 });
+  return text;
+}
+
 async function saveReview(session, athleteId, activityId, body) {
   const row = {
     id: body.id || crypto.randomUUID(), athlete_id: athleteId, activity_id: activityId, coach_user_id: session.user.id,
@@ -5515,6 +5563,13 @@ async function api(req, res, url) {
       }
     } else athlete.week = null;
     return sendJson(res, 200, { athlete });
+  }
+
+  if (pathname === '/api/athlete/transcribe-feedback' && method === 'POST') {
+    requireRole(session, 'athlete');
+    if (!session.athlete_id) throw Object.assign(new Error('Tu usuario todavía no está vinculado a una ficha de deportista.'), { status: 409 });
+    const text = await transcribeFeedbackAudio(req);
+    return sendJson(res, 200, { text });
   }
 
   if (pathname === '/api/athlete/manual-log' && method === 'POST') {
