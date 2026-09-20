@@ -4666,6 +4666,35 @@ async function activityRowByExternalId(athleteId, externalId) {
   return rows[0] || null;
 }
 
+const ACTIVITY_FEEDBACK_PREFIX = 'RUNFLOW_ACTIVITY_FEEDBACK ';
+
+function activityFeedbackPayload(comment) {
+  const value = String(comment || '');
+  if (!value.startsWith(ACTIVITY_FEEDBACK_PREFIX)) return null;
+  try {
+    const parsed = JSON.parse(value.slice(ACTIVITY_FEEDBACK_PREFIX.length));
+    return parsed && parsed.activity_id ? parsed : null;
+  } catch { return null; }
+}
+
+function publicFeedbackLog(log) {
+  if (!log) return null;
+  const payload = activityFeedbackPayload(log.comment);
+  return { ...log, comment: payload ? sanitiseText(payload.comment, 1600) : sanitiseText(log.comment, 2000) };
+}
+
+async function feedbackForActivity(athleteId, activity) {
+  if (!activity) return null;
+  const workoutId = activity.workout_id;
+  const logs = DEMO_MODE
+    ? (demo.manual_logs || []).filter(item => item.athlete_id === athleteId && (workoutId ? String(item.workout_id) === String(workoutId) : !item.workout_id))
+    : await prodRows('manual_session_logs', `athlete_id=eq.${encodeURIComponent(athleteId)}&${workoutId ? `workout_id=eq.${encodeURIComponent(workoutId)}` : 'workout_id=is.null'}&select=*&order=created_at.desc&limit=250`);
+  const matched = workoutId
+    ? logs[0]
+    : logs.find(item => String(activityFeedbackPayload(item.comment)?.activity_id || '') === String(activity.intervals_activity_id));
+  return publicFeedbackLog(matched || null);
+}
+
 async function linkActivityToWorkout(athleteId, externalId, workoutId) {
   const targetWorkoutId = sanitiseText(workoutId, 80) || null;
 
@@ -4781,6 +4810,7 @@ async function getActivityDetail(session, athleteId, externalId) {
     activity: { ...stored, raw_summary: raw, streams, intervals: summariseIntervals(raw) },
     planned,
     recovery,
+    feedback: await feedbackForActivity(athleteId, stored),
     review: await activityReview(session, athleteId, stored.id),
   };
 }
@@ -5537,7 +5567,7 @@ async function api(req, res, url) {
     requireRole(session, 'athlete');
     if (!session.athlete_id) throw Object.assign(new Error('Tu usuario todavía no está vinculado a una ficha de deportista.'), { status: 409 });
     const detail = await getActivityDetail(session, session.athlete_id, decodeURIComponent(athleteActivityDetailMatch[1]));
-    return sendJson(res, 200, { activity: detail.activity, planned: detail.planned, recovery: detail.recovery });
+    return sendJson(res, 200, { activity: detail.activity, planned: detail.planned, recovery: detail.recovery, feedback: detail.feedback });
   }
 
 
@@ -5574,18 +5604,35 @@ async function api(req, res, url) {
 
   if (pathname === '/api/athlete/manual-log' && method === 'POST') {
     requireRole(session, 'athlete');
+    if (!session.athlete_id) throw Object.assign(new Error('Tu usuario todavía no está vinculado a una ficha de deportista.'), { status: 409 });
     const body = await readJson(req);
+    const externalActivityId = sanitiseText(body.activity_id, 120) || null;
+    const activity = externalActivityId ? await activityRowByExternalId(session.athlete_id, externalActivityId) : null;
+    if (externalActivityId && !activity) throw Object.assign(new Error('La actividad no pertenece a este deportista.'), { status: 404 });
+    const workoutId = sanitiseText(body.workout_id, 80) || activity?.workout_id || null;
+    const storedComment = externalActivityId && !workoutId
+      ? `${ACTIVITY_FEEDBACK_PREFIX}${JSON.stringify({ activity_id: externalActivityId, comment: sanitiseText(body.comment, 1600) })}`
+      : sanitiseText(body.comment, 2000);
     const log = {
-      id: crypto.randomUUID(), athlete_id: session.athlete_id, workout_id: sanitiseText(body.workout_id, 80) || null,
+      id: crypto.randomUUID(), athlete_id: session.athlete_id, workout_id: workoutId,
       status: ['completed', 'partial', 'skipped'].includes(body.status) ? body.status : 'completed',
       actual_duration_min: numberOrNull(body.actual_duration_min, 0, 1000), rpe: numberOrNull(body.rpe, 1, 10), pain: numberOrNull(body.pain, 0, 10),
       feeling: ['muy_bien', 'bien', 'normal', 'mal'].includes(body.feeling) ? body.feeling : null, pain_area: sanitiseText(body.pain_area, 180) || null,
-      comment: sanitiseText(body.comment, 2000), created_at: new Date().toISOString(),
+      comment: storedComment, created_at: new Date().toISOString(),
     };
-    if (DEMO_MODE) { demo.manual_logs.push(log); saveDemo(); }
+    const existing = externalActivityId ? await feedbackForActivity(session.athlete_id, { ...activity, workout_id: workoutId }) : null;
+    if (existing) {
+      log.id = existing.id;
+      log.created_at = existing.created_at || log.created_at;
+      if (DEMO_MODE) {
+        const index = demo.manual_logs.findIndex(item => item.id === existing.id);
+        if (index >= 0) demo.manual_logs[index] = log;
+        saveDemo();
+      } else await prodRows('manual_session_logs', `id=eq.${encodeURIComponent(existing.id)}&athlete_id=eq.${encodeURIComponent(session.athlete_id)}`, { method: 'PATCH', body: log });
+    } else if (DEMO_MODE) { demo.manual_logs.push(log); saveDemo(); }
     else await prodRows('manual_session_logs', '', { method: 'POST', body: log });
     if (!DEMO_MODE) dailyPerformanceSnapshot(session.athlete_id, localDateInTimeZone()).catch(() => {});
-    return sendJson(res, 201, { log });
+    return sendJson(res, existing ? 200 : 201, { log: publicFeedbackLog(log) });
   }
 
   throw Object.assign(new Error('Ruta no encontrada.'), { status: 404 });
