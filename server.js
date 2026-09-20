@@ -21,6 +21,7 @@ const APP_BASE_URL = String(process.env.APP_BASE_URL || `http://127.0.0.1:${PORT
 const APP_ENCRYPTION_KEY = String(process.env.APP_ENCRYPTION_KEY || '');
 const OPENAI_API_KEY = String(process.env.OPENAI_API_KEY || '');
 const OPENAI_MODEL = String(process.env.OPENAI_MODEL || 'gpt-5.6-terra');
+const OPENAI_TRANSCRIBE_MODEL = String(process.env.OPENAI_TRANSCRIBE_MODEL || 'gpt-4o-mini-transcribe');
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
 const APP_VERSION = 'Online Pilot 1.9.4 - Acceso Athlete directo por email';
 const INTERVALS_API_BASE = 'https://intervals.icu/api/v1';
@@ -222,6 +223,24 @@ function readJson(req, maxBytes = 1_000_000) {
         reject(Object.assign(new Error('JSON no válido.'), { status: 400 }));
       }
     });
+    req.on('error', reject);
+  });
+}
+
+function readBuffer(req, maxBytes = 8_000_000) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on('data', chunk => {
+      size += chunk.length;
+      if (size > maxBytes) {
+        reject(Object.assign(new Error('El audio es demasiado grande.'), { status: 413 }));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
     req.on('error', reject);
   });
 }
@@ -4647,6 +4666,35 @@ async function activityRowByExternalId(athleteId, externalId) {
   return rows[0] || null;
 }
 
+const ACTIVITY_FEEDBACK_PREFIX = 'RUNFLOW_ACTIVITY_FEEDBACK ';
+
+function activityFeedbackPayload(comment) {
+  const value = String(comment || '');
+  if (!value.startsWith(ACTIVITY_FEEDBACK_PREFIX)) return null;
+  try {
+    const parsed = JSON.parse(value.slice(ACTIVITY_FEEDBACK_PREFIX.length));
+    return parsed && parsed.activity_id ? parsed : null;
+  } catch { return null; }
+}
+
+function publicFeedbackLog(log) {
+  if (!log) return null;
+  const payload = activityFeedbackPayload(log.comment);
+  return { ...log, comment: payload ? sanitiseText(payload.comment, 1600) : sanitiseText(log.comment, 2000) };
+}
+
+async function feedbackForActivity(athleteId, activity) {
+  if (!activity) return null;
+  const workoutId = activity.workout_id;
+  const logs = DEMO_MODE
+    ? (demo.manual_logs || []).filter(item => item.athlete_id === athleteId && (workoutId ? String(item.workout_id) === String(workoutId) : !item.workout_id))
+    : await prodRows('manual_session_logs', `athlete_id=eq.${encodeURIComponent(athleteId)}&${workoutId ? `workout_id=eq.${encodeURIComponent(workoutId)}` : 'workout_id=is.null'}&select=*&order=created_at.desc&limit=250`);
+  const matched = workoutId
+    ? logs[0]
+    : logs.find(item => String(activityFeedbackPayload(item.comment)?.activity_id || '') === String(activity.intervals_activity_id));
+  return publicFeedbackLog(matched || null);
+}
+
 async function linkActivityToWorkout(athleteId, externalId, workoutId) {
   const targetWorkoutId = sanitiseText(workoutId, 80) || null;
 
@@ -4762,6 +4810,7 @@ async function getActivityDetail(session, athleteId, externalId) {
     activity: { ...stored, raw_summary: raw, streams, intervals: summariseIntervals(raw) },
     planned,
     recovery,
+    feedback: await feedbackForActivity(athleteId, stored),
     review: await activityReview(session, athleteId, stored.id),
   };
 }
@@ -4880,6 +4929,35 @@ async function openAiAnalysis(context) {
   const output = extractOpenAiText(data);
   if (!output) throw Object.assign(new Error('OpenAI no devolvió un análisis legible.'), { status: 502 });
   return { analysis: JSON.parse(output), usage: data.usage || null, response_id: data.id || null };
+}
+
+async function transcribeFeedbackAudio(req) {
+  if (!OPENAI_API_KEY) throw Object.assign(new Error('La transcripción de voz no está configurada.'), { status: 503 });
+  const mime = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+  const extensions = {
+    'audio/webm': 'webm', 'audio/ogg': 'ogg', 'audio/mp4': 'm4a',
+    'audio/mpeg': 'mp3', 'audio/wav': 'wav', 'audio/x-wav': 'wav',
+  };
+  const extension = extensions[mime];
+  if (!extension) throw Object.assign(new Error('Este formato de audio no es compatible.'), { status: 415 });
+  const audio = await readBuffer(req);
+  if (!audio.length) throw Object.assign(new Error('No se ha recibido ningún audio.'), { status: 400 });
+  const form = new FormData();
+  form.append('file', new Blob([audio], { type: mime }), `feedback.${extension}`);
+  form.append('model', OPENAI_TRANSCRIBE_MODEL);
+  form.append('language', 'es');
+  form.append('response_format', 'json');
+  form.append('prompt', 'Nota de voz de un deportista después de entrenar. Transcribe fielmente en español, sin interpretar, resumir ni añadir información.');
+  const response = await fetch(`${OPENAI_API_BASE}/audio/transcriptions`, {
+    method: 'POST', headers: { Authorization: `Bearer ${OPENAI_API_KEY}` }, body: form,
+  });
+  const raw = await response.text();
+  let data = {};
+  try { data = raw ? JSON.parse(raw) : {}; } catch { data = {}; }
+  if (!response.ok) throw Object.assign(new Error(data && data.error && data.error.message || `No se pudo transcribir el audio (HTTP ${response.status}).`), { status: 502 });
+  const text = sanitiseText(data.text, 1800);
+  if (!text) throw Object.assign(new Error('No se ha detectado voz en la grabación.'), { status: 422 });
+  return text;
 }
 
 async function saveReview(session, athleteId, activityId, body) {
@@ -5489,7 +5567,7 @@ async function api(req, res, url) {
     requireRole(session, 'athlete');
     if (!session.athlete_id) throw Object.assign(new Error('Tu usuario todavía no está vinculado a una ficha de deportista.'), { status: 409 });
     const detail = await getActivityDetail(session, session.athlete_id, decodeURIComponent(athleteActivityDetailMatch[1]));
-    return sendJson(res, 200, { activity: detail.activity, planned: detail.planned, recovery: detail.recovery });
+    return sendJson(res, 200, { activity: detail.activity, planned: detail.planned, recovery: detail.recovery, feedback: detail.feedback });
   }
 
 
@@ -5517,20 +5595,44 @@ async function api(req, res, url) {
     return sendJson(res, 200, { athlete });
   }
 
+  if (pathname === '/api/athlete/transcribe-feedback' && method === 'POST') {
+    requireRole(session, 'athlete');
+    if (!session.athlete_id) throw Object.assign(new Error('Tu usuario todavía no está vinculado a una ficha de deportista.'), { status: 409 });
+    const text = await transcribeFeedbackAudio(req);
+    return sendJson(res, 200, { text });
+  }
+
   if (pathname === '/api/athlete/manual-log' && method === 'POST') {
     requireRole(session, 'athlete');
+    if (!session.athlete_id) throw Object.assign(new Error('Tu usuario todavía no está vinculado a una ficha de deportista.'), { status: 409 });
     const body = await readJson(req);
+    const externalActivityId = sanitiseText(body.activity_id, 120) || null;
+    const activity = externalActivityId ? await activityRowByExternalId(session.athlete_id, externalActivityId) : null;
+    if (externalActivityId && !activity) throw Object.assign(new Error('La actividad no pertenece a este deportista.'), { status: 404 });
+    const workoutId = sanitiseText(body.workout_id, 80) || activity?.workout_id || null;
+    const storedComment = externalActivityId && !workoutId
+      ? `${ACTIVITY_FEEDBACK_PREFIX}${JSON.stringify({ activity_id: externalActivityId, comment: sanitiseText(body.comment, 1600) })}`
+      : sanitiseText(body.comment, 2000);
     const log = {
-      id: crypto.randomUUID(), athlete_id: session.athlete_id, workout_id: sanitiseText(body.workout_id, 80) || null,
+      id: crypto.randomUUID(), athlete_id: session.athlete_id, workout_id: workoutId,
       status: ['completed', 'partial', 'skipped'].includes(body.status) ? body.status : 'completed',
       actual_duration_min: numberOrNull(body.actual_duration_min, 0, 1000), rpe: numberOrNull(body.rpe, 1, 10), pain: numberOrNull(body.pain, 0, 10),
       feeling: ['muy_bien', 'bien', 'normal', 'mal'].includes(body.feeling) ? body.feeling : null, pain_area: sanitiseText(body.pain_area, 180) || null,
-      comment: sanitiseText(body.comment, 2000), created_at: new Date().toISOString(),
+      comment: storedComment, created_at: new Date().toISOString(),
     };
-    if (DEMO_MODE) { demo.manual_logs.push(log); saveDemo(); }
+    const existing = externalActivityId ? await feedbackForActivity(session.athlete_id, { ...activity, workout_id: workoutId }) : null;
+    if (existing) {
+      log.id = existing.id;
+      log.created_at = existing.created_at || log.created_at;
+      if (DEMO_MODE) {
+        const index = demo.manual_logs.findIndex(item => item.id === existing.id);
+        if (index >= 0) demo.manual_logs[index] = log;
+        saveDemo();
+      } else await prodRows('manual_session_logs', `id=eq.${encodeURIComponent(existing.id)}&athlete_id=eq.${encodeURIComponent(session.athlete_id)}`, { method: 'PATCH', body: log });
+    } else if (DEMO_MODE) { demo.manual_logs.push(log); saveDemo(); }
     else await prodRows('manual_session_logs', '', { method: 'POST', body: log });
     if (!DEMO_MODE) dailyPerformanceSnapshot(session.athlete_id, localDateInTimeZone()).catch(() => {});
-    return sendJson(res, 201, { log });
+    return sendJson(res, existing ? 200 : 201, { log: publicFeedbackLog(log) });
   }
 
   throw Object.assign(new Error('Ruta no encontrada.'), { status: 404 });

@@ -28,3 +28,5 @@ services:
         sync: false
       - key: OPENAI_MODEL
         value: gpt-5.6-terra
+      - key: OPENAI_TRANSCRIBE_MODEL
+        value: gpt-4o-mini-transcribe

@@ -73,7 +73,7 @@ for(const rule of ['el primer mesociclo no empieza con el macro','hay hueco o so
 const athleteOfficial=fs.readFileSync(path.join(root,'public/athlete.html'),'utf8');
 const athleteBetaJs=fs.readFileSync(path.join(root,'public/js/athlete-v2-beta.js'),'utf8');
 const athleteFixesJs=fs.readFileSync(path.join(root,'public/js/athlete-v2-fixes.js'),'utf8');
-for(const marker of ['/athlete-base.html','/js/athlete.js?v=2.4.2.4','/js/athlete-v2-beta.js?v=2.0.5','/js/athlete-v2-complete.js?v=2.2.1','/js/athlete-v2-fixes.js?v=2.1.1','/js/athlete-learning.js?v=2.4.3','/js/athlete-native-readiness-notifications.js?v=1.0.0','/css/athlete-v4.css?v=4.0.1','/css/athlete-learning.css?v=2.3.2',"location.replace('/login?mode=athlete')","runflowAthleteVersion='2.4.4-session-actions'"])if(!athleteOfficial.includes(marker))throw new Error(`Athlete oficial: falta ${marker}`);
+for(const marker of ['/athlete-base.html','/js/athlete.js?v=2.4.2.6','/js/athlete-v2-beta.js?v=2.0.5','/js/athlete-v2-complete.js?v=2.2.1','/js/athlete-v2-fixes.js?v=2.1.1','/js/athlete-learning.js?v=2.4.3','/js/athlete-native-readiness-notifications.js?v=1.0.0','/css/athlete-v4.css?v=4.0.1','/css/athlete-learning.css?v=2.3.2',"location.replace('/login?mode=athlete')","runflowAthleteVersion='2.4.4-session-actions'"])if(!athleteOfficial.includes(marker))throw new Error(`Athlete oficial: falta ${marker}`);
 if(!athleteBetaJs.includes('if(!changedByBaseView)return'))throw new Error('Athlete V2: el observador de actividades puede reaccionar a sus propias tarjetas.');
 for(const marker of ['data-v2-sport="walk"','Paseo / senderismo',"credentials:'include'"])if(!athleteBetaJs.includes(marker))throw new Error(`Actividad manual Athlete incompleta: ${marker}`);
 const athleteCompleteJs=fs.readFileSync(path.join(root,'public/js/athlete-v2-complete.js'),'utf8');
@@ -83,6 +83,10 @@ if(athleteOfficial.includes('athlete-v2-beta-banner'))throw new Error('Athlete o
 const athleteJs=fs.readFileSync(path.join(root,'public/js/athlete.js'),'utf8');
 for(const marker of ['renderDashboardError','Error al cargar tus datos','Reintentar'])if(!athleteJs.includes(marker))throw new Error(`Athlete no conserva el error del dashboard: falta ${marker}`);
 for(const marker of ['exercise.video_url','Ver vídeo explicativo','noopener noreferrer'])if(!athleteJs.includes(marker))throw new Error(`Athlete no muestra vídeos de fuerza: falta ${marker}`);
+for(const marker of ['MediaRecorder','recordFeedbackAudio','/api/athlete/transcribe-feedback','Transcripción lista. Revísala antes de guardar.'])if(!athleteJs.includes(marker))throw new Error(`Athlete no permite transcribir feedback por voz: falta ${marker}`);
+for(const marker of ['/api/athlete/transcribe-feedback','OPENAI_TRANSCRIBE_MODEL','audio/transcriptions','readBuffer(req)'])if(!server.includes(marker))throw new Error(`Servidor sin transcripción de feedback: falta ${marker}`);
+for(const marker of ['openActivityLog','selectedActivity?.feedback','activity_id:state.selectedActivity?.intervals_activity_id'])if(!athleteJs.includes(marker))throw new Error(`Athlete no permite valorar actividades no planificadas: falta ${marker}`);
+for(const marker of ['ACTIVITY_FEEDBACK_PREFIX','feedbackForActivity','activity_id: externalActivityId','feedback: detail.feedback'])if(!server.includes(marker))throw new Error(`Servidor sin feedback vinculado a actividad: falta ${marker}`);
 const athleteBeta=fs.readFileSync(path.join(root,'public/athlete-v2.html'),'utf8');
 if(!athleteBeta.includes('/athlete-base.html')||!athleteBeta.includes('athlete-v2-beta-banner'))throw new Error('La ruta beta debe conservar su banner y usar la base preservada.');
 

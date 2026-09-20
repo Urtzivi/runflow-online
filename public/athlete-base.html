@@ -176,6 +176,11 @@
         <div class="field-row" style="margin-top:16px"><label>Duración real (min)<input id="logDuration" type="number" min="0"></label><label>Molestia / dolor (0–10)<input id="logPain" type="number" min="0" max="10" value="0"></label></div>
         <label style="margin-top:12px">Zona de molestia<input id="logPainArea" placeholder="Ej.: Aquiles derecho, gemelo…"></label>
         <label style="margin-top:12px">Comentario para tu entrenador<textarea id="logComment" placeholder="Sensaciones, qué ha ido bien, qué cambiarías, molestias…"></textarea></label>
+        <div class="athlete-voice-feedback">
+          <div class="athlete-voice-actions"><button id="recordFeedbackAudio" class="athlete-secondary-cta" type="button" aria-pressed="false">🎙 Grabar nota de voz</button><button id="stopFeedbackAudio" class="athlete-secondary-cta hidden" type="button">■ Terminar</button></div>
+          <span id="feedbackAudioStatus" role="status">Hasta 2 minutos. Podrás revisar la transcripción.</span>
+          <small>El audio se envía temporalmente a OpenAI para transcribirlo y no se guarda en RunFlow.</small>
+        </div>
         <div id="srpePreview" class="athlete-srpe-preview">Carga interna sRPE: —</div>
         <button id="saveLog" class="athlete-primary-cta full" type="button">Guardar feedback</button>
       </div>
@@ -185,11 +190,11 @@
   <div id="athleteActivityModal" class="modal-backdrop hidden">
     <div class="modal athlete-activity-modal">
       <div class="athlete-session-modal-head"><button id="closeAthleteActivity" class="athlete-modal-close" type="button">←</button><div><p id="athleteActivityDate" class="athlete-kicker">ACTIVIDAD REAL</p><h2 id="athleteActivityName">Actividad</h2></div></div>
-      <div class="modal-body"><p id="athleteActivityPlan" class="muted"></p><div id="athleteActivityMetrics" class="activity-metric-grid"></div><section class="form-section" style="margin-top:16px"><h3>Intervalos y parciales</h3><div id="athleteActivityIntervals" class="table-wrap"></div></section><section class="form-section" style="margin-top:14px"><h3>Otros datos disponibles</h3><div id="athleteActivityExtra" class="activity-extra-grid"></div></section></div>
+      <div class="modal-body"><p id="athleteActivityPlan" class="muted"></p><div id="athleteActivityMetrics" class="activity-metric-grid"></div><section class="form-section" style="margin-top:16px"><h3>Intervalos y parciales</h3><div id="athleteActivityIntervals" class="table-wrap"></div></section><section class="form-section" style="margin-top:14px"><h3>Otros datos disponibles</h3><div id="athleteActivityExtra" class="activity-extra-grid"></div></section><div id="athleteActivityFeedbackExisting" class="athlete-existing-feedback hidden"></div><button id="openActivityLog" class="athlete-primary-cta full" type="button">Valorar actividad</button></div>
     </div>
   </div>
 
-  <script src="/js/athlete.js?v=2.4.2.2"></script>
+  <script src="/js/athlete.js?v=2.4.2.6"></script>
   <script src="/js/register-sw.js?v=2.4.2.2"></script>
 </body>
 </html>
