@@ -9,6 +9,7 @@ const state = {
   performance: { latest: null, history: [] },
   activeView: 'today',
   messageWorkoutId: '',
+  selectedActivity: null,
 };
 const dayNames = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 let feedbackRecorder = null;
@@ -268,6 +269,7 @@ function renderWorkoutBlocks(workout){
 
 function openWorkout(id){
   const workout=state.athlete?.week?.workouts?.find(item=>String(item.id)===String(id)); if(!workout)return;
+  state.selectedActivity=null;
   state.selectedWorkout=workout;
   $('detailDate').textContent=dateLabel(workout.workout_date,true).toUpperCase();
   $('detailTitle').textContent=workout.title;
@@ -292,10 +294,10 @@ function openWorkout(id){
 function feelingLabel(value){return ({muy_bien:'Muy buenas sensaciones',bien:'Buenas sensaciones',normal:'Sensaciones normales',mal:'Malas sensaciones'})[value]||value||'';}
 function resetFeedbackForm(){
   cancelFeedbackRecording();
-  const current=state.selectedWorkout?.manual_log||{};
+  const current=state.selectedActivity?.feedback||state.selectedWorkout?.manual_log||{};
   $('logStatus').value=current.status||'completed';
   document.querySelectorAll('[data-log-status]').forEach(button=>button.classList.toggle('active',button.dataset.logStatus===$('logStatus').value));
-  $('logDuration').value=current.actual_duration_min??state.selectedWorkout?.planned_duration_min??'';
+  $('logDuration').value=current.actual_duration_min??state.selectedWorkout?.planned_duration_min??(state.selectedActivity?.duration_sec?Math.round(Number(state.selectedActivity.duration_sec)/60):'');
   $('logRpe').value=current.rpe??'';
   $('rpeValue').textContent=current.rpe?`${current.rpe}/10`:'—';
   document.querySelectorAll('[data-rpe]').forEach(button=>button.classList.toggle('active',String(button.dataset.rpe)===String(current.rpe||'')));
@@ -408,6 +410,8 @@ function prettyKey(key){return String(key).replace(/^icu_/,'').replace(/_/g,' ')
 async function openActivity(externalId){
   try{
     const data=await api(`/api/athlete/activities/${encodeURIComponent(externalId)}`); const activity=data.activity||{},raw=activity.raw_summary||{};
+    state.selectedWorkout=data.planned||null;
+    state.selectedActivity={...activity,feedback:data.feedback||null};
     $('athleteActivityDate').textContent=fullDateLabel(activity.activity_date).toUpperCase(); $('athleteActivityName').textContent=activity.name||'Actividad';
     $('athleteActivityPlan').textContent=data.planned?`Planificada como: ${data.planned.title} · carga prevista ${Number(data.planned.planned_load||0)}`:'Actividad no vinculada a una sesión planificada.';
     const elevation=raw.total_elevation_gain??raw.elevation_gain??raw.icu_elevation_gain; const watts=raw.average_watts??raw.icu_average_watts;
@@ -416,6 +420,14 @@ async function openActivity(externalId){
     const intervals=activity.intervals||[];
     $('athleteActivityIntervals').innerHTML=intervals.length?`<table><thead><tr><th>#</th><th>Bloque</th><th>Tiempo</th><th>Distancia</th><th>Ritmo</th><th>FC med.</th><th>FC máx.</th></tr></thead><tbody>${intervals.map(item=>`<tr><td>${item.index}</td><td>${escapeHtml(item.type)}</td><td>${durationLabel(item.duration_seconds)}</td><td>${item.distance_m?`${item.distance_m} m`:'—'}</td><td>${escapeHtml(item.pace||'—')}</td><td>${item.average_hr??'—'}</td><td>${item.max_hr??'—'}</td></tr>`).join('')}</tbody></table>`:'<p class="muted">Intervals no ha devuelto parciales detallados.</p>';
     const extras=scalarRawEntries(raw); $('athleteActivityExtra').innerHTML=extras.length?extras.map(([key,value])=>`<div><span>${escapeHtml(prettyKey(key))}</span><strong>${escapeHtml(value)}</strong></div>`).join(''):'<p class="muted">No hay más métricas de resumen disponibles.</p>';
+    if(data.feedback){
+      $('athleteActivityFeedbackExisting').classList.remove('hidden');
+      $('athleteActivityFeedbackExisting').innerHTML=`<strong>Tu valoración</strong><span>${data.feedback.rpe?`RPE ${data.feedback.rpe}`:'Sin RPE'}${data.feedback.feeling?` · ${escapeHtml(feelingLabel(data.feedback.feeling))}`:''}${data.feedback.pain!=null?` · molestia ${data.feedback.pain}/10`:''}</span>${data.feedback.comment?`<p>${escapeHtml(data.feedback.comment)}</p>`:''}`;
+      $('openActivityLog').textContent='Actualizar valoración';
+    }else{
+      $('athleteActivityFeedbackExisting').classList.add('hidden');
+      $('openActivityLog').textContent='Valorar actividad';
+    }
     $('athleteActivityModal').classList.remove('hidden');
   }catch(error){message(error.message,'error');}
 }
@@ -491,13 +503,15 @@ $('closeLog').addEventListener('click',()=>{cancelFeedbackRecording();$('logModa
 $('recordFeedbackAudio').addEventListener('click',startFeedbackRecording);
 $('stopFeedbackAudio').addEventListener('click',()=>{discardFeedbackAudio=false;if(feedbackRecorder?.state==='recording')feedbackRecorder.stop();});
 $('closeAthleteActivity').addEventListener('click',()=>$('athleteActivityModal').classList.add('hidden'));
+$('openActivityLog').addEventListener('click',()=>{resetFeedbackForm();$('athleteActivityModal').classList.add('hidden');$('logModal').classList.remove('hidden');});
 $('athleteActivityModal').addEventListener('click',event=>{if(event.target===$('athleteActivityModal'))$('athleteActivityModal').classList.add('hidden');});
 $('messageCoachFromWorkout').addEventListener('click',()=>{state.messageWorkoutId=state.selectedWorkout?.id||'';populateMessageWorkoutOptions();$('sessionDetail').classList.add('hidden');switchView('messages');setTimeout(()=>$('athleteMessageText').focus(),150);});
 $('saveLog').addEventListener('click',async()=>{
   try{
     if(!$('logRpe').value && $('logStatus').value!=='skipped') throw new Error('Indica el RPE de la sesión.');
-    const data=await api('/api/athlete/manual-log',{method:'POST',body:JSON.stringify({workout_id:state.selectedWorkout?.id,status:$('logStatus').value,actual_duration_min:$('logDuration').value,rpe:$('logRpe').value,pain:$('logPain').value,feeling:$('logFeeling').value,pain_area:$('logPainArea').value,comment:$('logComment').value})});
-    if(state.selectedWorkout)state.selectedWorkout.manual_log=data.log;
+    const data=await api('/api/athlete/manual-log',{method:'POST',body:JSON.stringify({workout_id:state.selectedWorkout?.id||null,activity_id:state.selectedActivity?.intervals_activity_id||null,status:$('logStatus').value,actual_duration_min:$('logDuration').value,rpe:$('logRpe').value,pain:$('logPain').value,feeling:$('logFeeling').value,pain_area:$('logPainArea').value,comment:$('logComment').value})});
+    if(state.selectedActivity)state.selectedActivity.feedback=data.log;
+    else if(state.selectedWorkout)state.selectedWorkout.manual_log=data.log;
     $('logModal').classList.add('hidden'); message('Feedback guardado. Tu entrenador ya puede verlo.','success'); await loadDashboard(state.selectedWeekStart);
   }catch(error){message(error.message,'error');}
 });
