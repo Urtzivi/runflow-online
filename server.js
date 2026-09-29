@@ -5505,17 +5505,20 @@ async function api(req, res, url) {
   }
 
   const reviewActivityMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/activities\/([^/]+)\/review$/);
-  if (reviewActivityMatch && method === 'PUT') {
+  if (reviewActivityMatch && ['GET', 'PUT'].includes(method)) {
     const athleteId = reviewActivityMatch[1];
     const externalId = decodeURIComponent(reviewActivityMatch[2]);
     await ensureCoachAccess(session, athleteId);
+    const activity = await activityRowByExternalId(athleteId, externalId);
+    if (!activity) throw Object.assign(new Error('Actividad no encontrada.'), { status: 404 });
+    const previous = await activityReview(session, athleteId, activity.id);
+    if (method === 'GET') return sendJson(res, 200, { review: previous });
     const body = await readJson(req);
-    const detail = await getActivityDetail(session, athleteId, externalId);
-    const review = await saveReview(session, athleteId, detail.activity.id, {
-      id: detail.review && detail.review.id,
+    const review = await saveReview(session, athleteId, activity.id, {
+      id: previous && previous.id,
       decision: body.decision,
       coach_comment: body.coach_comment,
-      ai_analysis: detail.review && detail.review.ai_analysis,
+      ai_analysis: previous && previous.ai_analysis,
     });
     return sendJson(res, 200, { review });
   }

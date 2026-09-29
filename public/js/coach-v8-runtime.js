@@ -17,6 +17,9 @@
   const initials = name => String(name||'?').trim().split(/\s+/).slice(0,2).map(x=>x[0]).join('').toUpperCase();
   const training = window.RunFlowTraining;
   let loadAthlete = '';
+  let dashboardPending = [];
+  const validatedHere = new Set();
+  const reviewKey = item => item.type==='manual' ? manualValidationKey(item.athlete.id,item.workout) : `${item.athlete.id}:${item.activity.intervals_activity_id}`;
   const today = () => new Intl.DateTimeFormat('en-CA', {timeZone:'Europe/Madrid',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
   const currentAthleteId = () => q('#athleteSelect')?.value || null;
   const currentAthleteName = () => q('#athleteSelect')?.selectedOptions?.[0]?.textContent?.trim() || 'Atleta';
@@ -130,7 +133,7 @@
     return (await Promise.all(candidates.map(async item=>{
       if(item.type==='manual') return localStorage.getItem(manualValidationKey(item.athlete.id,item.workout))==='1'?null:item;
       try {
-        const detail=await api('/api/coach/athletes/'+encodeURIComponent(item.athlete.id)+'/activities/'+encodeURIComponent(item.activity.intervals_activity_id));
+        const detail=await api('/api/coach/athletes/'+encodeURIComponent(item.athlete.id)+'/activities/'+encodeURIComponent(item.activity.intervals_activity_id)+'/review');
         return detail.review?.decision?null:{...item,review:detail.review};
       } catch { return {...item,reviewUnavailable:true}; }
     }))).filter(Boolean).sort((a,b)=>b.date.localeCompare(a.date));
@@ -160,14 +163,31 @@
       (review?'<label>Comentario del entrenador<textarea id="v8ReviewComment" style="width:100%"></textarea></label><button class="btn primary" data-confirm>Validar actividad realizada</button>':'')+'<p role="status" data-status></p>';
     q('[data-close]',dialog).onclick=()=>dialog.close();
     if(review) q('[data-confirm]',dialog).onclick=async event=>{
-      const button=event.currentTarget;button.disabled=true;
+      const button=event.currentTarget;button.disabled=true;button.textContent='Guardando…';
       try {
         if(item.type==='intervals') await api('/api/coach/athletes/'+encodeURIComponent(item.athlete.id)+'/activities/'+encodeURIComponent(a.intervals_activity_id)+'/review',{method:'PUT',body:JSON.stringify({decision:'validated',coach_comment:q('#v8ReviewComment',dialog).value || (mismatch?'Actividad revisada con cambio de deporte; no equivale al entrenamiento previsto.':'Actividad revisada desde el resumen.')})});
         else localStorage.setItem(manualValidationKey(item.athlete.id,w),'1');
-        dialog.close();await renderTeamDashboard();
-      } catch(error){q('[data-status]',dialog).textContent=error.message;button.disabled=false;}
+        validatedHere.add(reviewKey(item));
+        dashboardPending=dashboardPending.filter(row=>!validatedHere.has(reviewKey(row)));
+        renderValidationState();
+        dialog.close();
+      } catch(error){q('[data-status]',dialog).textContent=error.message;button.disabled=false;button.textContent='Reintentar validación';}
     };
     if(!dialog.open)dialog.showModal();
+  }
+
+  function renderValidationState(){
+    const dashboard=q('#v8TeamDashboard');if(!dashboard)return;
+    const pending=dashboardPending;
+    const list=q('.v8-validation-list',dashboard);
+    if(list)list.innerHTML=pending.map(validationRow).join('')||'<div class="v8-empty">✓ Todas las sesiones recientes están revisadas.</div>';
+    const attention=q('.v8-attention-list',dashboard);
+    if(attention)attention.innerHTML=pending.slice(0,5).map((item,index)=>`<button type="button" data-review-record="${index}" class="v8-attention-item" style="width:100%;text-align:left"><div class="v8-attention-avatar">${esc(initials(item.athlete.display_name))}</div><div><b>${esc(item.athlete.display_name)}</b><small>${esc(item.activity?.name||item.workout.title||'Sesión')}</small></div><span class="v8-priority">PENDIENTE</span></button>`).join('')||'<div class="v8-empty">No hay sesiones pendientes.</div>';
+    const badge=q('#v8ValidationQueue .v8-team-card-head>.badge',dashboard);
+    if(badge)badge.textContent=`${pending.length} pendientes`;
+    const hero=q('.v8-team-hero-copy p strong',dashboard);
+    if(hero)hero.textContent=`${pending.length} sesión${pending.length===1?'':'es'} pendiente${pending.length===1?'':'s'} de validar`;
+    qa('[data-v8-validate],[data-review-record]',dashboard).forEach(b=>b.onclick=()=>openRecord(pending[Number(b.dataset.v8Validate??b.dataset.reviewRecord)],true));
   }
 
   function renderLoadCard(results, weekStarts){
@@ -201,7 +221,8 @@
     const completed=publishedWorkouts.filter(w=>['completed','partial'].includes(w.execution_status)&&!(w.activities||[]).some(a=>training.mismatch(w.sport,a.sport))).length;
     const compliance=planned?Math.round((completed/planned)*100):0;
     const pendingLists=await Promise.all(results.map(r=>pendingForResult(r,21)));
-    const pending=pendingLists.flat().sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+    const pending=pendingLists.flat().filter(item=>!validatedHere.has(reviewKey(item))).sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+    dashboardPending=pending;
     const weekStarts=Array.from({length:6},(_,i)=>addDays(current,-7*(5-i)));
     const recent=results.flatMap(training.records).sort((a,b)=>b.date.localeCompare(a.date));
     const todays=results.flatMap(r=>(r.weeks||[]).filter(training.published).flatMap(w=>(w.workouts||[]).filter(x=>x.workout_date===today()).map(workout=>({athlete:r.athlete,workout,date:workout.workout_date}))));
@@ -213,7 +234,7 @@
     q('#v8ScrollValidation')?.addEventListener('click',()=>q('#v8ValidationQueue')?.scrollIntoView({behavior:'smooth'}));
     q('#v8RefreshDashboard')?.addEventListener('click',()=>renderTeamDashboard().catch(showRuntimeError));
     renderLoadCard(results,weekStarts);
-    qa('[data-v8-validate],[data-review-record]',dashboard).forEach(b=>b.onclick=()=>openRecord(pending[Number(b.dataset.v8Validate??b.dataset.reviewRecord)],true));
+    renderValidationState();
     qa('[data-today-record]',dashboard).forEach(b=>b.onclick=()=>{const scheduled=todays[Number(b.dataset.todayRecord)];openRecord(recent.find(r=>r.athlete.id===scheduled.athlete.id&&r.linked&&r.workout.id===scheduled.workout.id)||scheduled);});
     qa('[data-recent-record]',dashboard).forEach(b=>b.onclick=()=>openRecord(recent[Number(b.dataset.recentRecord)]));
   }
