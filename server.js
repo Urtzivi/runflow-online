@@ -993,7 +993,8 @@ async function listCalendarWeeks(athleteId, oldest, newest, sync = false) {
   }
   weeks.sort((a, b) => String(a.week_start).localeCompare(String(b.week_start)));
 
-  activities = await autoLinkActivitiesToWorkouts(athleteId, workouts, activities);
+  const publishedWeekIds = new Set(weeks.filter(week => week.status === 'published').map(week => String(week.id)));
+  activities = await autoLinkActivitiesToWorkouts(athleteId, workouts.filter(workout => publishedWeekIds.has(String(workout.training_week_id))), activities);
   return decorateCalendarWeeks(weeks, workouts, activities, manualLogs);
 }
 
@@ -2522,7 +2523,8 @@ function decorateCalendarWeeks(weeks, workouts, activities, manualLogs) {
       const logs = (logsByWorkout.get(String(workout.id)) || []).sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
       const log = logs[0] || null;
       let execution_status = 'planned';
-      if (linked.length) execution_status = log && log.status === 'partial' ? 'partial' : 'completed';
+      if (linked.some(activity => sportKey(activity.sport) !== sportKey(workout.sport))) execution_status = 'changed';
+      else if (linked.length) execution_status = log && log.status === 'partial' ? 'partial' : 'completed';
       else if (log && ['completed', 'partial', 'skipped'].includes(log.status)) execution_status = log.status;
       const actual = linked.length ? aggregateActivityMetrics(linked) : {
         activity_count: 0,
@@ -2603,6 +2605,7 @@ function calculateExecutionMetrics(workouts, activities, manualLogs) {
     const id = String(workout.id);
     const logs = logsByWorkout.get(id) || [];
     const explicitActivity = linkedActivities.get(id) || [];
+    if (explicitActivity.some(activity => sportKey(activity.sport) !== sportKey(workout.sport))) continue;
     if (explicitActivity.length || logs.some(log => ['completed', 'partial'].includes(log.status))) {
       completedWorkoutIds.add(id);
       continue;

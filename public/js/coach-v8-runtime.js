@@ -15,6 +15,9 @@
   const pace = sec => { const n=Number(sec); if(!Number.isFinite(n)||n<=0)return '—'; const r=Math.round(n); return `${Math.floor(r/60)}:${String(r%60).padStart(2,'0')}/km`; };
   const num = (v, digits=0) => Number.isFinite(Number(v)) ? Number(v).toFixed(digits).replace('.',',') : '—';
   const initials = name => String(name||'?').trim().split(/\s+/).slice(0,2).map(x=>x[0]).join('').toUpperCase();
+  const training = window.RunFlowTraining;
+  let loadAthlete = '';
+  const today = () => new Intl.DateTimeFormat('en-CA', {timeZone:'Europe/Madrid',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
   const currentAthleteId = () => q('#athleteSelect')?.value || null;
   const currentAthleteName = () => q('#athleteSelect')?.selectedOptions?.[0]?.textContent?.trim() || 'Atleta';
   const manualValidationKey = (athleteId, workout) => `rf_v8_manual_validation:${athleteId}:${workout.id}:${workout.manual_log?.created_at||''}`;
@@ -120,37 +123,71 @@
     return {athletes,results,current,oldest,newest};
   }
 
+
   async function pendingForResult(result, lookbackDays=21){
-    const minDate=addDays(new Date().toISOString().slice(0,10),-lookbackDays);
-    const candidates=[];
-    for(const week of result.weeks||[]){
-      for(const workout of week.workouts||[]){
-        if(String(workout.workout_date||'')<minDate) continue;
-        if(!['completed','partial'].includes(workout.execution_status)) continue;
-        const activities=workout.activities||[];
-        if(activities.length){
-          for(const activity of activities){ candidates.push({type:'intervals',athlete:result.athlete,workout,activity,date:String(activity.activity_date||workout.workout_date).slice(0,10)}); }
-        }else if(workout.manual_log){
-          if(localStorage.getItem(manualValidationKey(result.athlete.id,workout))!=='1') candidates.push({type:'manual',athlete:result.athlete,workout,date:workout.workout_date});
-        }
-      }
-    }
-    const recent=candidates.sort((a,b)=>String(b.date).localeCompare(String(a.date))).slice(0,50);
-    const checked=[];
-    for(const item of recent){
-      if(item.type==='manual'){checked.push(item);continue;}
-      try{
-        const detail=await api(`/api/coach/athletes/${encodeURIComponent(item.athlete.id)}/activities/${encodeURIComponent(item.activity.intervals_activity_id)}`);
-        if(!detail.review?.decision) checked.push({...item,review:detail.review||null});
-      }catch{checked.push(item);}
-    }
-    return checked;
+    const minDate=addDays(today(),-lookbackDays);
+    const candidates=training.records(result).filter(item=>item.date>=minDate && item.date<=today());
+    return (await Promise.all(candidates.map(async item=>{
+      if(item.type==='manual') return localStorage.getItem(manualValidationKey(item.athlete.id,item.workout))==='1'?null:item;
+      try {
+        const detail=await api('/api/coach/athletes/'+encodeURIComponent(item.athlete.id)+'/activities/'+encodeURIComponent(item.activity.intervals_activity_id));
+        return detail.review?.decision?null:{...item,review:detail.review};
+      } catch { return {...item,reviewUnavailable:true}; }
+    }))).filter(Boolean).sort((a,b)=>b.date.localeCompare(a.date));
   }
 
-  function teamChartSvg(values){
-    const max=Math.max(1,...values); const w=650,h=150,p=15;
-    const pts=values.map((v,i)=>`${p+(i/Math.max(1,values.length-1))*(w-2*p)},${h-p-(v/max)*(h-2*p)}`).join(' ');
-    return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="#a9df58" stroke-width="4"/></svg>`;
+  function openRecord(item, review=false){
+    let dialog=q('#v8SessionDetail');
+    if(!dialog){dialog=document.createElement('dialog');dialog.id='v8SessionDetail';dialog.style.cssText='width:min(760px,95vw);max-height:90vh;overflow:auto;border:1px solid #ccd3c7;border-radius:18px;padding:24px';document.body.appendChild(dialog);}
+    const w=item.workout||{}, a=item.activity, log=w.manual_log||{};
+    const mismatch=a&&training.mismatch(w.sport,a.sport);
+    const metric=v=>v===null||v===undefined||v===''?'Sin dato':esc(num(v,1));
+    dialog.innerHTML='<button class="btn secondary" data-close style="float:right">Cerrar</button><h2>'+esc(item.athlete.display_name)+' · '+esc(a?.name||w.title||'Actividad')+'</h2><p>'+dateLabel(item.date||w.workout_date)+'</p>'+
+      (mismatch?'<p role="alert" class="notice"><strong>Cambio de deporte:</strong> se había previsto '+esc(w.sport)+' y ha realizado '+esc(a.sport)+'. No se considera cumplida la sesión prevista. Revisar su objetivo.</p>':'')+
+      (a&&!item.linked?'<p>Actividad sin sesión vinculada. La previsión del mismo día es solo una referencia; no se ha emparejado automáticamente.</p>':'')+
+      '<table style="width:100%;text-align:left"><thead><tr><th>Dato</th><th>Previsto'+(w.id?'':' (sin sesión)')+'</th><th>Realizado</th></tr></thead><tbody>'+[
+        ['Sesión',esc(w.title||'—'),esc(a?.name||(log.status?'Registro manual':'Pendiente'))],
+        ['Deporte',esc(w.sport||'—'),esc(a?.sport||(log.status?w.sport:'—'))],
+        ['Duración (min)',metric(w.planned_duration_min),metric(a?training.number(a.duration_sec)===null?null:a.duration_sec/60:log.actual_duration_min)],
+        ['Distancia (km)',metric(w.planned_distance_km),metric(a?.distance_m==null?null:a.distance_m/1000)],
+        ['Desnivel (m+)',metric(w.planned_elevation_m),metric(a?.elevation_gain_m)],
+        ['Carga (puntos)',metric(w.planned_load),metric(item.load)],
+        ['FC media / máxima', '—',metric(a?.avg_hr)+' / '+metric(a?.max_hr)],
+        ['RPE / dolor','—',metric(log.rpe)+' / '+metric(log.pain)]
+      ].map(row=>'<tr>'+row.map(cell=>'<td style="padding:8px;border-bottom:1px solid #ddd">'+cell+'</td>').join('')+'</tr>').join('')+'</tbody></table>'+
+      '<h3>Objetivo e intensidad prescritos</h3><p>'+esc(w.session_objective||w.adaptation_target||'Sin objetivo registrado')+'</p><pre style="white-space:pre-wrap;font-family:inherit">'+esc(w.structured_description||w.summary||'Sin instrucciones registradas')+'</pre><p>'+esc(log.comment||'')+'</p>'+
+      (item.estimated?'<p>Carga manual estimada a partir de la carga prevista y la duración registrada.</p>':'')+
+      (review?'<label>Comentario del entrenador<textarea id="v8ReviewComment" style="width:100%"></textarea></label><button class="btn primary" data-confirm>Validar actividad realizada</button>':'')+'<p role="status" data-status></p>';
+    q('[data-close]',dialog).onclick=()=>dialog.close();
+    if(review) q('[data-confirm]',dialog).onclick=async event=>{
+      const button=event.currentTarget;button.disabled=true;
+      try {
+        if(item.type==='intervals') await api('/api/coach/athletes/'+encodeURIComponent(item.athlete.id)+'/activities/'+encodeURIComponent(a.intervals_activity_id)+'/review',{method:'PUT',body:JSON.stringify({decision:'validated',coach_comment:q('#v8ReviewComment',dialog).value || (mismatch?'Actividad revisada con cambio de deporte; no equivale al entrenamiento previsto.':'Actividad revisada desde el resumen.')})});
+        else localStorage.setItem(manualValidationKey(item.athlete.id,w),'1');
+        dialog.close();await renderTeamDashboard();
+      } catch(error){q('[data-status]',dialog).textContent=error.message;button.disabled=false;}
+    };
+    if(!dialog.open)dialog.showModal();
+  }
+
+  function renderLoadCard(results, weekStarts){
+    const selected=results.filter(r=>!loadAthlete||String(r.athlete.id)===loadAthlete);
+    const all=selected.flatMap(training.records).filter(row=>row.date>=weekStarts[0]&&row.date<=today());
+    const bins=weekStarts.map(start=>{const rows=all.filter(r=>r.date>=start&&r.date<=addDays(start,6));return {start,rows,...training.total(rows)};});
+    const failed=selected.filter(r=>r.error);
+    const card=q('#v8LoadBody');if(!card)return;
+    const max=Math.max(1,...bins.map(b=>b.load));
+    card.innerHTML='<label>Ver carga de <select id="v8LoadAthlete"><option value="">Todo el equipo</option>'+results.map(r=>'<option value="'+esc(r.athlete.id)+'" '+(String(r.athlete.id)===loadAthlete?'selected':'')+'>'+esc(r.athlete.display_name)+'</option>').join('')+'</select></label><p>Carga de actividades realizadas, en puntos de carga de Intervals. Los registros manuales se estiman proporcionalmente a su duración. No incluye carga futura ni borradores.</p>'+
+      (failed.length?'<p role="alert">Datos incompletos: no se ha podido consultar '+failed.map(r=>esc(r.athlete.display_name)).join(', ')+'.</p>':'')+
+      '<p><strong>'+Math.round(bins.at(-1).load)+'</strong> puntos registrados esta semana · Semana en curso: no comparar directamente con semanas completas.</p><div style="display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;align-items:end" aria-label="Carga semanal">'+bins.map((b,i)=>'<button class="btn secondary" style="display:flex;flex-direction:column;align-items:center;white-space:normal;min-width:0" data-load-week="'+i+'"><span>'+Math.round(b.load)+(b.missing||failed.length?' *':'')+'</span><span style="height:'+Math.max(2,100*b.load/max)+'px;width:60%;background:#a9df58;display:block;margin:8px 0"></span><small>'+esc(shortWeek(b.start))+'</small><small>'+b.rows.length+' actividades'+(i===5?' · En curso':'')+'</small></button>').join('')+'</div><p>Selecciona una semana para ver las actividades. * Total parcial cuando faltan datos de carga o atletas.</p><button class="btn soft" id="v8AllLoad">Ver todas las sesiones de las 6 semanas</button><div id="v8LoadSessions"></div>';
+    q('#v8LoadAthlete').onchange=e=>{loadAthlete=e.target.value;renderLoadCard(results,weekStarts);};
+    function showRows(rows,label){
+      const target=q('#v8LoadSessions');const totals=training.total(rows);
+      target.innerHTML='<h4>'+esc(label)+'</h4><p>'+Math.round(totals.load)+' puntos · '+totals.missing+' sin carga · '+totals.estimated+' estimaciones manuales</p>'+rows.map((r,i)=>'<button class="v8-live-item" style="width:100%;text-align:left" data-load-record="'+i+'"><span>'+esc(r.athlete.display_name)+' · '+esc(r.activity?.name||r.workout.title||'Actividad')+' · '+dateLabel(r.date)+'</span><span>'+(r.load===null?'Sin carga':Math.round(r.load)+' pt')+'</span></button>').join('')+(rows.length?'':'<p>Sin actividades registradas en este periodo.</p>');
+      qa('[data-load-record]',target).forEach(b=>b.onclick=()=>openRecord(rows[Number(b.dataset.loadRecord)]));
+    }
+    qa('[data-load-week]',card).forEach(b=>b.onclick=()=>{const bin=bins[Number(b.dataset.loadWeek)];showRows(bin.rows,shortWeek(bin.start));});
+    q('#v8AllLoad').onclick=()=>showRows(all,'Últimas 6 semanas');
   }
 
   async function renderTeamDashboard(){
@@ -159,42 +196,31 @@
     if(!dashboard){ dashboard=document.createElement('div'); dashboard.id='v8TeamDashboard'; summary.prepend(dashboard); const legacy=[...summary.children].find(x=>x!==dashboard); if(legacy) legacy.style.display='none'; }
     dashboard.innerHTML='<div class="v8-empty">Cargando visión del equipo…</div>';
     const {athletes,results,current}=await athleteCalendars(6);
-    const currentWeeks=results.map(r=>({r,week:(r.weeks||[]).find(w=>w.week_start===current)})).filter(x=>x.week);
-    const planned=currentWeeks.reduce((s,x)=>s+(x.week.workouts||[]).length,0);
-    const completed=currentWeeks.reduce((s,x)=>s+Number(x.week.execution?.completed_sessions||0),0);
+    const publishedWorkouts=results.flatMap(r=>(r.weeks||[]).filter(training.published).flatMap(w=>w.workouts||[])).filter(w=>w.workout_date>=current&&w.workout_date<=addDays(current,6));
+    const planned=publishedWorkouts.length;
+    const completed=publishedWorkouts.filter(w=>['completed','partial'].includes(w.execution_status)&&!(w.activities||[]).some(a=>training.mismatch(w.sport,a.sport))).length;
     const compliance=planned?Math.round((completed/planned)*100):0;
     const pendingLists=await Promise.all(results.map(r=>pendingForResult(r,21)));
     const pending=pendingLists.flat().sort((a,b)=>String(b.date).localeCompare(String(a.date)));
     const weekStarts=Array.from({length:6},(_,i)=>addDays(current,-7*(5-i)));
-    const weeklyLoads=weekStarts.map(ws=>results.reduce((sum,r)=>{const w=(r.weeks||[]).find(x=>x.week_start===ws);return sum+(w?correctedWeekLoad(w).total:0)},0));
-    const recent=[];
-    for(const r of results){ for(const w of r.weeks||[]){ for(const workout of w.workouts||[]){ if(['completed','partial'].includes(workout.execution_status)) recent.push({athlete:r.athlete,workout,date:workout.workout_date}); } } }
-    recent.sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+    const recent=results.flatMap(training.records).sort((a,b)=>b.date.localeCompare(a.date));
+    const todays=results.flatMap(r=>(r.weeks||[]).filter(training.published).flatMap(w=>(w.workouts||[]).filter(x=>x.workout_date===today()).map(workout=>({athlete:r.athlete,workout,date:workout.workout_date}))));
     dashboard.innerHTML=`
       <section class="v8-team-hero"><div class="v8-team-hero-copy"><span class="v8-team-chip"><i></i> SEMANA EN CURSO</span><h2>Tu equipo está<br>entrenando.</h2><p>Hay <strong class="accent">${pending.length} sesión${pending.length===1?'':'es'} pendiente${pending.length===1?'':'s'} de validar</strong>. El cumplimiento de las sesiones planificadas esta semana es del <strong class="accent">${compliance}%</strong>.</p><div class="v8-team-hero-actions"><button class="btn soft" id="v8ScrollValidation">Revisar sesiones →</button><button class="btn secondary" id="v8RefreshDashboard">↻ Actualizar</button></div></div><div class="v8-team-ring-wrap"><div><div class="v8-team-ring" style="--v8-team-compliance:${Math.min(100,compliance)}%"><div><strong>${compliance}%</strong><small>cumplimiento</small></div></div><div style="font-size:10px;text-align:center;margin-top:7px">${completed} / ${planned} sesiones</div></div></div><div class="v8-team-runner"><span>🏃</span></div></section>
-      <div class="v8-team-grid"><section class="v8-team-card"><div class="v8-team-card-head"><div><div class="v8-team-kicker">Carga del equipo</div><h3>Últimas 6 semanas</h3></div><span class="badge">${athletes.length} atletas</span></div><div class="v8-team-card-body"><strong style="font-size:30px">${Math.round(weeklyLoads.at(-1)||0)}</strong><span class="muted" style="font-size:10px"> carga real acumulada esta semana</span><div class="v8-team-load-chart">${teamChartSvg(weeklyLoads)}</div></div></section><section class="v8-team-card"><div class="v8-team-card-head"><div><div class="v8-team-kicker">Atención necesaria</div><h3>Revisar hoy</h3></div></div><div class="v8-team-card-body v8-attention-list">${pending.slice(0,5).map(item=>`<div class="v8-attention-item"><div class="v8-attention-avatar">${esc(initials(item.athlete.display_name))}</div><div><b>${esc(item.athlete.display_name)}</b><small>${esc(item.workout.title||'Sesión')} · ${item.type==='manual'?'RunFlow manual':'Intervals'}</small></div><span class="v8-priority">PENDIENTE</span></div>`).join('')||'<div class="v8-empty">No hay sesiones pendientes.</div>'}</div></section></div>
-      <div class="v8-dashboard-two"><section class="v8-team-card"><div class="v8-team-card-head"><div><div class="v8-team-kicker">Programación</div><h3>Sesiones de hoy</h3></div></div><div class="v8-team-card-body v8-live-list">${results.flatMap(r=>(r.weeks||[]).flatMap(w=>(w.workouts||[]).filter(x=>x.workout_date===new Date().toISOString().slice(0,10)).map(workout=>({athlete:r.athlete,workout})))).slice(0,8).map(x=>`<div class="v8-live-item"><div class="v8-attention-avatar">${esc(initials(x.athlete.display_name))}</div><div><b>${esc(x.athlete.display_name)} · ${esc(x.workout.title||'Sesión')}</b><small>${esc(x.workout.sport||'')} · carga ${Math.round(Number(x.workout.planned_load||0))}</small></div><span class="badge pending">${x.workout.execution_status==='completed'?'Hecha':'Plan'}</span></div>`).join('')||'<div class="v8-empty">Sin sesiones hoy.</div>'}</div></section><section class="v8-team-card"><div class="v8-team-card-head"><div><div class="v8-team-kicker">En directo</div><h3>Actividad reciente</h3></div></div><div class="v8-team-card-body v8-live-list">${recent.slice(0,8).map(x=>`<div class="v8-live-item"><div class="v8-attention-avatar">${esc(initials(x.athlete.display_name))}</div><div><b>${esc(x.athlete.display_name)} · ${esc(x.workout.title||'Sesión')}</b><small>${dateLabel(x.date)}${x.workout.manual_log?.rpe?` · RPE ${x.workout.manual_log.rpe}`:''}</small></div><span>${x.workout.execution_status==='partial'?'Parcial':'✓'}</span></div>`).join('')||'<div class="v8-empty">Todavía no hay actividad reciente.</div>'}</div></section></div>
+      <div class="v8-team-grid"><section class="v8-team-card"><div class="v8-team-card-head"><div><div class="v8-team-kicker">Carga del equipo</div><h3>Últimas 6 semanas</h3></div><span class="badge">${athletes.length} atletas</span></div><div class="v8-team-card-body" id="v8LoadBody"></div></section><section class="v8-team-card"><div class="v8-team-card-head"><div><div class="v8-team-kicker">Atención necesaria</div><h3>Revisar hoy</h3></div></div><div class="v8-team-card-body v8-attention-list">${pending.slice(0,5).map((item,index)=>`<button type="button" data-review-record="${index}" class="v8-attention-item" style="width:100%;text-align:left"><div class="v8-attention-avatar">${esc(initials(item.athlete.display_name))}</div><div><b>${esc(item.athlete.display_name)}</b><small>${esc(item.activity?.name||item.workout.title||'Sesión')} · ${item.type==='manual'?'RunFlow manual':'Intervals'}</small></div><span class="v8-priority">PENDIENTE</span></button>`).join('')||'<div class="v8-empty">No hay sesiones pendientes.</div>'}</div></section></div>
+      <div class="v8-dashboard-two"><section class="v8-team-card"><div class="v8-team-card-head"><div><div class="v8-team-kicker">Programación</div><h3>Sesiones de hoy</h3></div></div><div class="v8-team-card-body v8-live-list">${todays.map((x,index)=>`<button data-today-record="${index}" class="v8-live-item" style="width:100%;text-align:left"><div class="v8-attention-avatar">${esc(initials(x.athlete.display_name))}</div><div><b>${esc(x.athlete.display_name)} · ${esc(x.activity?.name||x.workout.title||'Sesión')}</b><small>${esc(x.workout.sport||'')} · carga ${Math.round(Number(x.workout.planned_load||0))}</small></div><span class="badge pending">${x.workout.execution_status==='completed'?'Hecha':'Plan'}</span></button>`).join('')||'<div class="v8-empty">Sin sesiones hoy.</div>'}</div></section><section class="v8-team-card"><div class="v8-team-card-head"><div><div class="v8-team-kicker">En directo</div><h3>Actividad reciente</h3></div></div><div class="v8-team-card-body v8-live-list">${recent.slice(0,8).map((x,index)=>`<button data-recent-record="${index}" class="v8-live-item" style="width:100%;text-align:left"><div class="v8-attention-avatar">${esc(initials(x.athlete.display_name))}</div><div><b>${esc(x.athlete.display_name)} · ${esc(x.activity?.name||x.workout.title||'Sesión')}</b><small>${dateLabel(x.date)}${x.workout.manual_log?.rpe?` · RPE ${x.workout.manual_log.rpe}`:''}</small></div><span>${x.workout.execution_status==='partial'?'Parcial':'✓'}</span></button>`).join('')||'<div class="v8-empty">Todavía no hay actividad reciente.</div>'}</div></section></div>
       <section class="v8-team-card" id="v8ValidationQueue"><div class="v8-team-card-head"><div><div class="v8-team-kicker">Control del entrenador</div><h3>Sesiones pendientes de validar</h3><p class="muted" style="font-size:11px;margin:3px 0 0">Una sesión realizada cuenta para la carga, pero permanece aquí hasta que el entrenador la revisa.</p></div><span class="badge pending">${pending.length} pendientes</span></div><div class="v8-team-card-body"><div class="v8-validation-list">${pending.map(validationRow).join('')||'<div class="v8-empty">✓ Todas las sesiones recientes están revisadas.</div>'}</div></div></section>`;
     q('#v8ScrollValidation')?.addEventListener('click',()=>q('#v8ValidationQueue')?.scrollIntoView({behavior:'smooth'}));
     q('#v8RefreshDashboard')?.addEventListener('click',()=>renderTeamDashboard().catch(showRuntimeError));
-    qa('[data-v8-validate]').forEach(b=>b.addEventListener('click',()=>validateItem(b,pending).catch(showRuntimeError)));
+    renderLoadCard(results,weekStarts);
+    qa('[data-v8-validate],[data-review-record]',dashboard).forEach(b=>b.onclick=()=>openRecord(pending[Number(b.dataset.v8Validate??b.dataset.reviewRecord)],true));
+    qa('[data-today-record]',dashboard).forEach(b=>b.onclick=()=>{const scheduled=todays[Number(b.dataset.todayRecord)];openRecord(recent.find(r=>r.athlete.id===scheduled.athlete.id&&r.linked&&r.workout.id===scheduled.workout.id)||scheduled);});
+    qa('[data-recent-record]',dashboard).forEach(b=>b.onclick=()=>openRecord(recent[Number(b.dataset.recentRecord)]));
   }
 
   function validationRow(item,index){
-    const w=item.workout, log=w.manual_log||{}; const actual=item.type==='manual'?correctedManualLoad(w):Number(item.activity?.load||w.actual?.load||0);
-    return `<article class="v8-validation-row ${item.type}" data-vrow="${index}"><div class="v8-validation-avatar">${esc(initials(item.athlete.display_name))}</div><div class="v8-validation-main"><b>${esc(item.athlete.display_name)} · ${esc(w.title||'Sesión')}</b><span>${dateLabel(item.date)} · ${item.type==='manual'?`${Number(log.actual_duration_min||0)} min realizados`:esc(item.activity?.name||'Actividad')}</span><span class="v8-source-pill ${item.type==='intervals'?'intervals':''}">${item.type==='manual'?'RunFlow manual':'Intervals.icu'}</span></div><div class="v8-validation-stat"><span>Carga real</span><b>${Math.round(actual||0)}</b></div><div class="v8-validation-stat"><span>Feedback</span><b>${log.rpe?`RPE ${log.rpe}`:'—'}${log.feeling?` · ${esc(log.feeling.replace('_',' '))}`:''}</b></div><div class="v8-validation-actions"><button class="btn soft small" data-v8-validate="${index}">✓ Validar</button><button class="btn secondary small" data-v8-open-athlete="${esc(item.athlete.id)}">Revisar</button></div></article>`;
-  }
-
-  async function validateItem(button,pending){
-    const index=Number(button.dataset.v8Validate), item=pending[index]; if(!item)return;
-    button.disabled=true; button.textContent='Guardando…';
-    if(item.type==='intervals'){
-      await api(`/api/coach/athletes/${encodeURIComponent(item.athlete.id)}/activities/${encodeURIComponent(item.activity.intervals_activity_id)}/review`,{method:'PUT',body:JSON.stringify({decision:'validated',coach_comment:'Validada desde el Resumen V8.'})});
-    }else{
-      /* manual_session_logs no tiene todavía una columna de revisión del coach. Guardamos la validación en este navegador sin alterar el comentario del atleta. */
-      localStorage.setItem(manualValidationKey(item.athlete.id,item.workout),'1');
-    }
-    await renderTeamDashboard();
+    const w=item.workout, log=w.manual_log||{}; const actual=item.load;
+    return `<article class="v8-validation-row ${item.type}" data-vrow="${index}"><div class="v8-validation-avatar">${esc(initials(item.athlete.display_name))}</div><div class="v8-validation-main"><b>${esc(item.athlete.display_name)} · ${esc(item.activity?.name||w.title||'Sesión')}</b><span>${item.activity&&training.mismatch(w.sport,item.activity.sport)?`⚠ Previsto ${esc(w.sport)} → realizado ${esc(item.activity.sport)} · `:""}${dateLabel(item.date)} · ${item.type==='manual'?`${Number(log.actual_duration_min||0)} min realizados`:esc(item.activity?.name||'Actividad')}</span><span class="v8-source-pill ${item.type==='intervals'?'intervals':''}">${item.type==='manual'?'RunFlow manual':'Intervals.icu'}</span></div><div class="v8-validation-stat"><span>Carga real</span><b>${actual===null?'Sin dato':Math.round(actual)}</b></div><div class="v8-validation-stat"><span>Feedback</span><b>${log.rpe?`RPE ${log.rpe}`:'—'}${log.feeling?` · ${esc(log.feeling.replace('_',' '))}`:''}</b></div><div class="v8-validation-actions"><button class="btn soft small" data-v8-validate="${index}">✓ Validar</button><button class="btn secondary small" data-review-record="${index}">Revisar</button></div></article>`;
   }
 
   async function renderGlobalMessages(){

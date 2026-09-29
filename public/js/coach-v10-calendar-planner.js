@@ -32,7 +32,7 @@
   };
   const TECHNICAL_MACRO_MARKER = 'RUNFLOW_V10_TECHNICAL_MACRO';
   const MESO_TYPE_PREFIX = 'RUNFLOW_MESO_TYPE:';
-  const planner = { level: 'season', seasonMode: 'calendar', mesocycleId: null, microcycleId: null, importContext: null, installed: false };
+  const planner = { level: 'season', seasonMode: 'calendar', macrocycleId:null, mesocycleId: null, microcycleId: null, importContext: null, installed: false };
 
   function appState() { try { return state; } catch { return null; } }
   function athleteId() { return appState()?.athlete?.id || ''; }
@@ -181,17 +181,20 @@
     if (!season) {
       return `<div class="v10-empty"><h2>Primero crea la temporada</h2><p>La temporada y sus objetivos se dan de alta en la ficha del atleta.</p><div class="actions"><button class="btn primary" data-v10-action="new-season">+ Crear temporada</button><button class="btn secondary" data-v10-action="open-profile">Ir a la ficha</button></div></div>`;
     }
-    const mesos = mesocycles();
+    const mesos = mesocycles().filter(meso => !planner.macrocycleId || String(meso._macro.id) === String(planner.macrocycleId));
     const goals = currentPlan.goals || [];
     return `<header class="v10-planner-head">
       <div><p class="eyebrow">Paso 2 · Calendario mensual de temporada</p><h2>${esc(season.name)}</h2><p>${formatDate(season.start_date)} – ${formatDate(season.end_date)} · ${mesos.length} mesociclo${mesos.length === 1 ? '' : 's'}</p></div>
-      <div class="actions"><label class="v10-season-select">Temporada<select id="v10SeasonSelect">${(appState()?.seasons || []).map(item => `<option value="${esc(item.id)}" ${String(item.id) === String(season.id) ? 'selected' : ''}>${esc(item.name)}</option>`).join('')}</select></label><button class="btn soft" data-v10-action="open-profile">Temporada y objetivos</button><button class="btn soft" data-v10-action="legacy-view" title="Acceso a funciones antiguas que siguen conservadas">Vista técnica</button><button class="btn primary" data-v10-action="new-meso">+ Mesociclo</button></div>
+      <div class="actions"><label class="v10-season-select">Temporada<select id="v10SeasonSelect">${(appState()?.seasons || []).map(item => `<option value="${esc(item.id)}" ${String(item.id) === String(season.id) ? 'selected' : ''}>${esc(item.name)}</option>`).join('')}</select></label><button class="btn soft" data-v10-action="open-profile">Temporada y objetivos</button><button class="btn soft" data-v10-action="legacy-view" title="Acceso a funciones antiguas que siguen conservadas">Vista técnica</button><button class="btn secondary" data-v10-action="new-macro">+ Macrociclo</button><button class="btn primary" data-v10-action="new-meso">+ Mesociclo</button></div>
     </header>
-    <div class="v10-season-summary">
+    <section class="v10-objective-card"><strong>Planificar ciclos; decidir las sesiones semana a semana</strong><p>Definimos objetivos de macro, meso y microciclo. Las sesiones se preparan con el entrenador según la evolución, recuperación, sensaciones y disponibilidad del atleta. Crear un ciclo no genera ni publica sesiones.</p></section>
+    <section><h3>Macrociclos</h3>
+    ${macros().map(macro=>`<article class="v10-objective-card"><strong>${esc(macro.name)}</strong><p>${formatDate(macro.start_date)} – ${formatDate(macro.end_date)}</p><p>${esc(macro.primary_objective||'Objetivo pendiente')}</p><button class="btn soft" data-v10-edit-macro="${esc(macro.id)}">Editar macrociclo</button><button class="btn secondary" data-v10-macro-mesos="${esc(macro.id)}">Ver sus mesociclos</button></article>`).join('')||'<p>Crea el primer macrociclo para definir el objetivo general.</p>'}
+    </section><div class="v10-season-summary">
       <span><strong>${goals.length}</strong> objetivos</span><span><strong>${mesos.length}</strong> mesociclos</span><span><strong>${mesos.reduce((sum, meso) => sum + microcycles(meso).length, 0)}</strong> microciclos</span><span><strong>${mesos.reduce((sum, meso) => sum + microcycles(meso).reduce((inner, micro) => inner + (micro.workouts || []).length, 0), 0)}</strong> sesiones</span>
     </div>
     ${goals.length ? `<div class="v10-goal-legend">${goals.map(goal => `<span><i class="priority-${String(goal.priority_code || 'B').toLowerCase()}">${esc(goal.priority_code || 'B')}</i>${esc(goal.name)} · ${formatDate(goal.goal_date)}</span>`).join('')}</div>` : ''}
-    <div class="v10-view-switch" role="group" aria-label="Vista del planificador"><button class="${planner.seasonMode === 'calendar' ? 'active' : ''}" data-v10-action="calendar-view" type="button">Calendario mensual</button><button class="${planner.seasonMode === 'list' ? 'active' : ''}" data-v10-action="meso-list-view" type="button">Lista de mesociclos</button></div>
+    <button class="btn soft" data-v10-action="all-macros">Ver toda la temporada</button><div class="v10-view-switch" role="group" aria-label="Vista del planificador"><button class="${planner.seasonMode === 'calendar' ? 'active' : ''}" data-v10-action="calendar-view" type="button">Calendario mensual</button><button class="${planner.seasonMode === 'list' ? 'active' : ''}" data-v10-action="meso-list-view" type="button">Lista de mesociclos</button></div>
     ${planner.seasonMode === 'list'
       ? renderMesocycleList(mesos)
       : `<p class="v10-calendar-help">Pulsa un día libre para crear un mesociclo desde esa fecha. Pulsa un mesociclo para entrar y añadir sus microciclos.</p><div class="v10-season-months">${seasonMonths(season).map(month => monthCalendar(month, season, mesos, goals)).join('')}</div>`}`;
@@ -214,10 +217,10 @@
     const meso = micro._meso;
     const workouts = micro.workouts || [];
     return `<div class="v10-breadcrumb"><button data-v10-action="back-season">Temporada</button><span>›</span><button data-v10-open-meso="${esc(meso.id)}">${esc(meso.name)}</button><span>›</span><strong>${esc(micro.name || 'Microciclo')}</strong></div>
-      <header class="v10-planner-head"><div><p class="eyebrow">Paso 4 · Microciclo y sesiones</p><h2>${esc(micro.name || 'Microciclo')}</h2><p>${formatDate(micro.start_date)} – ${formatDate(micro.end_date)} · ${esc(MICRO_TYPES[micro.type] || micro.type || 'Planificado')} · ${microStatus(micro)}</p></div><div class="actions"><button class="btn soft" data-v10-edit-micro="${esc(micro.id)}">Editar ficha</button><button class="btn primary" data-v10-manual-session="${esc(micro.id)}">+ Sesión manual</button><button class="btn secondary" data-v10-import="${esc(micro.id)}">Importar archivo</button><button class="btn soft" data-v10-template="${esc(micro.id)}">Descargar plantilla</button></div></header>
+      <header class="v10-planner-head"><div><p class="eyebrow">Microciclo · Decisiones semanales</p><h2>${esc(micro.name || 'Microciclo')}</h2><p>${formatDate(micro.start_date)} – ${formatDate(micro.end_date)} · ${esc(MICRO_TYPES[micro.type] || micro.type || 'Planificado')} · ${microStatus(micro)}</p></div><div class="actions"><button class="btn soft" data-v10-edit-micro="${esc(micro.id)}">Editar ficha</button><button class="btn primary" data-v10-manual-session="${esc(micro.id)}">+ Sesión manual</button><button class="btn secondary" data-v10-import="${esc(micro.id)}">Importar archivo</button><button class="btn soft" data-v10-template="${esc(micro.id)}">Descargar plantilla</button></div></header>
       <section class="v10-objective-card"><span>Objetivo del microciclo</span><strong>${esc(micro.primary_objective || 'Sin definir')}</strong><p>Carga planificada: ${Number(micro.planned?.load || 0)} · ${workouts.length} sesiones</p></section>
       <section id="v10AvailabilityStatus" class="v10-availability-status"><span>Comprobando disponibilidad del deportista…</span></section>
-      <div class="v10-session-list">${workouts.length ? workouts.map(session => `<article class="v10-session-card"><div class="v10-session-date"><strong>${new Intl.DateTimeFormat('es-ES', { weekday: 'short' }).format(iso(session.workout_date || micro.start_date))}</strong><span>${formatDate(session.workout_date || micro.start_date)}</span></div><div><span class="v10-sport">${esc(session.sport || 'Run')} · prioridad ${esc(session.priority || 'B')}</span><h3>${esc(session.title || 'Sesión')}</h3><p>${esc(sessionDescription(session))}</p></div><div class="v10-session-metrics"><span>${Number(session.planned_duration_min || 0) ? `${Number(session.planned_duration_min)} min` : 'Duración —'}</span><span>Carga ${Number(session.planned_load || 0)}</span><button class="btn soft small" data-v10-edit-session="${esc(session.id)}" data-date="${esc(session.workout_date)}">Editar</button></div></article>`).join('') : '<div class="v10-empty compact"><h3>Este microciclo todavía no tiene sesiones</h3><p>Añádelas manualmente o importa el archivo JSON que preparemos.</p></div>'}</div>
+      <section class="v10-objective-card"><strong>Antes de decidir las sesiones</strong><p>Contrasta lo realizado y el feedback con el objetivo del ciclo. Valora recuperación, sensaciones y disponibilidad antes de cerrar la semana.</p><button class="btn soft" data-v10-action="weekly-review">Revisar evolución del atleta</button><button class="btn soft" data-v10-action="weekly-recovery">Ver recuperación</button></section><div class="v10-session-list">${workouts.length ? workouts.map(session => `<article class="v10-session-card"><div class="v10-session-date"><strong>${new Intl.DateTimeFormat('es-ES', { weekday: 'short' }).format(iso(session.workout_date || micro.start_date))}</strong><span>${formatDate(session.workout_date || micro.start_date)}</span></div><div><span class="v10-sport">${esc(session.sport || 'Run')} · prioridad ${esc(session.priority || 'B')}</span><h3>${esc(session.title || 'Sesión')}</h3><p>${esc(sessionDescription(session))}</p></div><div class="v10-session-metrics"><span>${Number(session.planned_duration_min || 0) ? `${Number(session.planned_duration_min)} min` : 'Duración —'}</span><span>Carga ${Number(session.planned_load || 0)}</span><button class="btn soft small" data-v10-edit-session="${esc(session.id)}" data-date="${esc(session.workout_date)}">Editar</button></div></article>`).join('') : '<div class="v10-empty compact"><h3>Este microciclo todavía no tiene sesiones</h3><p>Revisaremos la evolución semanal del atleta antes de preparar juntos las sesiones. Después puedes añadirlas manualmente o importar el archivo acordado.</p></div>'}</div>
       <footer class="v10-publish-bar"><div><strong>${micro.publication_status === 'published' ? 'Microciclo publicado' : 'Microciclo en borrador'}</strong><p>${micro.publication_status === 'published' ? 'Las sesiones están visibles para el atleta y sincronizadas con Intervals.' : 'Revisa todas las sesiones antes de enviarlas al atleta.'}</p></div><button class="btn primary" data-v10-publish="${esc(micro.id)}">${micro.publication_status === 'published' ? 'Actualizar en Intervals' : 'Publicar en Intervals'}</button></footer>`;
   }
 
@@ -303,7 +306,7 @@
     q('#v10CycleEyebrow').textContent = isMeso ? 'Ficha de mesociclo' : 'Ficha de microciclo';
     q('#v10CycleTitle').textContent = `${item ? 'Editar' : 'Crear'} ${isMeso ? 'mesociclo' : 'microciclo'}`;
     q('#v10CycleFields').innerHTML = isMeso ? `
-      <div class="field-row"><label>Nombre<input id="v10Name" value="${esc(item?.name || '')}" placeholder="Base aeróbica I"></label><label>Tipo de mesociclo<select id="v10Type">${Object.entries(MESO_TYPES).map(([value, label]) => `<option value="${value}" ${(item ? mesoType(item) : 'base') === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label></div>
+      <label>Macrociclo<select id="v10Macro">${macros().map(m=>`<option value="${esc(m.id)}" ${String(item?._macro?.id||planner.macrocycleId||'')===String(m.id)?'selected':''}>${esc(m.name)} · ${formatDate(m.start_date)} – ${formatDate(m.end_date)}</option>`).join('')}</select></label><div class="field-row"><label>Nombre<input id="v10Name" value="${esc(item?.name || '')}" placeholder="Base aeróbica I"></label><label>Tipo de mesociclo<select id="v10Type">${Object.entries(MESO_TYPES).map(([value, label]) => `<option value="${value}" ${(item ? mesoType(item) : 'base') === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label></div>
       <div class="field-row-3"><label>Desde<input id="v10Start" type="date" value="${start}" min="${season.start_date}" max="${season.end_date}"></label><label>Hasta<input id="v10End" type="date" value="${end}" min="${season.start_date}" max="${season.end_date}"></label><label>Duración<input id="v10Duration" value="${weeksInclusive(start, end)} semanas" readonly></label></div>
       <label>Objetivo principal<textarea id="v10Objective" placeholder="Adaptación principal que buscamos">${esc(item?.primary_adaptation || '')}</textarea></label>
       <label>Objetivos secundarios<input id="v10Secondary" value="${esc((item?.secondary_adaptations || []).join(', '))}" placeholder="Separados por comas"></label>
@@ -352,7 +355,9 @@
       button.disabled = true; q('#v10CycleStatus').textContent = 'Guardando…';
       if (kind === 'mesocycle') {
         const existing = id ? mesocycleById(id) : null;
-        let macro = existing?._macro || await technicalMacro(start, end);
+        let macro = macros().find(m=>String(m.id)===q('#v10Macro').value);
+        if(!macro) throw new Error('Crea primero un macrociclo y selecciona dónde pertenece este mesociclo.');
+        if(existing && String(existing._macro.id)!==String(macro.id)) throw new Error('No se puede cambiar de macrociclo desde esta ficha. Conserva su macrociclo actual.');
         if ((start < macro.start_date || end > macro.end_date) && String(macro.notes || '').includes(TECHNICAL_MACRO_MARKER)) {
           await apiCall(`/api/coach/athletes/${encodeURIComponent(athleteId())}/macrocycles/${encodeURIComponent(macro.id)}`, { method: 'PUT', body: JSON.stringify({ ...macro, start_date: plan().season.start_date, end_date: plan().season.end_date }) });
           macro = { ...macro, start_date: plan().season.start_date, end_date: plan().season.end_date };
@@ -490,7 +495,7 @@
   }
 
   function handleClick(event) {
-    const target = event.target.closest('[data-v10-action],[data-v10-date],[data-v10-open-meso],[data-v10-edit-meso],[data-v10-new-micro],[data-v10-open-micro],[data-v10-edit-micro],[data-v10-manual-session],[data-v10-edit-session],[data-v10-import],[data-v10-template],[data-v10-publish],[data-v10-edit-goal]');
+    const target = event.target.closest('[data-v10-edit-macro],[data-v10-macro-mesos],[data-v10-action],[data-v10-date],[data-v10-open-meso],[data-v10-edit-meso],[data-v10-new-micro],[data-v10-open-micro],[data-v10-edit-micro],[data-v10-manual-session],[data-v10-edit-session],[data-v10-import],[data-v10-template],[data-v10-publish],[data-v10-edit-goal]');
     if (!target) return;
     if (target.dataset.v10OpenMeso) { event.stopPropagation(); openMesocycle(target.dataset.v10OpenMeso); return; }
     if (target.dataset.v10OpenMicro) { planner.level = 'micro'; planner.microcycleId = target.dataset.v10OpenMicro; renderPlanner(); return; }
@@ -517,10 +522,14 @@
     if (action === 'open-planner') { switchView('plan'); planner.level = 'season'; renderPlanner(); return; }
     if (action === 'legacy-view') { q('#planView')?.classList.remove('v10-mode'); q('#v10SeasonPlanner')?.classList.add('hidden'); return; }
     if (action === 'return-planner') { q('#planView')?.classList.add('v10-mode'); q('#v10SeasonPlanner')?.classList.remove('hidden'); planner.level = 'season'; renderPlanner(); return; }
+    if(action==='weekly-review'){switchView('activities');return;}
+    if(action==='weekly-recovery'){switchView('recovery');return;}
+    if(action==='new-macro') return openPlanForm('macrocycle');
+    if(action==='all-macros'){planner.macrocycleId=null;renderPlanner();return;}
     if (action === 'new-meso') return openCycleForm('mesocycle');
     if (action === 'calendar-view') { planner.seasonMode = 'calendar'; renderPlanner(); return; }
     if (action === 'meso-list-view') { planner.seasonMode = 'list'; renderPlanner(); return; }
-    if (action === 'back-season') { planner.level = 'season'; planner.mesocycleId = null; planner.microcycleId = null; renderPlanner(); }
+    if (action === 'back-season') { planner.level = 'season'; planner.macrocycleId=null; planner.mesocycleId = null; planner.microcycleId = null; renderPlanner(); }
   }
 
   function install() {
