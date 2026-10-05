@@ -9,10 +9,9 @@ on:
       - 'assistant-api-hook.js'
       - 'football-api-hook.js'
       - 'public/football.html'
-      - 'public/js/football.js'
+      - 'public/js/football-catalog.js'
       - 'public/js/football-live.js'
       - 'public/js/coach-football-integration.js'
-      - 'public/css/football.css'
       - 'public/js/coach-assistant.js'
       - 'plan-delete-hook.js'
       - 'season-delete-hook-v2.js'
@@ -43,6 +42,7 @@ on:
       - 'rate-limit-hook.js'
       - 'scripts/test-permissions.cjs'
       - 'scripts/test-pending-feedback.cjs'
+      - 'scripts/test-football-api.cjs'
       - '.github/workflows/validate-v9-batch.yml'
   workflow_dispatch:
 
@@ -75,3 +75,5 @@ jobs:
         run: node scripts/test-permissions.cjs
       - name: Test pending feedback
         run: node scripts/test-pending-feedback.cjs
+      - name: Test football API
+        run: node scripts/test-football-api.cjs
