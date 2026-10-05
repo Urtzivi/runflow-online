@@ -307,13 +307,20 @@ function libraryId(workout) {
   return meta ? String(meta.library_id) : null;
 }
 
-async function pendingFeedback(athleteId) {
+const UNPLANNED_FEEDBACK_DAYS = 3;
+const ACTIVITY_FEEDBACK_PREFIX = 'RUNFLOW_ACTIVITY_FEEDBACK ';
+
+function withDurationMin(activity) {
+  return { ...activity, duration_min: Number(activity.duration_sec) > 0 ? Math.round(Number(activity.duration_sec) / 60) : null };
+}
+
+async function pendingPlannedFeedback(athleteId) {
   const oldest = addDays(localDate(), -14);
   const activities = await sb(
     'activities',
     `athlete_id=eq.${encodeURIComponent(athleteId)}&activity_date=gte.${oldest}T00:00:00&workout_id=not.is.null&select=id,workout_id,activity_date,name,sport,duration_sec,distance_m,elevation_gain_m,load&order=activity_date.desc`
   ).catch(() => []);
-  if (!activities.length) return { pending: null };
+  if (!activities.length) return null;
 
   const workoutIds = [...new Set(activities.map(row => row.workout_id).filter(Boolean))];
   const logs = workoutIds.length
@@ -321,25 +328,48 @@ async function pendingFeedback(athleteId) {
     : [];
   const completedFeedback = new Set(logs.map(row => String(row.workout_id)));
   const activity = activities.find(row => !completedFeedback.has(String(row.workout_id)));
-  if (!activity) return { pending: null };
+  if (!activity) return null;
 
   const workouts = await sb(
     'workouts',
     `athlete_id=eq.${encodeURIComponent(athleteId)}&id=eq.${encodeURIComponent(activity.workout_id)}&select=*&limit=1`
   ).catch(() => []);
   const workout = workouts[0] || null;
-  if (!workout) return { pending: null };
+  if (!workout) return null;
 
-  return {
-    pending: {
-      workout: { ...workout, manual_log: null, execution_status: 'completed' },
-      activity: {
-        ...activity,
-        duration_min: Number(activity.duration_sec) > 0 ? Math.round(Number(activity.duration_sec) / 60) : null,
-      },
-      detected_at: new Date().toISOString(),
-    },
-  };
+  return { workout: { ...workout, manual_log: null, execution_status: 'completed' }, activity: withDurationMin(activity) };
+}
+
+// Activities from Intervals with no planned session. Their feedback is stored
+// as a manual_session_logs row without workout_id whose comment carries the
+// Intervals activity id (see ACTIVITY_FEEDBACK_PREFIX in server.js).
+async function pendingUnplannedFeedback(athleteId) {
+  const oldest = addDays(localDate(), -UNPLANNED_FEEDBACK_DAYS);
+  const activities = await sb(
+    'activities',
+    `athlete_id=eq.${encodeURIComponent(athleteId)}&activity_date=gte.${oldest}T00:00:00&workout_id=is.null&intervals_activity_id=not.like.runflow-manual-*&select=id,intervals_activity_id,activity_date,name,sport,duration_sec,distance_m,elevation_gain_m,load&order=activity_date.desc`
+  ).catch(() => []);
+  if (!activities.length) return null;
+
+  const logs = await sb(
+    'manual_session_logs',
+    `athlete_id=eq.${encodeURIComponent(athleteId)}&workout_id=is.null&created_at=gte.${oldest}T00:00:00&select=comment`
+  ).catch(() => []);
+  const rated = new Set(logs.map(row => {
+    const comment = String(row.comment || '');
+    if (!comment.startsWith(ACTIVITY_FEEDBACK_PREFIX)) return null;
+    try { return String(JSON.parse(comment.slice(ACTIVITY_FEEDBACK_PREFIX.length)).activity_id || ''); } catch { return null; }
+  }).filter(Boolean));
+  const activity = activities.find(row => row.intervals_activity_id && !rated.has(String(row.intervals_activity_id)));
+  return activity ? { workout: null, activity: withDurationMin(activity) } : null;
+}
+
+async function pendingFeedback(athleteId) {
+  const [planned, unplanned] = await Promise.all([pendingPlannedFeedback(athleteId), pendingUnplannedFeedback(athleteId)]);
+  const pending = [planned, unplanned]
+    .filter(Boolean)
+    .sort((a, b) => String(b.activity.activity_date).localeCompare(String(a.activity.activity_date)))[0];
+  return { pending: pending ? { ...pending, detected_at: new Date().toISOString() } : null };
 }
 
 function groupByWorkout(rows) {

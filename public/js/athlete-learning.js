@@ -145,15 +145,17 @@ async function checkPendingFeedback(){
   try{
     const data=await rfApi('/api/v2/athlete/pending-feedback');
     const pending=data.pending;
-    if(!pending?.workout)return;
+    if(!pending?.workout&&!pending?.activity?.intervals_activity_id)return;
     feedbackPrompted=true;
     try{
-      state.selectedWorkout=pending.workout;
+      // Sin sesión planificada, el feedback se guarda contra la actividad de Intervals.
+      state.selectedWorkout=pending.workout||null;
+      state.selectedActivity=pending.workout?null:{...pending.activity,feedback:null};
       if(typeof resetFeedbackForm==='function')resetFeedbackForm();
       if($('logDuration')&&pending.activity?.duration_min)$('logDuration').value=pending.activity.duration_min;
       if($('logModal'))$('logModal').classList.remove('hidden');
       const kicker=$('logModal')?.querySelector('.athlete-kicker');
-      if(kicker)kicker.textContent='SESIÓN RECIBIDA DE INTERVALS · CUÉNTANOS CÓMO FUE';
+      if(kicker)kicker.textContent=pending.workout?'SESIÓN RECIBIDA DE INTERVALS · CUÉNTANOS CÓMO FUE':`ACTIVIDAD NO PROGRAMADA${pending.activity.name?` · ${String(pending.activity.name).toUpperCase()}`:''} · CUÉNTANOS CÓMO FUE`;
     }catch(error){console.warn('[RunFlow Learning] No se pudo abrir feedback',error)}
   }catch(error){console.warn('[RunFlow Learning] pending feedback',error.message)}
 }

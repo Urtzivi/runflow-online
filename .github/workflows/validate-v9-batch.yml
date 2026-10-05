@@ -42,6 +42,7 @@ on:
       - 'start.js'
       - 'rate-limit-hook.js'
       - 'scripts/test-permissions.cjs'
+      - 'scripts/test-pending-feedback.cjs'
       - '.github/workflows/validate-v9-batch.yml'
   workflow_dispatch:
 
@@ -72,3 +73,5 @@ jobs:
         run: node scripts/validate-v10-calendar-planner.mjs
       - name: Test permissions and rate limits
         run: node scripts/test-permissions.cjs
+      - name: Test pending feedback
+        run: node scripts/test-pending-feedback.cjs
