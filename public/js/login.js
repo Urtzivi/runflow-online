@@ -110,7 +110,7 @@ $('forgotPassword').addEventListener('click', async () => {
 });
 $('demoButton').addEventListener('click', async () => {
   $('demoButton').disabled = true;
-  try { await login('urtzi@suibroker.es', 'runflow'); }
+  try { await login('coach@runflow.demo', 'runflow'); }
   catch (error) { message(error.message, 'error'); }
   finally { $('demoButton').disabled = false; }
 });

@@ -14,4 +14,4 @@ if (fs.existsSync(envFile)) {
     if (!process.env[key]) process.env[key] = value;
   }
 }
-require('./server');
+require('./start');

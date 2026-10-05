@@ -15,7 +15,6 @@ on:
       - 'public/css/football.css'
       - 'public/js/coach-assistant.js'
       - 'plan-delete-hook.js'
-      - 'season-delete-hook.js'
       - 'season-delete-hook-v2.js'
       - 'public/coach-v9.html'
       - 'public/coach.html'
@@ -40,6 +39,9 @@ on:
       - 'scripts/validate-v9-batch.mjs'
       - 'scripts/validate-v10-calendar-planner.mjs'
       - 'render.yaml'
+      - 'start.js'
+      - 'rate-limit-hook.js'
+      - 'scripts/test-permissions.cjs'
       - '.github/workflows/validate-v9-batch.yml'
   workflow_dispatch:
 
@@ -68,3 +70,5 @@ jobs:
           node --check public/js/coach-v10-calendar-planner.js
       - name: Validate season calendar planner
         run: node scripts/validate-v10-calendar-planner.mjs
+      - name: Test permissions and rate limits
+        run: node scripts/test-permissions.cjs

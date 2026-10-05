@@ -4,6 +4,8 @@
   "private": true,
   "description": "RunFlow Athlete native shell for Android and iOS",
   "scripts": {
+    "start": "node start.js",
+    "test": "node scripts/test-permissions.cjs",
     "add:android": "npx cap add android",
     "add:ios": "npx cap add ios",
     "sync": "npx cap sync",

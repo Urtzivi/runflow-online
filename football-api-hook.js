@@ -54,7 +54,7 @@ async function authUser(accessToken) {
   } catch { return null; }
 }
 
-function athleteSessionSecret() { return APP_ENCRYPTION_KEY || SUPABASE_SERVICE_ROLE_KEY; }
+function athleteSessionSecret() { return APP_ENCRYPTION_KEY; }
 
 function readAthleteSessionToken(token) {
   const secret = athleteSessionSecret();
