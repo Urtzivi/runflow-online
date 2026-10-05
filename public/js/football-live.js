@@ -87,16 +87,94 @@
   $$('.mood').forEach(button=>button.addEventListener('click',()=>saveReadiness(button)));
   $('#confirmFinish')?.addEventListener('click',()=>{
     const duration=Number($('#finishDuration')?.value),rpe=Number($('#finishRpe')?.value);
-    if(duration>0&&rpe>=1&&rpe<=10)saveFootballActivity({kind:'strength',duration_min:duration,rpe,workout_id:live.today?.id||null,title:live.today?.title||'Sesión de fuerza'});
+    if(duration>0&&rpe>=1&&rpe<=10)saveFootballActivity({kind:'strength',duration_min:duration,rpe,activity_date:todayKey(),workout_id:live.today?.id||null,title:live.today?.title||'Sesión de fuerza'});
   },true);
   $('#saveActivity')?.addEventListener('click',()=>{
     const selected=$('.log-kind button.active')?.dataset.logKind||'Fútbol';
     const kind={Fútbol:'football_training',Fuerza:'strength',Partido:'match'}[selected];
     const rpe=Number($('#logRpe')?.value),note=$('#logNote')?.value||'';
-    const payload={kind,rpe,note,workout_id:live.today?.id||null,title:live.today?.title||selected};
+    const activityDate=$('#logDate')?.value||todayKey();
+    const payload={kind,rpe,note,activity_date:activityDate,workout_id:activityDate===todayKey()?live.today?.id||null:null,title:activityDate===todayKey()&&live.today?.title?live.today.title:selected};
     if(kind==='match')payload.minutes_played=Number($('#logMinutes')?.value);else payload.duration_min=Number($('#logDuration')?.value);
-    if(rpe>=1&&rpe<=10)saveFootballActivity(payload);
+    const minutesValue=kind==='match'?payload.minutes_played:payload.duration_min;
+    if(rpe>=1&&rpe<=10&&minutesValue>0)saveFootballActivity(payload);
   },true);
+  // Reto del día: además del estado local, queda en el historial que ve el coach.
+  $('#completeChallenge')?.addEventListener('click',()=>{
+    const bridge=window.RunFlowFootball,challenge=bridge?.activeChallenge?.();
+    if(!challenge)return;
+    if(bridge.state().challenges?.[`${todayKey()}|${challenge.id}`]?.done)return;
+    api('/api/athlete/football/challenge',{method:'POST',body:JSON.stringify({challenge_id:challenge.id,title:challenge.title,challenge_result:$('#challengeResult')?.value||'',activity_date:todayKey()})})
+      .then(refreshSummary).catch(error=>liveToast(error.message));
+  },true);
+
+  // Estado de fútbol (perfil, tests, retos, ejercicios, bienestar) guardado en RunFlow.
+  const SEEDED_DEMO={sprint:{date:'2026-08-10',m5:1.11},growth:{date:'2026-06-29',height:164}};
+  let stateReady=false,stateTimer=null;
+  function withoutDemoSeed(local,displayName){
+    const state=structuredClone(local||{});
+    if(/^liher\b/i.test(String(displayName||'').trim()))return state;
+    const results=state.results||{};
+    results.sprint=(results.sprint||[]).filter(entry=>!(entry.date===SEEDED_DEMO.sprint.date&&entry.values?.m5===SEEDED_DEMO.sprint.m5));
+    results.growth=(results.growth||[]).filter(entry=>!(entry.date===SEEDED_DEMO.growth.date&&entry.values?.height===SEEDED_DEMO.growth.height));
+    state.results=results;
+    if(state.profile?.name==='Liher')state.profile={name:'',position:'',team:'',category:''};
+    return state;
+  }
+  async function pushState(){
+    const bridge=window.RunFlowFootball;if(!bridge||!stateReady)return;
+    try{await api('/api/athlete/football/state',{method:'PUT',body:JSON.stringify({state:bridge.state()})});}
+    catch(error){liveToast(`No se pudo guardar en RunFlow: ${error.message}`);}
+  }
+  document.addEventListener('runflow:football-state-changed',()=>{if(!stateReady)return;clearTimeout(stateTimer);stateTimer=setTimeout(pushState,1200);});
+  async function loadState(){
+    const bridge=window.RunFlowFootball;if(!bridge)return;
+    const displayName=live.dashboard?.athlete?.display_name||'';
+    const remote=(await api('/api/athlete/football/state')).state;
+    const next=remote||withoutDemoSeed(bridge.state(),displayName);
+    next.profile={name:'',position:'',team:'',category:'',...(next.profile||{})};
+    if(!next.profile.name)next.profile.name=displayName;
+    bridge.replace(next);
+    renderIdentity();
+    stateReady=true;
+    if(!remote)await pushState();
+  }
+
+  // Foto del deportista en el inicio. Se reduce en el móvil antes de subirla.
+  function showPhoto(url){
+    const img=$('#heroPhoto');if(!img)return;
+    if(url){img.src=url;img.classList.remove('hidden-photo');}else{img.removeAttribute('src');img.classList.add('hidden-photo');}
+    const label=$('#heroPhotoLabel');if(label)label.textContent=url?'Cambiar foto':'Añadir mi foto';
+  }
+  async function loadPhoto(){
+    const response=await fetch('/api/athlete/football/photo',{credentials:'same-origin',cache:'no-store'});
+    if(response.ok)showPhoto(URL.createObjectURL(await response.blob()));else showPhoto(null);
+  }
+  function resizePhoto(file,maxSide=1080){
+    return new Promise((resolve,reject)=>{
+      const url=URL.createObjectURL(file),img=new Image();
+      img.onload=()=>{
+        const scale=Math.min(1,maxSide/Math.max(img.naturalWidth,img.naturalHeight));
+        const canvas=document.createElement('canvas');canvas.width=Math.round(img.naturalWidth*scale);canvas.height=Math.round(img.naturalHeight*scale);
+        canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);URL.revokeObjectURL(url);
+        canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('No se pudo preparar la foto.')),'image/jpeg',0.85);
+      };
+      img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('No se pudo leer la foto.'));};
+      img.src=url;
+    });
+  }
+  $('#heroPhotoButton')?.addEventListener('click',()=>$('#heroPhotoInput')?.click());
+  $('#heroPhotoInput')?.addEventListener('change',async event=>{
+    const file=event.target.files?.[0];event.target.value='';if(!file)return;
+    try{
+      liveToast('Subiendo foto…');
+      const blob=await resizePhoto(file);
+      const response=await fetch('/api/athlete/football/photo',{method:'PUT',credentials:'same-origin',headers:{'Content-Type':'image/jpeg'},body:blob});
+      if(!response.ok)throw new Error((await response.json().catch(()=>({}))).error||'No se pudo guardar la foto.');
+      showPhoto(URL.createObjectURL(blob));liveToast('Foto guardada');
+    }catch(error){liveToast(error.message);}
+  });
+
   $$('[data-go="training"]').forEach(button=>button.addEventListener('click',()=>setTimeout(renderRealTraining,0)));
   $$('[data-go="calendar"]').forEach(button=>button.addEventListener('click',()=>setTimeout(renderHistory,0)));
 
@@ -106,6 +184,7 @@
       if(!Array.isArray(me?.user?.roles)||!me.user.roles.includes('athlete'))return location.replace('/login?mode=athlete');
       [live.dashboard,live.summary]=await Promise.all([api('/api/athlete/dashboard'),api('/api/athlete/football/summary')]);
       renderIdentity();renderHistory();
+      await Promise.all([loadState().catch(error=>{console.warn('[RunFlow Fútbol] estado',error);liveToast('Tus datos de fútbol no se han podido sincronizar ahora.');}),loadPhoto().catch(()=>showPhoto(null))]);
     }catch(error){console.error('[RunFlow Fútbol Live]',error);liveToast(error.message);}
   })();
 })();

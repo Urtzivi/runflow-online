@@ -54,7 +54,7 @@ async function authUser(accessToken) {
   } catch { return null; }
 }
 
-function athleteSessionSecret() { return APP_ENCRYPTION_KEY || SUPABASE_SERVICE_ROLE_KEY; }
+function athleteSessionSecret() { return APP_ENCRYPTION_KEY; }
 
 function readAthleteSessionToken(token) {
   const secret = athleteSessionSecret();
@@ -101,10 +101,10 @@ function sendJson(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 
-function readJson(req) {
+function readJson(req, maxBytes = 100000) {
   return new Promise((resolve, reject) => {
     let body = '';
-    req.on('data', chunk => { body += chunk; if (body.length > 100000) reject(Object.assign(new Error('Petición demasiado grande.'), { status: 413 })); });
+    req.on('data', chunk => { body += chunk; if (body.length > maxBytes) reject(Object.assign(new Error('Petición demasiado grande.'), { status: 413 })); });
     req.on('end', () => { try { resolve(body ? JSON.parse(body) : {}); } catch { reject(Object.assign(new Error('JSON no válido.'), { status: 400 })); } });
     req.on('error', reject);
   });
@@ -123,13 +123,16 @@ function parseMeta(comment) {
   try { return JSON.parse(text.slice(PREFIX.length)); } catch { return null; }
 }
 function serializeMeta(meta) { return `${PREFIX}${JSON.stringify(meta)}`; }
+// The coach profile form saves custom fields as { label, value }, so the
+// football flag is written with `label` and read from any of the three names.
+function fieldName(item) { return String(item?.label || item?.key || item?.name || '').toLowerCase(); }
 function isFootballMode(profile) {
   const fields = Array.isArray(profile?.custom_fields) ? profile.custom_fields : [];
-  return fields.some(item => String(item?.key || item?.name || '').toLowerCase() === 'sport' && String(item?.value || '').toLowerCase() === 'football');
+  return fields.some(item => fieldName(item) === 'sport' && String(item?.value || '').toLowerCase() === 'football');
 }
 function setFootballField(customFields, enabled) {
-  const fields = Array.isArray(customFields) ? customFields.filter(item => String(item?.key || item?.name || '').toLowerCase() !== 'sport') : [];
-  if (enabled) fields.push({ key: 'sport', value: 'football' });
+  const fields = Array.isArray(customFields) ? customFields.filter(item => fieldName(item) !== 'sport') : [];
+  if (enabled) fields.push({ label: 'sport', value: 'football' });
   return fields;
 }
 
@@ -138,8 +141,17 @@ async function profileForAthlete(athleteId) {
   return profiles[0] || { athlete_id: athleteId, custom_fields: [], objective: '' };
 }
 async function footballRows(athleteId, limit = 120) {
-  const logs = await rows('manual_session_logs', `athlete_id=eq.${encodeURIComponent(athleteId)}&select=*&order=created_at.desc&limit=${Math.max(1, Math.min(250, Number(limit) || 120))}`).catch(() => []);
+  const logs = await rows('manual_session_logs', `athlete_id=eq.${encodeURIComponent(athleteId)}&comment=like.${encodeURIComponent(`${PREFIX}*`)}&select=*&order=created_at.desc&limit=${Math.max(1, Math.min(500, Number(limit) || 120))}`).catch(() => []);
   return logs.map(log => ({ ...log, football: parseMeta(log.comment) })).filter(log => log.football);
+}
+function validDay(value) {
+  const text = String(value || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text) || Number.isNaN(Date.parse(`${text}T12:00:00Z`))) return null;
+  const day = Date.parse(`${text}T12:00:00Z`), now = Date.now();
+  return day <= now + 2 * 86400000 && day >= now - 120 * 86400000 ? text : null;
+}
+function logDay(log) {
+  return validDay(log.football?.activity_date) || String(log.created_at || '').slice(0, 10);
 }
 function sessionMinutes(log) {
   const meta = log.football || {};
@@ -151,7 +163,7 @@ function publicLog(log) {
   const minutes = sessionMinutes({ ...log, football: meta });
   const rpe = Number(log.rpe || 0);
   return {
-    id: log.id, created_at: log.created_at, workout_id: log.workout_id || null,
+    id: log.id, created_at: log.created_at, activity_date: logDay({ ...log, football: meta }), workout_id: log.workout_id || null,
     kind: meta.kind || 'unknown', title: meta.title || '', duration_min: Number(log.actual_duration_min || 0),
     minutes_played: meta.minutes_played ?? null, rpe: log.rpe ?? null, load: minutes && rpe ? Math.round(minutes * rpe) : 0,
     feeling: log.feeling || null, pain: log.pain ?? null, pain_area: log.pain_area || null,
@@ -165,7 +177,7 @@ function summaryFromLogs(logs) {
   const wellness = logs.filter(log => log.football?.kind === 'wellbeing');
   const challenges = logs.filter(log => log.football?.kind === 'challenge');
   const aggregate = cutoff => {
-    const selected = activities.filter(log => new Date(log.created_at).getTime() >= cutoff);
+    const selected = activities.filter(log => Date.parse(`${logDay(log)}T23:59:59Z`) >= cutoff);
     const output = { load: 0, minutes: 0, sessions: 0, football: 0, strength: 0, matches: 0, avg_rpe: null };
     let rpeSum = 0, rpeCount = 0;
     selected.forEach(log => {
@@ -183,14 +195,16 @@ function summaryFromLogs(logs) {
   };
   return {
     last_wellbeing: wellness.length ? publicLog(wellness[0]) : null,
-    week: aggregate(seven), days28: aggregate(twentyEight), recent: logs.slice(0, 20).map(publicLog),
-    challenges_28d: challenges.filter(log => new Date(log.created_at).getTime() >= twentyEight).length,
+    week: aggregate(seven), days28: aggregate(twentyEight),
+    recent: [...logs].sort((a, b) => logDay(b).localeCompare(logDay(a)) || String(b.created_at).localeCompare(String(a.created_at))).slice(0, 20).map(publicLog),
+    challenges_28d: challenges.filter(log => Date.parse(`${logDay(log)}T23:59:59Z`) >= twentyEight).length,
   };
 }
 
 async function saveFootballLog(athleteId, body, kind) {
   const meta = {
     kind, title: cleanText(body.title, 160), note: cleanText(body.note, 1000),
+    activity_date: validDay(body.activity_date) || new Date().toISOString().slice(0, 10),
     minutes_played: kind === 'match' ? boundedNumber(body.minutes_played, 0, 180) : null,
     energy: kind === 'wellbeing' ? boundedNumber(body.energy, 1, 5) : null,
     soreness: kind === 'wellbeing' ? boundedNumber(body.soreness, 1, 5) : null,
@@ -213,11 +227,149 @@ async function saveFootballLog(athleteId, body, kind) {
   return publicLog({ ...row, football: meta });
 }
 
+// Football state (profile, tests, challenges, completed drills, wellness) and
+// the athlete's home photo live in a private Supabase Storage bucket, one
+// folder per athlete. Only this server (service role) can read or write it.
+const BUCKET = 'runflow-football';
+const STATE_MAX_BYTES = 300000;
+const PHOTO_MAX_BYTES = 1500000;
+const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+let bucketReady = null;
+
+function storageHeaders(extra = {}) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) throw Object.assign(new Error('Supabase no configurado.'), { status: 503 });
+  return { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, ...extra };
+}
+function ensureBucket() {
+  if (!bucketReady) {
+    bucketReady = fetch(`${SUPABASE_URL}/storage/v1/bucket`, {
+      method: 'POST', headers: storageHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ id: BUCKET, name: BUCKET, public: false }),
+    }).then(async response => {
+      // 400/409 = the bucket already exists.
+      if (!response.ok && ![400, 409].includes(response.status)) throw new Error(`Storage HTTP ${response.status}: ${await response.text()}`);
+    }).catch(error => { bucketReady = null; throw error; });
+  }
+  return bucketReady;
+}
+function objectUrl(athleteId, name) {
+  return `${SUPABASE_URL}/storage/v1/object/${BUCKET}/${encodeURIComponent(athleteId)}/${name}`;
+}
+async function readObject(athleteId, name) {
+  const response = await fetch(objectUrl(athleteId, name), { headers: storageHeaders() });
+  if ([400, 404].includes(response.status)) return null;
+  if (!response.ok) throw Object.assign(new Error(`Storage HTTP ${response.status}`), { status: 502 });
+  return { type: response.headers.get('content-type') || 'application/octet-stream', body: Buffer.from(await response.arrayBuffer()) };
+}
+async function writeObject(athleteId, name, type, body) {
+  await ensureBucket();
+  const response = await fetch(objectUrl(athleteId, name), {
+    method: 'POST', headers: storageHeaders({ 'Content-Type': type, 'x-upsert': 'true', 'Cache-Control': 'no-cache' }), body,
+  });
+  if (!response.ok) throw Object.assign(new Error(`No se pudo guardar en Storage (HTTP ${response.status}).`), { status: 502 });
+}
+async function deleteObject(athleteId, name) {
+  const response = await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}`, {
+    method: 'DELETE', headers: storageHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ prefixes: [`${athleteId}/${name}`] }),
+  });
+  if (!response.ok && response.status !== 404) throw Object.assign(new Error(`Storage HTTP ${response.status}`), { status: 502 });
+}
+
+function plainObject(value) { return value && typeof value === 'object' && !Array.isArray(value) ? value : {}; }
+function cleanState(input) {
+  const source = plainObject(input);
+  const profile = plainObject(source.profile);
+  const results = {};
+  for (const [testId, entries] of Object.entries(plainObject(source.results)).slice(0, 40)) {
+    if (!Array.isArray(entries)) continue;
+    results[cleanText(testId, 40)] = entries.slice(-120).map(entry => {
+      const values = {};
+      for (const [key, value] of Object.entries(plainObject(entry?.values)).slice(0, 12)) {
+        const n = Number(value);
+        if (Number.isFinite(n)) values[cleanText(key, 30)] = n;
+      }
+      return { date: validDay(entry?.date) || String(entry?.date || '').slice(0, 10), values };
+    }).filter(entry => entry.date && Object.keys(entry.values).length);
+  }
+  const challenges = {};
+  for (const [key, value] of Object.entries(plainObject(source.challenges)).slice(-400)) {
+    const item = plainObject(value);
+    challenges[cleanText(key, 80)] = {
+      date: String(item.date || '').slice(0, 10), id: cleanText(item.id, 60), title: cleanText(item.title, 160),
+      result: cleanText(item.result, 300), done: Boolean(item.done), completedAt: cleanText(item.completedAt, 40),
+    };
+  }
+  const wellness = {};
+  for (const [key, value] of Object.entries(plainObject(source.wellness)).slice(-200)) {
+    const item = plainObject(value);
+    wellness[String(key).slice(0, 10)] = { date: String(item.date || key).slice(0, 10), mood: cleanText(item.mood, 30), updatedAt: cleanText(item.updatedAt, 40) };
+  }
+  const flags = value => Object.fromEntries(Object.entries(plainObject(value)).slice(0, 200).map(([key, flag]) => [cleanText(key, 60), Boolean(flag)]));
+  return {
+    profile: { name: cleanText(profile.name, 80), position: cleanText(profile.position, 60), team: cleanText(profile.team, 80), category: cleanText(profile.category, 60) },
+    results, challenges, wellness,
+    terraceDone: flags(source.terraceDone), completed: flags(source.completed),
+    sessionStarted: Boolean(source.sessionStarted),
+    updated_at: new Date().toISOString(),
+  };
+}
+async function readState(athleteId) {
+  const object = await readObject(athleteId, 'state.json');
+  if (!object) return null;
+  try { return JSON.parse(object.body.toString('utf8')); } catch { return null; }
+}
+function readBody(req, maxBytes) {
+  return new Promise((resolve, reject) => {
+    const chunks = []; let size = 0;
+    req.on('data', chunk => {
+      size += chunk.length;
+      if (size > maxBytes) { reject(Object.assign(new Error('La foto es demasiado grande.'), { status: 413 })); req.destroy(); return; }
+      chunks.push(chunk);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
+}
+function sendImage(res, object) {
+  if (!object) return sendJson(res, 404, { error: 'Sin foto.' });
+  res.writeHead(200, { 'Content-Type': object.type, 'Content-Length': object.body.length, 'Cache-Control': 'private, max-age=300', 'X-Content-Type-Options': 'nosniff' });
+  res.end(object.body);
+}
+
 async function handleFootballApi(req, res, url) {
   const method = String(req.method || 'GET').toUpperCase();
   if (url.pathname === '/api/athlete/football/summary' && method === 'GET') {
     const identity = await athleteIdentity(req), profile = await profileForAthlete(identity.athleteId), logs = await footballRows(identity.athleteId, 160);
     return sendJson(res, 200, { mode: isFootballMode(profile), profile, ...summaryFromLogs(logs) });
+  }
+  if (url.pathname === '/api/athlete/football/state' && method === 'GET') {
+    const identity = await athleteIdentity(req);
+    return sendJson(res, 200, { state: await readState(identity.athleteId) });
+  }
+  if (url.pathname === '/api/athlete/football/state' && method === 'PUT') {
+    const identity = await athleteIdentity(req), body = await readJson(req, STATE_MAX_BYTES);
+    const state = cleanState(body.state);
+    await writeObject(identity.athleteId, 'state.json', 'application/json', JSON.stringify(state));
+    return sendJson(res, 200, { state });
+  }
+  if (url.pathname === '/api/athlete/football/photo' && method === 'GET') {
+    const identity = await athleteIdentity(req);
+    return sendImage(res, await readObject(identity.athleteId, 'photo'));
+  }
+  if (url.pathname === '/api/athlete/football/photo' && method === 'PUT') {
+    const identity = await athleteIdentity(req);
+    const type = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+    if (!PHOTO_TYPES.includes(type)) throw Object.assign(new Error('La foto debe ser JPG, PNG o WebP.'), { status: 415 });
+    const body = await readBody(req, PHOTO_MAX_BYTES);
+    if (!body.length) throw Object.assign(new Error('Foto vacía.'), { status: 400 });
+    await writeObject(identity.athleteId, 'photo', type, body);
+    return sendJson(res, 200, { ok: true });
+  }
+  if (url.pathname === '/api/athlete/football/photo' && method === 'DELETE') {
+    const identity = await athleteIdentity(req);
+    await deleteObject(identity.athleteId, 'photo');
+    return sendJson(res, 200, { ok: true });
   }
   if (url.pathname === '/api/athlete/football/wellbeing' && method === 'POST') {
     const identity = await athleteIdentity(req), body = await readJson(req);
@@ -246,8 +398,16 @@ async function handleFootballApi(req, res, url) {
   const summaryMatch = url.pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/football-summary$/);
   if (summaryMatch && method === 'GET') {
     const athleteId = decodeURIComponent(summaryMatch[1]); await coachIdentity(req, athleteId);
-    const profile = await profileForAthlete(athleteId), logs = await footballRows(athleteId, 200);
-    return sendJson(res, 200, { mode: isFootballMode(profile), profile, ...summaryFromLogs(logs) });
+    const [profile, logs, state, photo] = await Promise.all([
+      profileForAthlete(athleteId), footballRows(athleteId, 300),
+      readState(athleteId).catch(() => null), readObject(athleteId, 'photo').then(Boolean).catch(() => false),
+    ]);
+    return sendJson(res, 200, { mode: isFootballMode(profile), profile, state, has_photo: photo, ...summaryFromLogs(logs) });
+  }
+  const photoMatch = url.pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/football-photo$/);
+  if (photoMatch && method === 'GET') {
+    const athleteId = decodeURIComponent(photoMatch[1]); await coachIdentity(req, athleteId);
+    return sendImage(res, await readObject(athleteId, 'photo'));
   }
   return false;
 }
@@ -257,7 +417,7 @@ http.createServer = function footballApiCreateServer(listener) {
   return previousCreateServer.call(http, async (req, res) => {
     try {
       const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-      const relevant = url.pathname.startsWith('/api/athlete/football/') || /^\/api\/coach\/athletes\/[^/]+\/football-(mode|summary)$/.test(url.pathname);
+      const relevant = url.pathname.startsWith('/api/athlete/football/') || /^\/api\/coach\/athletes\/[^/]+\/football-(mode|summary|photo)$/.test(url.pathname);
       if (relevant) {
         const handled = await handleFootballApi(req, res, url);
         if (handled !== false) return;

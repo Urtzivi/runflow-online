@@ -280,7 +280,7 @@ function clearAuthCookies() {
 }
 
 function athleteSessionSecret() {
-  return APP_ENCRYPTION_KEY || SUPABASE_SERVICE_ROLE_KEY;
+  return APP_ENCRYPTION_KEY;
 }
 
 function createAthleteSessionToken(athlete) {
@@ -360,12 +360,12 @@ function demoSeed() {
 
   return {
     users: [
-      { id: 'u-urtzi', email: 'urtzi@suibroker.es', password: 'runflow', display_name: 'Urtzi', roles: ['coach', 'athlete'], athlete_id: 'a-urtzi' },
-      { id: 'u-ibon', email: 'larri_hc@hotmail.es', password: 'runflow', display_name: 'Ibon Larrinaga', roles: ['athlete'], athlete_id: 'a-ibon' },
+      { id: 'u-urtzi', email: 'coach@runflow.demo', password: 'runflow', display_name: 'Urtzi', roles: ['coach', 'athlete'], athlete_id: 'a-urtzi' },
+      { id: 'u-ibon', email: 'atleta@runflow.demo', password: 'runflow', display_name: 'Atleta Demo', roles: ['athlete'], athlete_id: 'a-ibon' },
     ],
     athletes: [
       {
-        id: 'a-urtzi', user_id: 'u-urtzi', display_name: 'Urtzi', email: 'urtzi@suibroker.es', intervals_status: 'connected',
+        id: 'a-urtzi', user_id: 'u-urtzi', display_name: 'Urtzi', email: 'coach@runflow.demo', intervals_status: 'connected',
         profile: { birth_date: '1979-07-17', sex: 'M', weight_kg: 73, height_cm: 175, watch_brand: 'Garmin', watch_model: 'Fénix 5', level: 'Avanzado', objective: 'Mejorar rendimiento en running y trail', coach_notes: '', custom_fields: [] },
         zones: {
           hr: [
@@ -404,7 +404,7 @@ function demoSeed() {
         },
       },
       {
-        id: 'a-ibon', user_id: 'u-ibon', display_name: 'Ibon Larrinaga', email: 'larri_hc@hotmail.es', intervals_status: 'pending',
+        id: 'a-ibon', user_id: 'u-ibon', display_name: 'Atleta Demo', email: 'atleta@runflow.demo', intervals_status: 'pending',
         profile: { birth_date: '', sex: '', weight_kg: '', height_cm: '', watch_brand: 'Suunto', watch_model: 'Suunto Run', level: '', objective: '', coach_notes: 'Completar la ficha inicial desde la web del coach.', custom_fields: [] },
         zones: { hr: [], pace: [] },
         goals: [
@@ -5685,7 +5685,7 @@ const server = http.createServer(async (req, res) => {
     else serveStatic(req, res, url);
   } catch (error) {
     console.error(error);
-    sendJson(res, Number(error.status || 500), { error: error.message || 'Error interno.', details: error.details || null });
+    sendJson(res, Number(error.status || 500), { error: error.message || 'Error interno.', ...(IS_PROD ? {} : { details: error.details || null }) });
   }
 });
 

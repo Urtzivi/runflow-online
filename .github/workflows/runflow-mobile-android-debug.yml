@@ -24,7 +24,12 @@ jobs:
           java-version: '21'
 
       - name: Android SDK
-        uses: android-actions/setup-android@v3
+        # El runner ya trae el SDK de Android; setup-android@v3 falla en el runner actual.
+        run: |
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
 
       - name: Install Android SDK 36
         run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
@@ -40,6 +45,9 @@ jobs:
             "server": {
               "url": "https://runflow-online-pilot.onrender.com/login",
               "cleartext": false
+            },
+            "plugins": {
+              "SystemBars": { "insetsHandling": "disable" }
             }
           }
           EOF
@@ -50,6 +58,7 @@ jobs:
           npm install
           npx cap add android
           npx cap sync android
+          node scripts/android-system-bars.cjs
 
       - name: Build debug APK
         working-directory: mobile/android

@@ -1,0 +1,110 @@
+name: RunFlow Athlete Android release
+
+# APK firmada para instalar en móviles y AAB para Google Play.
+# Necesita estos secretos del repositorio (Settings → Secrets → Actions):
+#   ANDROID_KEYSTORE_BASE64  keystore .jks codificado en base64
+#   ANDROID_KEYSTORE_PASSWORD
+#   ANDROID_KEY_ALIAS
+#   ANDROID_KEY_PASSWORD
+# Guarda una copia del keystore fuera de GitHub: sin él no se pueden publicar actualizaciones.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Android SDK
+        # El runner ya trae el SDK de Android; setup-android@v3 falla en el runner actual.
+        run: |
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+
+      - name: Install Android SDK 36
+        run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Configure Athlete app
+        working-directory: mobile
+        run: |
+          cat > capacitor.config.json <<'JSON'
+          {
+            "appId": "com.runflow.athlete",
+            "appName": "RunFlow Athlete",
+            "webDir": "www",
+            "server": {
+              "url": "https://runflow-online-pilot.onrender.com/login?mode=athlete",
+              "cleartext": false
+            },
+            "plugins": {
+              "SystemBars": { "insetsHandling": "disable" }
+            }
+          }
+          JSON
+
+      - name: Prepare Capacitor Android
+        working-directory: mobile
+        run: |
+          npm install
+          npm install --no-save @capacitor/assets
+          npx cap add android
+          npx @capacitor/assets generate --android --assetPath resources --iconBackgroundColor '#B7F34A' --iconBackgroundColorDark '#B7F34A'
+          npx cap sync android
+          node scripts/android-system-bars.cjs
+
+      - name: Set version
+        working-directory: mobile/android/app
+        run: |
+          VERSION_NAME=$(node -p "require('../../package.json').version")
+          sed -i "s/versionCode [0-9]*/versionCode ${{ github.run_number }}/; s/versionName \"[^\"]*\"/versionName \"${VERSION_NAME}\"/" build.gradle
+          grep -E "versionCode|versionName" build.gradle
+
+      - name: Restore keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then echo "Falta el secreto ANDROID_KEYSTORE_BASE64"; exit 1; fi
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/runflow-release.jks"
+
+      - name: Build signed APK and AAB
+        working-directory: mobile/android
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease bundleRelease \
+            -Pandroid.injected.signing.store.file="$RUNNER_TEMP/runflow-release.jks" \
+            -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
+          cp app/build/outputs/apk/release/app-release.apk ../RunFlow-Athlete.apk
+          cp app/build/outputs/bundle/release/app-release.aab ../RunFlow-Athlete.aab
+
+      - name: Upload release
+        uses: actions/upload-artifact@v4
+        with:
+          name: RunFlow-Athlete-release-${{ github.run_number }}
+          path: |
+            mobile/RunFlow-Athlete.apk
+            mobile/RunFlow-Athlete.aab
+          if-no-files-found: error
