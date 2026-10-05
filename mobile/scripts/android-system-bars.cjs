@@ -45,13 +45,19 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        View root = findViewById(android.R.id.content);
-        ViewCompat.setOnApplyWindowInsetsListener(root, (v, insets) -> {
+        // Mismo contenedor que usa el plugin SystemBars de Capacitor (desactivado en
+        // capacitor.config.json con insetsHandling "disable"), para que nada lo pise.
+        View container = (View) getBridge().getWebView().getParent();
+        ViewCompat.setOnApplyWindowInsetsListener(container, (v, insets) -> {
             Insets bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
             Insets ime = insets.getInsets(WindowInsetsCompat.Type.ime());
             v.setPadding(bars.left, bars.top, bars.right, Math.max(bars.bottom, ime.bottom));
-            return WindowInsetsCompat.CONSUMED;
+            return new WindowInsetsCompat.Builder(insets)
+                .setInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout(), Insets.NONE)
+                .setInsets(WindowInsetsCompat.Type.ime(), Insets.NONE)
+                .build();
         });
+        container.requestApplyInsets();
     }
 }
 `);

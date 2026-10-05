@@ -50,6 +50,9 @@ jobs:
             "server": {
               "url": "https://runflow-online-pilot.onrender.com/login?mode=athlete",
               "cleartext": false
+            },
+            "plugins": {
+              "SystemBars": { "insetsHandling": "disable" }
             }
           }
           EOF

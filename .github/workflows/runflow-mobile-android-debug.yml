@@ -45,6 +45,9 @@ jobs:
             "server": {
               "url": "https://runflow-online-pilot.onrender.com/login",
               "cleartext": false
+            },
+            "plugins": {
+              "SystemBars": { "insetsHandling": "disable" }
             }
           }
           EOF
