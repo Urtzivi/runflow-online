@@ -55,6 +55,7 @@ jobs:
           npm install
           npx cap add android
           npx cap sync android
+          node scripts/android-system-bars.cjs
 
       - name: Build debug APK
         working-directory: mobile/android

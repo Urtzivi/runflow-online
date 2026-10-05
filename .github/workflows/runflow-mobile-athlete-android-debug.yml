@@ -62,6 +62,7 @@ jobs:
           npx cap add android
           npx @capacitor/assets generate --android --assetPath resources --iconBackgroundColor '#B7F34A' --iconBackgroundColorDark '#B7F34A'
           npx cap sync android
+          node scripts/android-system-bars.cjs
 
       - name: Build debug APK
         working-directory: mobile/android
