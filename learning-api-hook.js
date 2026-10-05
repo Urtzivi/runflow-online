@@ -100,7 +100,7 @@ async function authRefresh(refresh) {
 }
 
 function readAthleteSessionToken(token) {
-  const secret = APP_ENCRYPTION_KEY || SUPABASE_SERVICE_ROLE_KEY;
+  const secret = APP_ENCRYPTION_KEY;
   if (!secret || !token || !token.includes('.')) return null;
   const [payload, signature] = token.split('.');
   const expected = crypto.createHmac('sha256', secret).update(payload).digest();
@@ -497,7 +497,7 @@ http.createServer = function patchedLearningServer(listener) {
       if (await handle(req, res, url)) return;
     } catch (error) {
       console.error('[learning-api-hook]', error);
-      return sendJson(res, Number(error.status || 500), { error: error.message || 'Error interno.', details: error.details || null });
+      return sendJson(res, Number(error.status || 500), { error: error.message || 'Error interno.', ...(IS_PROD ? {} : { details: error.details || null }) });
     }
     return listener(req, res);
   });
