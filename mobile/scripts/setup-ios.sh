@@ -4,4 +4,5 @@ cd "$(dirname "$0")/.."
 npm install
 if [ ! -d ios ]; then npx cap add ios; fi
 npx cap sync ios
+bash scripts/native-permissions.sh .
 echo "iOS preparado. Abre con: npm run open:ios"

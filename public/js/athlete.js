@@ -379,7 +379,7 @@ async function startFeedbackRecording(){
     feedbackTimer=setInterval(updateTime,1000);
   }catch(error){
     clearFeedbackRecordingResources();
-    $('feedbackAudioStatus').textContent=error.name==='NotAllowedError'?'Necesitamos permiso para usar el micrófono.':error.message;
+    $('feedbackAudioStatus').textContent=error.name==='NotAllowedError'?'Necesitamos permiso para usar el micrófono. Actívalo para RunFlow en los ajustes del teléfono y vuelve a intentarlo.':error.name==='NotFoundError'?'No se ha encontrado ningún micrófono en este dispositivo.':error.message;
   }
 }
 function updateSrpePreview(){
