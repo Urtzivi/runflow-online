@@ -50,6 +50,7 @@ jobs:
           npm install
           npx cap add android
           npx cap sync android
+          bash scripts/native-permissions.sh .
 
       - name: Build debug APK
         working-directory: mobile/android

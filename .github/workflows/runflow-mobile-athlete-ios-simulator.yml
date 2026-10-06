@@ -38,6 +38,7 @@ jobs:
           npm install
           npx cap add ios
           npx cap sync ios
+          bash scripts/native-permissions.sh .
 
       - name: Build for iOS Simulator
         run: |
