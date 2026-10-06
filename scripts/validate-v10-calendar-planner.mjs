@@ -76,7 +76,8 @@ assert(server.includes('createAthleteSessionToken'), 'Falta crear una sesión At
 assert(server.includes("roles: ['athlete']"), 'La sesión directa no está limitada al rol Athlete.');
 assert(login.includes('requestAthleteAccess'), 'La pantalla Athlete no solicita el acceso por email.');
 assert(!login.includes('acceptMagicLink'), 'Athlete todavía depende de un enlace recibido por correo.');
-assert(loginHtml.includes('/js/login.js?v=2.7.0'), 'Falta publicar la nueva pantalla de acceso Athlete.');
+assert(loginHtml.includes('/js/login.js?v=2.8.0'), 'Falta publicar la nueva pantalla de acceso Athlete.');
+assert(login.includes('showSessionChooser') && !login.includes('await routeUser(session.user)'), 'El acceso entra automáticamente con la última sesión sin dejar cambiar de usuario.');
 assert(engine.includes('dayAllowsWorkout'), 'La replanificación automática no respeta el tipo de actividad diario.');
 assert(engine.includes('availabilityTypes'), 'La replanificación no respeta dos actividades permitidas en un día.');
 assert(styles.includes('max-height: calc(100vh - 36px)'), 'La ficha de mesociclo puede quedar fuera de la pantalla.');

@@ -26,6 +26,8 @@
   <script>
     (async()=>{
       const fail=()=>location.replace('/login?mode=athlete');
+      // Al abrir la app se pasa primero por el selector de cuenta.
+      try{if(!sessionStorage.getItem('runflow_session_chosen'))return location.replace('/login?mode=athlete');}catch{}
       try{
         const response=await fetch('/api/auth/me',{credentials:'same-origin',cache:'no-store'});
         if(!response.ok)return fail();

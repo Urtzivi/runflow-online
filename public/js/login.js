@@ -51,6 +51,7 @@ async function routeUser(user) {
       throw new Error('Este usuario no tiene acceso como deportista.');
     }
     localStorage.setItem('runflow_client', 'athlete');
+    markSessionChosen();
     location.href = '/athlete';
     return;
   }
@@ -59,7 +60,63 @@ async function routeUser(user) {
     await json('/api/auth/logout', { method: 'POST' }).catch(() => {});
     throw new Error('Esta web está reservada al entrenador. El deportista accede desde la APK.');
   }
+  markSessionChosen();
   location.href = '/coach';
+}
+
+function markSessionChosen() {
+  try { sessionStorage.setItem('runflow_session_chosen', '1'); } catch {}
+}
+
+function userLabel(user) {
+  return user.display_name || user.email || 'tu cuenta';
+}
+
+// Si ya hay una sesión abierta no se entra automáticamente: se ofrece continuar o cambiar de usuario.
+function showSessionChooser(user) {
+  const card = document.createElement('div');
+  card.id = 'sessionChooser';
+  card.className = 'login-help';
+  card.style.marginTop = '0';
+  card.style.marginBottom = '16px';
+  const text = document.createElement('p');
+  text.style.margin = '0 0 12px';
+  text.append('Sesión abierta como ');
+  const name = document.createElement('strong');
+  name.textContent = userLabel(user);
+  text.append(name);
+  if (user.email && user.display_name) text.append(` (${user.email})`);
+  const continueButton = document.createElement('button');
+  continueButton.id = 'continueSession';
+  continueButton.className = 'btn primary';
+  continueButton.type = 'button';
+  continueButton.style.width = '100%';
+  continueButton.textContent = `Continuar como ${userLabel(user)}`;
+  const switchButton = document.createElement('button');
+  switchButton.id = 'switchUser';
+  switchButton.className = 'btn secondary';
+  switchButton.type = 'button';
+  switchButton.style.width = '100%';
+  switchButton.style.marginTop = '10px';
+  switchButton.textContent = 'Cambiar de usuario';
+  card.append(text, continueButton, switchButton);
+  $('loginMessage').before(card);
+
+  continueButton.addEventListener('click', async () => {
+    continueButton.disabled = true;
+    try { await routeUser(user); }
+    catch (error) { card.remove(); message(error.message, 'error'); }
+    finally { continueButton.disabled = false; }
+  });
+  switchButton.addEventListener('click', async () => {
+    switchButton.disabled = true;
+    await json('/api/auth/logout', { method: 'POST' }).catch(() => {});
+    try { sessionStorage.removeItem('runflow_session_chosen'); } catch {}
+    card.remove();
+    $('email').value = '';
+    $('password').value = '';
+    $('email').focus();
+  });
 }
 
 async function login(email, password) {
@@ -90,10 +147,8 @@ async function init() {
   }
   try {
     const session = await json('/api/auth/me');
-    await routeUser(session.user);
-  } catch (error) {
-    if (error.message.includes('reservada') || error.message.includes('deportista')) message(error.message, 'error');
-  }
+    if (session?.user) showSessionChooser(session.user);
+  } catch {}
 }
 
 $('loginButton').addEventListener('click', async () => {
