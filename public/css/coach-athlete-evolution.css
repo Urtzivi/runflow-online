@@ -1,0 +1,93 @@
+/* RunFlow Coach · Evolución del atleta (usa los tokens de Coach V8) */
+.evo{--evo-warn:#ef994f;--evo-bad:#d9625c;font-size:13px;color:var(--v8-ink,#181d19)}
+.evo-grid{display:grid;gap:14px;margin-bottom:14px}
+.evo-card{background:var(--v8-paper,#fbfbf7);border:1px solid var(--v8-line,#dde1da);border-radius:20px;box-shadow:var(--v8-shadow,0 18px 48px rgba(24,31,25,.09));padding:18px;min-width:0}
+.evo-card h3{font-size:15px;margin:0}
+.evo-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:12px}
+.evo-sub,.evo-muted{color:var(--v8-muted,#7b827c);font-size:11px;margin:2px 0 0}
+.evo-eyebrow{font-size:9px;color:#858c86;letter-spacing:.13em;font-weight:900;text-transform:uppercase;margin:0}
+.evo-label{display:block;font-size:10px;color:var(--v8-muted,#7b827c);text-transform:uppercase;letter-spacing:.06em;font-weight:900}
+.evo-empty-state{text-align:center;color:var(--v8-muted,#7b827c);padding:40px}
+.evo-empty{color:var(--v8-muted,#7b827c);font-size:12px;padding:14px;border:1px dashed var(--v8-line,#dde1da);border-radius:14px;text-align:center}
+.evo-warning{background:#fdf0e1;color:#8a5419;border-radius:12px;padding:9px 12px;margin-bottom:12px;font-size:12px}
+.up{color:var(--v8-lime-dark,#638e16);font-weight:800}.down{color:var(--evo-bad);font-weight:800}.mid{color:var(--evo-warn);font-weight:800}
+
+.evo-head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin-bottom:14px;flex-wrap:wrap}
+.evo-head h2{font-size:26px;margin:4px 0 2px;letter-spacing:-.02em}
+.evo-controls{display:flex;gap:10px;align-items:flex-end}
+.evo-controls .evo-label{margin-bottom:5px}
+.evo-seg{display:flex;background:#fff;border:1px solid var(--v8-line,#dde1da);border-radius:12px;padding:3px}
+.evo-seg button{border:0;background:transparent;padding:6px 11px;border-radius:9px;font-weight:800;color:var(--v8-muted,#7b827c);font-size:12px;cursor:pointer}
+.evo-seg button.on{background:#171c18;color:#fff}
+.evo-btn{border-radius:12px;padding:9px 13px;font-weight:800;border:1px solid var(--v8-line,#dde1da);background:#fff;cursor:pointer;color:inherit}
+.evo-btn.small{padding:6px 11px;font-size:11px;white-space:nowrap}
+.evo-btn:disabled{opacity:.6;cursor:wait}
+
+.evo-athlete{display:grid;grid-template-columns:auto 1fr auto;gap:18px;align-items:center;padding:16px 18px;margin-bottom:14px}
+.evo-avatar{width:58px;height:58px;border-radius:18px;background:#1a211b;color:var(--v8-lime,#b9f34d);display:grid;place-items:center;font-weight:950;font-size:18px}
+.evo-athlete h3{font-size:19px}
+.evo-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}
+.evo-chip{background:#f0f1ed;color:#5d655e;border-radius:999px;padding:4px 9px;font-size:11px;font-weight:700}
+.evo-chip.ok{background:#edf6dc;color:var(--v8-lime-dark,#638e16)}.evo-chip.warn{background:#fdf0e1;color:#b36a24}
+.evo-goals{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.evo-goal{display:flex;gap:12px;align-items:center;background:#fff;border:1px solid var(--v8-line,#dde1da);border-radius:15px;padding:10px 14px}
+.evo-goal.main{border-color:var(--v8-lime,#b9f34d)}
+.evo-goal strong{font-size:24px;font-weight:950;line-height:1}
+.evo-goal small{color:var(--v8-muted,#7b827c);font-size:10px;display:block}
+
+.evo-kpis{grid-template-columns:1.35fr repeat(4,minmax(0,1fr))}
+.evo-ready{background:linear-gradient(135deg,#4d554e,#596258);color:#fff;border:0;display:grid;grid-template-columns:104px 1fr;gap:16px;align-items:center}
+.evo-ready .evo-eyebrow{color:#d5dfcf}
+.evo-ready h4{margin:4px 0 6px;font-size:16px}
+.evo-ready p:not(.evo-eyebrow){margin:0;font-size:11px;color:#dfe6da;line-height:1.45}
+.evo-val{font-size:28px;font-weight:950;margin:8px 0 2px;letter-spacing:-.02em}
+.evo-val small{font-size:13px;color:var(--v8-muted,#7b827c);font-weight:800}
+.evo-note{font-size:11px;color:var(--v8-muted,#7b827c);margin:6px 0 0}
+.evo-bar{height:7px;border-radius:9px;background:#e8ebe5;margin-top:10px;overflow:hidden}.evo-bar i{display:block;height:100%;background:var(--v8-lime,#b9f34d);border-radius:9px}
+.evo-triplet{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px}
+.evo-triplet div{background:#fff;border:1px solid var(--v8-line,#dde1da);border-radius:11px;padding:7px}
+.evo-triplet b{display:block;font-size:17px}.evo-triplet span{font-size:9px;color:var(--v8-muted,#7b827c);font-weight:800;text-transform:uppercase}
+
+.evo-row2{grid-template-columns:minmax(0,1.55fr) minmax(0,1fr)}
+.evo-row3{grid-template-columns:minmax(0,1fr) minmax(0,1.9fr)}
+.evo-chart{display:block;width:100%}
+.evo-legend{display:flex;gap:12px;font-size:10px;color:var(--v8-muted,#7b827c);font-weight:800;flex-wrap:wrap}
+.evo-legend span{display:flex;gap:5px;align-items:center}.evo-legend i{width:10px;height:10px;border-radius:3px;display:block}.evo-legend i.line{height:3px;background:#181d19}
+.evo-table-wrap{overflow-x:auto}
+.evo-weeks{width:100%;border-collapse:collapse;margin-top:6px;font-size:11px}
+.evo-weeks td{padding:6px 4px;border-top:1px solid #e8ebe5;text-align:center;white-space:nowrap}
+.evo-weeks td:first-child{text-align:left;color:var(--v8-muted,#7b827c);font-weight:800;width:92px}
+.evo-pill{display:inline-block;padding:2px 7px;border-radius:999px;font-size:10px;font-weight:800;white-space:nowrap}
+.evo-pill.ok{background:#edf6dc;color:var(--v8-lime-dark,#638e16)}.evo-pill.mid{background:#fdf0e1;color:#b36a24}.evo-pill.bad{background:#fbe7e5;color:#b6463f}.evo-pill.n{background:#f0f1ed;color:#7f867f}
+
+.evo-rec{margin-top:8px}
+.evo-rec-line{display:grid;grid-template-columns:92px 1fr 84px;gap:10px;align-items:center;padding:7px 0;border-top:1px solid #e8ebe5}
+.evo-rec-line:first-child{border-top:0}
+.evo-spark{width:100%}
+.evo-rec-num{text-align:right;font-weight:900;font-size:14px}.evo-rec-num small{display:block;font-size:9px;color:var(--v8-muted,#7b827c);font-weight:700}
+
+.evo-phys{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.evo-ph{background:#fff;border:1px solid var(--v8-line,#dde1da);border-radius:14px;padding:10px 11px}
+.evo-ph span{font-size:9px;color:var(--v8-muted,#7b827c);font-weight:900;text-transform:uppercase;letter-spacing:.05em}
+.evo-ph b{display:block;font-size:19px;margin:4px 0 1px}
+.evo-ph small{font-size:10px;color:var(--v8-muted,#7b827c)}
+.evo-zones{margin-top:14px}.evo-zones .evo-eyebrow{margin-bottom:6px}
+.evo-zone{display:grid;grid-template-columns:84px 1fr 64px;gap:8px;align-items:center;font-size:10px;margin:5px 0}
+.evo-zone .z{font-weight:800}.evo-zone .zb{height:8px;border-radius:5px;background:#e8ebe5;overflow:hidden}.evo-zone .zb i{display:block;height:100%}.evo-zone .r{text-align:right;color:var(--v8-muted,#7b827c);font-weight:700}
+
+.evo-sessions{width:100%;border-collapse:collapse}
+.evo-sessions th{font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:var(--v8-muted,#7b827c);text-align:left;padding:0 6px 8px;font-weight:900;white-space:nowrap}
+.evo-sessions td{padding:9px 6px;border-top:1px solid #e8ebe5;font-size:12px;vertical-align:middle}
+.evo-sessions .n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.evo-sessions td.d{color:var(--v8-muted,#7b827c);font-weight:700;white-space:nowrap}
+.evo-sessions td.feel{font-size:11px;color:var(--v8-muted,#7b827c);white-space:normal;width:130px;min-width:90px}
+.evo-sname{display:flex;gap:9px;align-items:center}.evo-sname i{width:5px;height:30px;border-radius:4px;display:block;flex:none}
+.evo-sname b{display:block;font-size:12px}.evo-sname small{color:var(--v8-muted,#7b827c);font-size:10px}
+
+@media(max-width:1380px){.evo-kpis{grid-template-columns:repeat(4,minmax(0,1fr))}.evo-ready{grid-column:1/-1}}
+@media(max-width:1180px){.evo-row2,.evo-row3{grid-template-columns:1fr}.evo-athlete{grid-template-columns:auto 1fr}.evo-goals{grid-column:1/-1;justify-content:flex-start}}
+@media(max-width:720px){.evo-kpis{grid-template-columns:1fr 1fr}.evo-ready{grid-template-columns:80px 1fr}.evo-phys{grid-template-columns:1fr}.evo-controls{flex-wrap:wrap}}
+/* Neutraliza los estilos globales de tabla de app.css */
+.evo-weeks td,.evo-sessions th,.evo-sessions td{border-bottom:0}
+.evo-sessions td{white-space:normal}
+.evo-sessions td.n,.evo-sessions td.d,.evo-sessions td:last-child{white-space:nowrap}

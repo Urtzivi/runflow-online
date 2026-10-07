@@ -10,7 +10,7 @@ const syntaxFiles = [
   'public/js/coach-v9-batch.js','public/js/coach-v9-supplement.js','public/js/coach-v9-season-planner.js','public/js/coach-v9-season-bridge.js',
   'public/js/coach-v9-profile-availability.js','public/js/coach-v9-hierarchy.js','public/js/coach-v9-stepwise-final.js','public/js/coach-v9-session-generator-fix.js',
   'public/js/coach-v9-manual-planning.js','public/js/coach-v9-contextual-recommender-v2.js','public/js/coach-v9-plan-v2-import.js','public/js/coach-learning.js',
-  'public/js/coach-athlete-context-export.js','public/js/coach-assistant.js',
+  'public/js/coach-athlete-context-export.js','public/js/coach-assistant.js','public/js/coach-athlete-evolution.js',
   'public/js/athlete.js','public/js/athlete-v2-beta.js','public/js/athlete-v2-complete.js','public/js/athlete-v2-fixes.js','public/js/athlete-learning.js','public/js/athlete-native-readiness-notifications.js',
 ];
 for (const file of syntaxFiles) execFileSync(process.execPath, ['--check', path.join(root, file)], { stdio:'inherit' });
@@ -55,7 +55,7 @@ vm.runInNewContext(`
   });
 `,compilerContext);
 if(!compilerContext.result.includes('Trabajo de umbral 3x\n- 8m Z4 Pace\n- 2m Z1 Pace'))throw new Error(`Intervals pierde la intensidad del bloque principal:\n${compilerContext.result}`);
-for(const marker of ["location.replace('/login')",'/js/coach-v9-stepwise-final.js','/js/coach-v9-session-generator-fix.js','/js/coach-v9-manual-planning.js','/js/coach-v9-contextual-recommender-v2.js','/js/coach-v9-plan-v2-import.js','/js/coach-v9-supplement.js?v=9.3.0','/css/coach-v9-plan-v2-import.css','/coach-base.html','/js/coach-learning.js?v=1.0.0','/js/coach-athlete-context-export.js?v=1.0.0'])if(!primaryCoach.includes(marker))throw new Error(`Coach principal: falta ${marker}`);
+for(const marker of ["location.replace('/login')",'/js/coach-v9-stepwise-final.js','/js/coach-v9-session-generator-fix.js','/js/coach-v9-manual-planning.js','/js/coach-v9-contextual-recommender-v2.js','/js/coach-v9-plan-v2-import.js','/js/coach-v9-supplement.js?v=9.3.0','/css/coach-v9-plan-v2-import.css','/coach-base.html','/js/coach-learning.js?v=1.0.0','/js/coach-athlete-context-export.js?v=1.0.0','/js/coach-athlete-evolution.js?v=1.0.0','/css/coach-athlete-evolution.css'])if(!primaryCoach.includes(marker))throw new Error(`Coach principal: falta ${marker}`);
 
 const planningContextExport=fs.readFileSync(path.join(root,'public/js/coach-athlete-context-export.js'),'utf8');
 for(const marker of ['runflow.athlete-planning-context.v1','mandatory_planning_rules','activity_type','max_minutes','training_zones','active_goals','seasons_and_plans','recent_activities','recent_recovery','excluded_for_privacy_and_security','Descargar contexto para planificar'])if(!planningContextExport.includes(marker))throw new Error(`Exportación de contexto incompleta: ${marker}`);
