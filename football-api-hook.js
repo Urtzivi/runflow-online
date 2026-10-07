@@ -9,6 +9,7 @@ const SUPABASE_ANON_KEY = String(process.env.SUPABASE_ANON_KEY || '');
 const SUPABASE_SERVICE_ROLE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '');
 const APP_ENCRYPTION_KEY = String(process.env.APP_ENCRYPTION_KEY || '');
 const PREFIX = 'RF_FOOTBALL|';
+const PROGRAM_CATEGORY = '__runflow_football_program__';
 
 function parseCookies(req) {
   const out = {};
@@ -104,7 +105,7 @@ function sendJson(res, status, payload) {
 function readJson(req) {
   return new Promise((resolve, reject) => {
     let body = '';
-    req.on('data', chunk => { body += chunk; if (body.length > 100000) reject(Object.assign(new Error('Petición demasiado grande.'), { status: 413 })); });
+    req.on('data', chunk => { body += chunk; if (body.length > 400000) reject(Object.assign(new Error('Petición demasiado grande.'), { status: 413 })); });
     req.on('end', () => { try { resolve(body ? JSON.parse(body) : {}); } catch { reject(Object.assign(new Error('JSON no válido.'), { status: 400 })); } });
     req.on('error', reject);
   });
@@ -125,12 +126,89 @@ function parseMeta(comment) {
 function serializeMeta(meta) { return `${PREFIX}${JSON.stringify(meta)}`; }
 function isFootballMode(profile) {
   const fields = Array.isArray(profile?.custom_fields) ? profile.custom_fields : [];
-  return fields.some(item => String(item?.key || item?.name || '').toLowerCase() === 'sport' && String(item?.value || '').toLowerCase() === 'football');
+  return fields.some(item => String(item?.key || item?.name || item?.label || '').toLowerCase() === 'sport' && String(item?.value || '').toLowerCase() === 'football');
 }
 function setFootballField(customFields, enabled) {
-  const fields = Array.isArray(customFields) ? customFields.filter(item => String(item?.key || item?.name || '').toLowerCase() !== 'sport') : [];
-  if (enabled) fields.push({ key: 'sport', value: 'football' });
+  const fields = Array.isArray(customFields) ? customFields.filter(item => String(item?.key || item?.name || item?.label || '').toLowerCase() !== 'sport') : [];
+  if (enabled) fields.push({ key: 'sport', label: 'sport', value: 'football' });
   return fields;
+}
+
+// Programa de fútbol editable por el coach: una fila interna de workout_templates por deportista.
+function programText(value, max = 300) { return cleanText(value, max).replace(/[<>"`]/g, ''); }
+function programUrl(value) {
+  const text = String(value || '').trim();
+  return /^https?:\/\/[^\s"'<>`]+$/i.test(text) ? text.slice(0, 600) : '';
+}
+function programSteps(value) {
+  const list = Array.isArray(value) ? value : String(value || '').split('\n');
+  return list.map(step => programText(step, 300)).filter(Boolean).slice(0, 12);
+}
+function programId(value, fallback) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 40) || fallback;
+}
+function sanitizeProgram(body) {
+  const source = body && typeof body === 'object' ? body : {};
+  const list = (value, max) => (Array.isArray(value) ? value : []).filter(item => item && typeof item === 'object').slice(0, max);
+  const exercises = list(source.exercises, 40).map(item => ({
+    group: programText(item.group, 80) || 'Sesión', name: programText(item.name, 120), detail: programText(item.detail, 80),
+    sub: programText(item.sub, 300), steps: programSteps(item.steps), img: programUrl(item.img), video: programUrl(item.video),
+  })).filter(item => item.name);
+  const usedIds = new Set();
+  const uniqueId = (value, prefix, index) => {
+    let id = programId(value, `${prefix}${index + 1}`);
+    while (usedIds.has(id)) id = `${id}-${index + 1}`;
+    usedIds.add(id);
+    return id;
+  };
+  const drills = list(source.drills, 40).map((item, index) => ({
+    id: uniqueId(item.id, 'drill', index), cat: ['conduccion', 'control', 'tiro'].includes(item.cat) ? item.cat : 'conduccion',
+    name: programText(item.name, 120), time: programText(item.time, 40), space: programText(item.space, 160),
+    objective: programText(item.objective, 300), steps: programSteps(item.steps), cues: programText(item.cues, 400),
+    volume: programText(item.volume, 160), img: programUrl(item.img), video: programUrl(item.video),
+  })).filter(item => item.name);
+  const challenge = (type, prefix) => (item, index) => ({
+    id: uniqueId(item.id, prefix, index), type, title: programText(item.title, 140), time: programText(item.time, 40),
+    material: programText(item.material, 160), objective: programText(item.objective, 300), steps: programSteps(item.steps),
+    cue: programText(item.cue, 300), result: programText(item.result, 120), img: programUrl(item.img),
+  });
+  const challenges = source.challenges && typeof source.challenges === 'object' ? source.challenges : {};
+  const rawSession = source.session && typeof source.session === 'object' ? source.session : {};
+  const session = {
+    title: programText(rawSession.title, 120), duration_min: boundedNumber(rawSession.duration_min, 0, 300),
+    focus: programText(rawSession.focus, 160), note: programText(rawSession.note, 300),
+  };
+  const program = {
+    session, exercises, drills,
+    challenges: {
+      technical: list(challenges.technical, 30).map(challenge('Reto técnico', 'tech')).filter(item => item.title),
+      quick: list(challenges.quick, 30).map(challenge('Reto rápido', 'quick')).filter(item => item.title),
+    },
+  };
+  if (!program.exercises.length && !program.drills.length && !program.challenges.technical.length && !program.challenges.quick.length) {
+    throw Object.assign(new Error('El programa está vacío.'), { status: 400 });
+  }
+  return program;
+}
+async function programRow(athleteId) {
+  const found = await rows('workout_templates', `athlete_id=eq.${encodeURIComponent(athleteId)}&category=eq.${encodeURIComponent(PROGRAM_CATEGORY)}&select=id,template_data,updated_at&order=updated_at.desc&limit=1`);
+  return found[0] || null;
+}
+function publicProgram(row) {
+  return { program: row?.template_data || null, updated_at: row?.updated_at || null };
+}
+async function saveProgram(user, athleteId, body) {
+  const program = sanitizeProgram(body?.program || body), now = new Date().toISOString(), existing = await programRow(athleteId);
+  if (existing) {
+    const updated = await rows('workout_templates', `id=eq.${encodeURIComponent(existing.id)}`, { method: 'PATCH', body: { template_data: program, updated_at: now }, prefer: 'return=representation' });
+    return publicProgram(updated[0] || { template_data: program, updated_at: now });
+  }
+  const row = {
+    id: crypto.randomUUID(), coach_user_id: user.id, athlete_id: athleteId, name: 'Programa RunFlow Fútbol',
+    category: PROGRAM_CATEGORY, sport: 'Internal', stimulus: 'football-program', template_data: program, created_at: now, updated_at: now,
+  };
+  const created = await rows('workout_templates', '', { method: 'POST', body: row, prefer: 'return=representation' });
+  return publicProgram(created[0] || row);
 }
 
 async function profileForAthlete(athleteId) {
@@ -236,6 +314,18 @@ async function handleFootballApi(req, res, url) {
     const identity = await athleteIdentity(req), body = await readJson(req);
     return sendJson(res, 201, { log: await saveFootballLog(identity.athleteId, body, 'challenge') });
   }
+  if (url.pathname === '/api/athlete/football/program' && method === 'GET') {
+    const identity = await athleteIdentity(req);
+    return sendJson(res, 200, publicProgram(await programRow(identity.athleteId)));
+  }
+  const programMatch = url.pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/football-program$/);
+  if (programMatch && ['GET', 'PUT', 'DELETE'].includes(method)) {
+    const athleteId = decodeURIComponent(programMatch[1]), user = await coachIdentity(req, athleteId);
+    if (method === 'GET') return sendJson(res, 200, publicProgram(await programRow(athleteId)));
+    if (method === 'PUT') return sendJson(res, 200, await saveProgram(user, athleteId, await readJson(req)));
+    await rows('workout_templates', `athlete_id=eq.${encodeURIComponent(athleteId)}&category=eq.${encodeURIComponent(PROGRAM_CATEGORY)}`, { method: 'DELETE', prefer: 'return=minimal' });
+    return sendJson(res, 200, publicProgram(null));
+  }
   const modeMatch = url.pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/football-mode$/);
   if (modeMatch && method === 'POST') {
     const athleteId = decodeURIComponent(modeMatch[1]); await coachIdentity(req, athleteId);
@@ -257,7 +347,7 @@ http.createServer = function footballApiCreateServer(listener) {
   return previousCreateServer.call(http, async (req, res) => {
     try {
       const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-      const relevant = url.pathname.startsWith('/api/athlete/football/') || /^\/api\/coach\/athletes\/[^/]+\/football-(mode|summary)$/.test(url.pathname);
+      const relevant = url.pathname.startsWith('/api/athlete/football/') || /^\/api\/coach\/athletes\/[^/]+\/football-(mode|summary|program)$/.test(url.pathname);
       if (relevant) {
         const handled = await handleFootballApi(req, res, url);
         if (handled !== false) return;
