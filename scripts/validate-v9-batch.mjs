@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 
 const root = process.cwd();
 const syntaxFiles = [
-  'auth-recovery-hook.js','athlete-link-recovery-hook.js','learning-api-hook.js','assistant-api-hook.js','football-api-hook.js','library-policy-hook.js','session-comparison-metrics.js','v9-engine-hook.js','v9-supplement-hook.js','v9-reschedule-hook.js','public/js/login.js','public/js/activate.js','public/js/football.js','public/js/football-live.js','public/js/coach-football-integration.js',
+  'auth-recovery-hook.js','athlete-link-recovery-hook.js','learning-api-hook.js','assistant-api-hook.js','football-api-hook.js','library-policy-hook.js','session-comparison-metrics.js','v9-engine-hook.js','v9-supplement-hook.js','v9-reschedule-hook.js','public/js/login.js','public/js/activate.js','public/js/football.js','public/js/football-live.js','public/js/coach-football-integration.js','public/js/coach-football-program.js','public/js/football-default-program.js',
   'public/js/coach-v9-batch.js','public/js/coach-v9-supplement.js','public/js/coach-v9-season-planner.js','public/js/coach-v9-season-bridge.js',
   'public/js/coach-v9-profile-availability.js','public/js/coach-v9-hierarchy.js','public/js/coach-v9-stepwise-final.js','public/js/coach-v9-session-generator-fix.js',
   'public/js/coach-v9-manual-planning.js','public/js/coach-v9-contextual-recommender-v2.js','public/js/coach-v9-plan-v2-import.js','public/js/coach-learning.js',
@@ -128,6 +128,11 @@ for(const marker of ['/api/athlete/dashboard','/api/athlete/football/summary','E
 for(const marker of ['/api/auth/me','/api/athlete/dashboard','/api/v2/athlete/daily-checkin','/api/athlete/football/activity','Europe/Madrid','renderRealTraining'])if(!footballLive.includes(marker))throw new Error(`Conexión de la beta Fútbol incompleta: falta ${marker}`);
 for(const marker of ['/api/athlete/football/summary','football-mode','manual_session_logs'])if(!footballApi.includes(marker))throw new Error(`API Fútbol incompleta: falta ${marker}`);
 for(const marker of ['footballAthleteLink','Abrir Athlete Fútbol'])if(!coachFootball.includes(marker))throw new Error(`Coach Fútbol incompleto: falta ${marker}`);
+const footballProgramEditor=fs.readFileSync(path.join(root,'public/js/coach-football-program.js'),'utf8');
+for(const marker of ['/football-program','RF_FOOTBALL_DEFAULT_PROGRAM'])if(!footballProgramEditor.includes(marker))throw new Error(`Editor del programa Fútbol incompleto: falta ${marker}`);
+for(const marker of ['/js/football-default-program.js','RunFlowFootball','applyProgram'])if(!footballHtml.includes(marker))throw new Error(`Athlete Fútbol no carga el programa del coach: falta ${marker}`);
+if(!footballLive.includes('/api/athlete/football/program'))throw new Error('Athlete Fútbol no pide el programa del coach.');
+if(!footballApi.includes('__runflow_football_program__'))throw new Error('API Fútbol sin programa editable.');
 if(!server.includes("if (pathname === '/football') pathname = '/football.html'"))throw new Error('Falta la ruta limpia /football.');
 if(!render.includes('-r ./football-api-hook.js'))throw new Error('La API de Fútbol no está cargada en Render.');
 if(!render.includes('-r ./learning-api-hook.js')||!render.includes('-r ./library-policy-hook.js'))throw new Error('Los hooks de aprendizaje/biblioteca no están cargados en Render.');
