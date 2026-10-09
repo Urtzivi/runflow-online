@@ -162,6 +162,11 @@
       (item.estimated?'<p>Carga manual estimada a partir de la carga prevista y la duración registrada.</p>':'')+
       (review?'<label>Comentario del entrenador<textarea id="v8ReviewComment" style="width:100%"></textarea></label><button class="btn primary" data-confirm>Validar actividad realizada</button>':'')+'<p role="status" data-status></p>';
     q('[data-close]',dialog).onclick=()=>dialog.close();
+    if(item.type==='intervals'&&a?.intervals_activity_id&&window.RunflowSessionBlocks){
+      const blocksButton=document.createElement('button');blocksButton.type='button';blocksButton.className='btn secondary';blocksButton.style.cssText='float:right;margin-right:8px';blocksButton.textContent='Ver sesión por bloques';
+      blocksButton.onclick=()=>window.RunflowSessionBlocks.open({athleteId:item.athlete.id,activityId:a.intervals_activity_id,title:a.name||w.title||'Sesión'});
+      q('[data-close]',dialog).after(blocksButton);
+    }
     if(review) q('[data-confirm]',dialog).onclick=async event=>{
       const button=event.currentTarget;button.disabled=true;button.textContent='Guardando…';
       try {

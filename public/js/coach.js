@@ -2048,6 +2048,21 @@ async function saveActivityWorkoutLink() {
   } catch (error) { showMessage(error.message, 'error'); }
 }
 
+function renderActivityBlocks(detail) {
+  if (!window.RunflowSessionBlocks) return;
+  let host = $('activityBlocks');
+  if (!host) {
+    const wrap = $('intervalRows')?.closest('.table-wrap');
+    if (!wrap) return;
+    host = document.createElement('div');
+    host.id = 'activityBlocks';
+    host.style.margin = '14px 0';
+    wrap.parentNode.insertBefore(host, wrap);
+  }
+  const base = `/api/coach/athletes/${state.athlete.id}/activities/${encodeURIComponent(state.currentActivityId)}`;
+  window.RunflowSessionBlocks.render(host, detail, { mode: 'coach', comparisonUrl: `${base}/block-comparison` });
+}
+
 function renderActivityDetail(detail) {
   state.currentActivity = detail;
   const activity = detail.activity;
@@ -2062,6 +2077,7 @@ function renderActivityDetail(detail) {
   $('activityPace').textContent = paceLabel(activity.avg_pace_sec_per_km);
   $('activityHr').textContent = activity.avg_hr ? `${Math.round(activity.avg_hr)} / ${Math.round(activity.max_hr || activity.avg_hr)}` : '—';
   $('intervalRows').innerHTML = intervalRows(activity.intervals || []);
+  renderActivityBlocks(detail);
   $('coachDecision').value = detail.review?.decision || '';
   $('coachReviewComment').value = detail.review?.coach_comment || '';
   renderAnalysis(detail.review?.ai_analysis || null);
