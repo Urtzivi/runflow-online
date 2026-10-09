@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { URL } = require('url');
-const { compareDetailedBlocks, detailedBlocks, findPreviousComparable, identity } = require('./session-comparison-metrics');
+const { compareDetailedBlocks, detailedBlocks, findPreviousComparable, identity, sessionBlockAnalysis } = require('./session-comparison-metrics');
 
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -4752,6 +4752,20 @@ async function activityReview(session, athleteId, activityId) {
   return rows[0] || null;
 }
 
+async function athleteZonesForBlocks(athleteId) {
+  if (DEMO_MODE) {
+    const athlete = demo.athletes.find(item => item.id === athleteId);
+    return athlete && athlete.zones ? athlete.zones : { hr: [], pace: [] };
+  }
+  const rows = await prodRows('training_zones', `athlete_id=eq.${encodeURIComponent(athleteId)}&select=*&order=kind.asc,zone_order.asc`).catch(() => []);
+  const zones = { hr: rows.filter(item => item.kind === 'hr'), pace: rows.filter(item => item.kind === 'pace') };
+  if (!zones.hr.length) {
+    const profile = await intervalsRunProfile(athleteId);
+    if (profile && Array.isArray(profile.hr_zones)) zones.hr = profile.hr_zones;
+  }
+  return zones;
+}
+
 async function getActivityDetail(session, athleteId, externalId) {
   let stored = await activityRowByExternalId(athleteId, externalId);
   let raw = stored && stored.raw_summary ? stored.raw_summary : {};
@@ -4809,9 +4823,14 @@ async function getActivityDetail(session, athleteId, externalId) {
     recovery = recoveryRows;
   }
 
+  const activity = { ...stored, raw_summary: raw, streams, intervals: summariseIntervals(raw) };
+  const blockAnalysis = await athleteZonesForBlocks(athleteId)
+    .then(zones => sessionBlockAnalysis(activity, planned, zones))
+    .catch(error => { console.warn(`[block-analysis] ${externalId}: ${error.message}`); return null; });
   return {
-    activity: { ...stored, raw_summary: raw, streams, intervals: summariseIntervals(raw) },
+    activity,
     planned,
+    block_analysis: blockAnalysis,
     recovery,
     feedback: await feedbackForActivity(athleteId, stored),
     review: await activityReview(session, athleteId, stored.id),
@@ -4845,6 +4864,22 @@ async function previousComparableDetail(session, athleteId, currentDetail) {
     activity_id: previous.activity.intervals_activity_id,
     blocks: previousBlocks,
     block_comparison: compareDetailedBlocks(currentBlocks, previousBlocks),
+  };
+}
+
+// Comparación serie a serie con la última sesión equivalente, para el gráfico de bloques.
+async function blockComparison(session, athleteId, externalId) {
+  const detail = await getActivityDetail(session, athleteId, externalId);
+  const comparable = await previousComparableDetail(session, athleteId, detail).catch(() => null);
+  if (!comparable || !comparable.block_comparison || !comparable.block_comparison.length) return { comparison: null };
+  return {
+    comparison: {
+      match: comparable.match,
+      date: comparable.date,
+      title: comparable.title,
+      activity_id: comparable.activity_id,
+      block_comparison: comparable.block_comparison,
+    },
   };
 }
 
@@ -5435,6 +5470,13 @@ async function api(req, res, url) {
     return sendJson(res, 200, await getActivityDetail(session, athleteId, externalId));
   }
 
+  const blockComparisonMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/activities\/([^/]+)\/block-comparison$/);
+  if (blockComparisonMatch && method === 'GET') {
+    const athleteId = blockComparisonMatch[1];
+    await ensureCoachAccess(session, athleteId);
+    return sendJson(res, 200, await blockComparison(session, athleteId, decodeURIComponent(blockComparisonMatch[2])));
+  }
+
   const activityWorkoutLinkMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/activities\/([^/]+)\/workout$/);
   if (activityWorkoutLinkMatch && method === 'PUT') {
     const athleteId = activityWorkoutLinkMatch[1];
@@ -5573,7 +5615,14 @@ async function api(req, res, url) {
     requireRole(session, 'athlete');
     if (!session.athlete_id) throw Object.assign(new Error('Tu usuario todavía no está vinculado a una ficha de deportista.'), { status: 409 });
     const detail = await getActivityDetail(session, session.athlete_id, decodeURIComponent(athleteActivityDetailMatch[1]));
-    return sendJson(res, 200, { activity: detail.activity, planned: detail.planned, recovery: detail.recovery, feedback: detail.feedback });
+    return sendJson(res, 200, { activity: detail.activity, planned: detail.planned, block_analysis: detail.block_analysis, recovery: detail.recovery, feedback: detail.feedback });
+  }
+
+  const athleteBlockComparisonMatch = pathname.match(/^\/api\/athlete\/activities\/([^/]+)\/block-comparison$/);
+  if (athleteBlockComparisonMatch && method === 'GET') {
+    requireRole(session, 'athlete');
+    if (!session.athlete_id) throw Object.assign(new Error('Tu usuario todavía no está vinculado a una ficha de deportista.'), { status: 409 });
+    return sendJson(res, 200, await blockComparison(session, session.athlete_id, decodeURIComponent(athleteBlockComparisonMatch[1])));
   }
 
 

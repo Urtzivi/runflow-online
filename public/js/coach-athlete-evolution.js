@@ -418,6 +418,12 @@
     return '<span class="evo-pill n">…</span>';
   }
 
+  // Solo las sesiones con series tienen análisis por bloques.
+  function looksStructured(w, a) {
+    if ((w.blocks || []).some(b => ['central', 'activation'].includes(String(b?.type || '').toLowerCase()) && Number(b.repetitions || 1) > 1)) return true;
+    return /\d+\s*[x×]\s*\d+|umbral|threshold|vo2|vo₂|series|intervalos|fartlek|cuestas/i.test(`${w.title || ''} ${a?.name || ''}`);
+  }
+
   function renderSessions() {
     const target = byId('evoSessions'); const data = ui.data;
     if (!target || !data) return;
@@ -432,7 +438,7 @@
       const feel = log ? [num(log.rpe) !== null ? `RPE ${fmtNum(num(log.rpe))}` : '', feelingLabel(log.feeling), num(log.pain) ? `${log.pain_area ? esc(log.pain_area) + ' ' : 'dolor '}${fmtNum(num(log.pain))}/10` : ''].filter(Boolean).join(' · ') : '—';
       const doneRow = s.status === 'done';
       return `<tr><td class="d">${esc(dayDate(s.date))}</td>
-        <td><div class="evo-sname"><i style="background:${intensityColor(`${w.title || ''} ${w.summary || ''} ${w.session_objective || ''} ${w.sport || ''} ${a?.name || ''} ${a?.sport || ''}`)}"></i><div><b>${esc(title)}</b><small>${esc(planned)}</small></div></div></td>
+        <td><div class="evo-sname"><i style="background:${intensityColor(`${w.title || ''} ${w.summary || ''} ${w.session_objective || ''} ${w.sport || ''} ${a?.name || ''} ${a?.sport || ''}`)}"></i><div><b>${esc(title)}</b><small>${esc(planned)}</small></div>${s.type === 'intervals' && a?.intervals_activity_id && window.RunflowSessionBlocks && looksStructured(w, a) ? `<button type="button" class="sb-blocks-btn" data-blocks="${esc(a.intervals_activity_id)}" data-title="${esc(title)}">Ver bloques</button>` : ''}</div></td>
         <td class="n">${doneRow ? duration : '—'}</td>
         <td class="n">${a && num(a.distance_m) ? `${fmtNum(num(a.distance_m) / 1000, 1)} km` : '—'}</td>
         <td class="n">${a && isRun ? fmtPace(a.avg_pace_sec_per_km) : '—'}</td>
@@ -440,6 +446,9 @@
         <td class="n"><b>${doneRow && s.load !== null && s.load !== undefined ? fmtNum(Math.round(s.load)) : '—'}</b>${s.estimated ? '<small title="Carga estimada a partir de la duración registrada">*</small>' : ''}</td>
         <td class="feel">${feel}</td><td>${sessionStatus(data, s)}</td></tr>`;
     }).join('')}</tbody></table>`;
+    target.querySelectorAll('[data-blocks]').forEach(button => {
+      button.onclick = () => window.RunflowSessionBlocks.open({ athleteId: data.athleteId, activityId: button.dataset.blocks, title: button.dataset.title });
+    });
   }
 
   // ---------- Gráficos SVG ----------

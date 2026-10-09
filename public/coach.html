@@ -25,6 +25,7 @@
   <link rel="stylesheet" href="/css/coach-v9-plan-v2-import.css?v=9.8.0">
   <link rel="stylesheet" href="/css/coach-v10-calendar-planner.css?v=10.2.1">
   <link rel="stylesheet" href="/css/coach-athlete-evolution.css?v=1.0.0">
+  <link rel="stylesheet" href="/css/session-blocks.css?v=1.0.0">
 </head>
 <body class="coach-v8-loading coach-v9-beta">
   <main class="v8-loader"><div class="v8-loader-mark">RF</div><strong>RunFlow Coach</strong><span>Comprobando acceso y preparando la interfaz…</span></main>
@@ -41,11 +42,11 @@
         if(!Array.isArray(data?.user?.roles)||!data.user.roles.includes('coach'))return fail();
         localStorage.removeItem('runflow_client');
         const scripts=[
-          '/js/coach-v8-shell.js?v=8.0.1',
+          '/js/coach-v8-shell.js?v=8.0.2',
           '/js/coach-v8-planner.js?v=8.4.1',
           '/js/coach-v8-validation-persistence.js?v=8.4.0',
           '/js/coach-training-model.js?v=1.0.0',
-          '/js/coach-v8-runtime.js?v=8.5.1',
+          '/js/coach-v8-runtime.js?v=8.5.2',
           '/js/coach-v8-delete-ui.js?v=8.4.3',
           '/js/coach-v8-guided-flow.js?v=8.6.0',
           '/js/coach-v8-season-map.js?v=8.6.0',
@@ -70,7 +71,8 @@
           '/js/coach-publish-recovery.js?v=10.3.1',
           '/js/coach-planned-load-fix.js?v=10.3.2',
           '/js/coach-football-integration.js?v=1.0.0',
-          '/js/coach-athlete-evolution.js?v=1.0.0',
+          '/js/session-blocks.js?v=1.0.0',
+          '/js/coach-athlete-evolution.js?v=1.1.0',
           '/js/coach-assistant.js?v=1.0.0',
           '/js/session-controls.js?v=1.0.0'
         ];

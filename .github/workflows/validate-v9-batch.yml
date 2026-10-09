@@ -5,6 +5,9 @@ on:
     paths:
       - 'v9-*.js'
       - 'session-comparison-metrics.js'
+      - 'public/js/session-blocks.js'
+      - 'public/css/session-blocks.css'
+      - 'scripts/test-session-blocks.cjs'
       - 'athlete-link-recovery-hook.js'
       - 'assistant-api-hook.js'
       - 'football-api-hook.js'
@@ -59,6 +62,10 @@ jobs:
           node --check season-delete-hook-v2.js
           node --check public/js/coach-v8-delete-ui.js
           node --check public/js/coach-v9-season-overwrite-fix.js
+      - name: Test session block analysis
+        run: |
+          node --check public/js/session-blocks.js
+          node --test scripts/test-session-blocks.cjs
       - name: Validate V9/V2 batch
         run: node scripts/validate-v9-batch.mjs
       - name: Check season calendar planner syntax

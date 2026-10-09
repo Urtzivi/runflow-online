@@ -279,11 +279,76 @@ function reconstructFromStreams(activity, steps) {
   return result;
 }
 
-function detailedBlocks(activity, workout) {
+function intervalBounds(interval, time) {
+  const start = Number(interval && interval.start_time);
+  const end = Number(interval && interval.end_time);
+  if (Number.isFinite(start) && Number.isFinite(end) && end > start) return [start, end];
+  const startIndex = Number(interval && interval.start_index);
+  const endIndex = Number(interval && interval.end_index);
+  const origin = Number(time[0] || 0);
+  if (Number.isInteger(startIndex) && Number.isInteger(endIndex) && endIndex > startIndex && time.length > endIndex) {
+    return [Number(time[startIndex]) - origin, Number(time[endIndex]) - origin];
+  }
+  return null;
+}
+
+// Corta la sesión por las series que detecta Intervals (vuelta o cambio de ritmo) y rellena
+// los huecos con calentamiento, recuperaciones y vuelta a la calma. Así un calentamiento más
+// largo de lo previsto no desplaza las series, como pasa al cortar con las duraciones del plan.
+function segmentFromIntervalBounds(activity, steps) {
+  const time = streamData(activity, 'time');
+  if (!time.length) return null;
   const intervals = activityIntervals(activity);
+  const work = intervals
+    .map(interval => ({ interval, kind: intervalKind(interval), bounds: intervalBounds(interval, time) }))
+    .filter(row => row.kind === 'work');
+  if (!work.length || work.some(row => !row.bounds)) return null;
+  work.sort((a, b) => a.bounds[0] - b.bounds[0]);
+  const plannedWork = steps.filter(step => step.kind === 'work');
+  const plannedCore = steps.filter(step => step.phase === 'work');
+  let mapping = null;
+  if (!steps.length) mapping = [];
+  else if (plannedWork.length === work.length) mapping = plannedWork;
+  else if (plannedCore.length === work.length) mapping = plannedCore;
+  if (!mapping) return null;
+
+  const totalDuration = streamTotalDuration(activity, time);
+  const warmupStep = steps.find(step => step.phase === 'warmup');
+  const cooldownStep = steps.find(step => step.phase === 'cooldown');
+  const segments = [];
+  const pushGap = (start, end, step) => { if (end - start >= 10) segments.push({ start, end, step }); };
+  pushGap(0, work[0].bounds[0], warmupStep || { phase: 'warmup', kind: 'transition', label: 'Calentamiento' });
+  work.forEach((row, index) => {
+    const planned = mapping[index] || null;
+    segments.push({ start: row.bounds[0], end: row.bounds[1], step: planned || { phase: 'work', kind: 'work', label: 'Serie', repetition: index + 1 } });
+    const next = work[index + 1];
+    if (next) {
+      const plannedIndex = planned ? steps.indexOf(planned) : -1;
+      const following = plannedIndex >= 0 ? steps[plannedIndex + 1] : null;
+      const recovery = following && following.kind === 'recovery' ? following : { phase: 'recovery', kind: 'recovery', label: 'Recuperación', repetition: index + 1 };
+      pushGap(row.bounds[1], next.bounds[0], recovery);
+    }
+  });
+  pushGap(work[work.length - 1].bounds[1], totalDuration, cooldownStep || { phase: 'cooldown', kind: 'transition', label: 'Vuelta a la calma' });
+  return segments.map((segment, index) => streamRangeDetail(activity, { duration_seconds: null, ...segment.step }, index, segment.start, segment.end, totalDuration));
+}
+
+function segmentBlocks(activity, workout) {
   const steps = plannedSteps(workout);
+  const byIntervals = segmentFromIntervalBounds(activity, steps);
+  if (byIntervals && byIntervals.length) return { rows: byIntervals, segmentation: 'intervals' };
   const streamed = reconstructFromStreams(activity, steps);
-  if (streamed.length) return streamed;
+  if (streamed.length) return { rows: streamed, segmentation: 'plan' };
+  const rows = summaryIntervalBlocks(activity, steps);
+  return { rows, segmentation: rows.length ? 'intervals_summary' : null };
+}
+
+function detailedBlocks(activity, workout) {
+  return segmentBlocks(activity, workout).rows;
+}
+
+function summaryIntervalBlocks(activity, steps) {
+  const intervals = activityIntervals(activity);
   if (!intervals.length) return [];
   const rows = [];
   let plannedIndex = 0;
@@ -302,8 +367,8 @@ function detailedBlocks(activity, workout) {
 }
 
 function compareDetailedBlocks(currentRows, previousRows) {
-  const current = (currentRows || []).filter(row => row.kind === 'work' && number(row.pace_sec_per_km));
-  const previous = (previousRows || []).filter(row => row.kind === 'work' && number(row.pace_sec_per_km));
+  const current = mainWorkBlocks(currentRows).filter(row => number(row.pace_sec_per_km));
+  const previous = mainWorkBlocks(previousRows).filter(row => number(row.pace_sec_per_km));
   const count = Math.min(current.length, previous.length);
   const rows = [];
   for (let index = 0; index < count; index += 1) {
@@ -452,6 +517,182 @@ function findPreviousComparable(rows, currentIndex) {
   return null;
 }
 
+// ---------- Análisis por bloque para el gráfico de sesión ----------
+
+function mainWorkBlocks(rows) {
+  const work = (rows || []).filter(row => row.kind === 'work');
+  const core = work.filter(row => row.phase === 'work');
+  return core.length ? core : work;
+}
+
+function paceToken(value) {
+  const match = String(value || '').match(/(\d{1,2}):(\d{2})/);
+  return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+}
+
+function zoneList(zones, kind) {
+  const list = Array.isArray(zones && zones[kind]) ? zones[kind] : [];
+  return [...list].sort((a, b) => Number(a.zone_order || 0) - Number(b.zone_order || 0));
+}
+
+function zoneRange(zones, from, to) {
+  const hr = zoneList(zones, 'hr').slice(from - 1, to);
+  const pace = zoneList(zones, 'pace').slice(from - 1, to);
+  const hrMin = hr.map(z => number(z.min_value)).filter(Boolean);
+  const hrMax = hr.map(z => number(z.max_value)).filter(Boolean);
+  const fast = pace.map(z => paceToken(z.fast_pace)).filter(Boolean);
+  const slow = pace.map(z => paceToken(z.slow_pace)).filter(Boolean);
+  return {
+    hr: hr.length === to - from + 1 && hrMin.length && hrMax.length ? { min: Math.min(...hrMin), max: Math.max(...hrMax) } : null,
+    pace: pace.length === to - from + 1 && fast.length && slow.length ? { min: Math.min(...fast), max: Math.max(...slow) } : null,
+  };
+}
+
+// Convierte el objetivo escrito en la sesión ("Z4 / umbral", "3:50-3:55", "160-170 ppm")
+// en rangos de ritmo (s/km) y FC usando las zonas del atleta.
+function resolveBlockTarget(text, zones) {
+  const raw = String(text || '').trim();
+  if (!raw) return null;
+  const plain = normalise(raw);
+  const target = { text: raw, pace: null, hr: null };
+  const paceRange = raw.match(/(\d{1,2}):(\d{2})\s*(?:-|–|a)\s*(\d{1,2}):(\d{2})/);
+  if (paceRange) {
+    const a = Number(paceRange[1]) * 60 + Number(paceRange[2]);
+    const b = Number(paceRange[3]) * 60 + Number(paceRange[4]);
+    target.pace = { min: Math.min(a, b), max: Math.max(a, b) };
+  } else if (/\d{1,2}:\d{2}/.test(raw)) {
+    const value = paceToken(raw);
+    target.pace = { min: value - 3, max: value + 3 };
+  }
+  const hrRange = raw.match(/(\d{2,3})\s*(?:-|–|a)\s*(\d{2,3})\s*(?:ppm|lpm|bpm|pulsaciones)/i) || (/\b(fc|hr|pulso)\b/.test(plain) ? raw.match(/(\d{2,3})\s*(?:-|–|a)\s*(\d{2,3})/) : null);
+  if (hrRange) target.hr = { min: Math.min(Number(hrRange[1]), Number(hrRange[2])), max: Math.max(Number(hrRange[1]), Number(hrRange[2])) };
+  if (target.pace || target.hr) return target;
+
+  let from = null;
+  let to = null;
+  const zone = raw.match(/\bZ\s*([1-7])(?:\s*(?:-|–)\s*Z?\s*([1-7]))?/i);
+  if (zone) { from = Number(zone[1]); to = Number(zone[2] || zone[1]); }
+  else if (/\bvo2|vo 2/.test(plain)) { from = 5; to = 5; }
+  else if (/\bumbral|threshold\b/.test(plain)) { from = 4; to = 4; }
+  else if (/\btempo\b/.test(plain)) { from = 3; to = 3; }
+  else if (/\baerobic/.test(plain)) { from = 2; to = 2; }
+  else if (/\bsuave|trote|recuperacion\b/.test(plain)) { from = 1; to = 1; }
+  if (!from) return null;
+  if (from > to) [from, to] = [to, from];
+  const range = zoneRange(zones, from, to);
+  const hrOnly = /\b(hr|fc|pulso|frecuencia)\b/.test(plain);
+  const paceOnly = /\b(pace|ritmo)\b/.test(plain);
+  target.zone = from === to ? `Z${from}` : `Z${from}-Z${to}`;
+  target.pace = hrOnly ? null : range.pace;
+  target.hr = paceOnly ? null : range.hr;
+  return target.pace || target.hr ? target : { ...target, pace: null, hr: null };
+}
+
+function blockStatus(block) {
+  const target = block.target;
+  if (!target || (!target.pace && !target.hr)) return null;
+  const rank = { good: 0, warn: 1, bad: 2 };
+  let status = 'good';
+  const worse = value => { if (rank[value] > rank[status]) status = value; };
+  const pace = number(block.pace_sec_per_km);
+  if (target.pace && pace) {
+    const off = pace < target.pace.min ? target.pace.min - pace : pace > target.pace.max ? pace - target.pace.max : 0;
+    if (off > 5) worse('bad'); else if (off > 0) worse('warn');
+  }
+  const hr = number(block.average_hr);
+  if (target.hr && hr) {
+    if (hr > target.hr.max + 4) worse('bad');
+    else if (hr > target.hr.max) worse('warn');
+    else if (!target.pace && hr < target.hr.min - 5) worse('warn');
+  }
+  return status;
+}
+
+function round1(value) {
+  return Number.isFinite(value) ? Math.round(value * 10) / 10 : null;
+}
+
+function signed(value, unit) {
+  const rounded = Math.round(value);
+  return `${rounded > 0 ? '+' : ''}${rounded} ${unit}`;
+}
+
+function sessionReading(work, recoveries) {
+  const reading = [];
+  if (!work.length) return reading;
+  const withStatus = work.filter(block => block.status);
+  const inTarget = withStatus.filter(block => block.status === 'good');
+  const paces = work.map(block => number(block.pace_sec_per_km)).filter(Boolean);
+  const average = paces.length ? paces.reduce((a, b) => a + b, 0) / paces.length : null;
+  if (withStatus.length) {
+    const out = withStatus.filter(block => block.status !== 'good').map(block => `${block.repetition || work.indexOf(block) + 1}.ª`);
+    reading.push({
+      level: out.length ? (inTarget.length >= withStatus.length / 2 ? 'warn' : 'bad') : 'good',
+      title: out.length ? `${inTarget.length} de ${withStatus.length} series en objetivo` : 'Todas las series en objetivo',
+      text: `${work.length} series a ${paceText(average) || '—'} de media.${out.length ? ` Fuera de objetivo: ${out.join(', ')}.` : ''}`,
+    });
+  } else if (average) {
+    reading.push({ level: 'info', title: 'Ritmo de las series', text: `${work.length} series a ${paceText(average)} de media. La sesión no tiene un objetivo de ritmo o FC que se pueda comparar.` });
+  }
+  const first = work[0];
+  const last = work[work.length - 1];
+  if (work.length > 1 && number(first.average_hr) && number(last.average_hr)) {
+    const hrRise = last.average_hr - first.average_hr;
+    const paceChange = number(first.pace_sec_per_km) && number(last.pace_sec_per_km) ? last.pace_sec_per_km - first.pace_sec_per_km : 0;
+    if (hrRise >= 6 && paceChange >= 5) reading.push({ level: 'warn', title: 'Fatiga al final', text: `Las últimas series más lentas (${signed(paceChange, 's/km')}) y con más FC (${Math.round(first.average_hr)} → ${Math.round(last.average_hr)} ppm).` });
+    else if (hrRise >= 6) reading.push({ level: 'warn', title: 'La FC sube serie a serie', text: `De ${Math.round(first.average_hr)} a ${Math.round(last.average_hr)} ppm de media con un ritmo parecido (${signed(paceChange, 's/km')}).` });
+    else reading.push({ level: 'good', title: 'FC estable entre series', text: `De ${Math.round(first.average_hr)} a ${Math.round(last.average_hr)} ppm de la primera a la última serie.` });
+  }
+  const fading = work.filter(block => number(block.first_half_pace_sec_per_km) && number(block.second_half_pace_sec_per_km) && block.second_half_pace_sec_per_km - block.first_half_pace_sec_per_km > 6);
+  if (fading.length) reading.push({ level: 'warn', title: 'Ritmo que cae dentro de la serie', text: `En ${fading.map(block => `la ${block.repetition || work.indexOf(block) + 1}.ª`).join(', ')} la segunda mitad fue más lenta que la primera.` });
+  const drops = recoveries.map(block => block.hr_drop).filter(value => Number.isFinite(value));
+  if (drops.length) {
+    const avgDrop = drops.reduce((a, b) => a + b, 0) / drops.length;
+    reading.push({ level: avgDrop >= 25 ? 'good' : 'info', title: 'Recuperación entre series', text: `La FC baja una media de ${Math.round(avgDrop)} ppm en cada recuperación${drops.length > 1 ? ` (de ${Math.round(drops[0])} en la primera a ${Math.round(drops[drops.length - 1])} en la última)` : ''}.` });
+  }
+  return reading;
+}
+
+function sessionBlockAnalysis(activity, workout, zones = {}) {
+  const { rows, segmentation } = segmentBlocks(activity, workout);
+  if (!rows.length) return { segmentation: null, blocks: [], summary: null, reading: [] };
+  const blocks = rows.map(row => ({ ...row, target: resolveBlockTarget(row.planned_target, zones) }));
+  let previousWork = null;
+  for (const block of blocks) {
+    if (block.kind === 'work') previousWork = block;
+    if (block.kind === 'recovery' && previousWork && number(previousWork.end_hr) && number(block.end_hr)) { block.hr_from = previousWork.end_hr; block.hr_drop = round1(previousWork.end_hr - block.end_hr); }
+  }
+  const work = mainWorkBlocks(blocks);
+  work.forEach((block, index) => {
+    block.main_work = true;
+    if (!block.repetition) block.repetition = index + 1;
+    block.status = blockStatus(block);
+  });
+  const recoveries = blocks.filter(block => block.kind === 'recovery' && Number.isFinite(block.hr_drop));
+  let duration = 0;
+  let distance = 0;
+  let hrSum = 0;
+  let hrWeight = 0;
+  for (const block of work) {
+    if (number(block.duration_seconds) && number(block.distance_m)) { duration += block.duration_seconds; distance += block.distance_m; }
+    if (number(block.average_hr) && number(block.duration_seconds)) { hrSum += block.average_hr * block.duration_seconds; hrWeight += block.duration_seconds; }
+  }
+  const withStatus = work.filter(block => block.status);
+  const first = work[0];
+  const last = work[work.length - 1];
+  const summary = {
+    work_count: work.length,
+    with_target: withStatus.length,
+    in_target: withStatus.filter(block => block.status === 'good').length,
+    avg_work_pace_sec_per_km: duration && distance ? round1(duration / (distance / 1000)) : null,
+    avg_work_hr: hrWeight ? round1(hrSum / hrWeight) : null,
+    hr_rise: work.length > 1 && number(first.average_hr) && number(last.average_hr) ? round1(last.average_hr - first.average_hr) : null,
+    pace_change_sec_per_km: work.length > 1 && number(first.pace_sec_per_km) && number(last.pace_sec_per_km) ? round1(last.pace_sec_per_km - first.pace_sec_per_km) : null,
+    avg_recovery_hr_drop: recoveries.length ? round1(recoveries.reduce((sum, block) => sum + block.hr_drop, 0) / recoveries.length) : null,
+  };
+  return { segmentation, blocks, summary, reading: sessionReading(work, recoveries) };
+}
+
 module.exports = {
   activityIntervals,
   compareDetailedBlocks,
@@ -463,5 +704,8 @@ module.exports = {
   normalise,
   paceText,
   plannedSteps,
+  resolveBlockTarget,
+  segmentBlocks,
+  sessionBlockAnalysis,
   sessionType,
 };

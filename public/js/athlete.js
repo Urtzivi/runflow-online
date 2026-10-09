@@ -407,6 +407,17 @@ function scalarRawEntries(raw) {
   return Object.entries(raw||{}).filter(([key,value])=>!ignored.has(key)&&value!==null&&value!==''&&['string','number','boolean'].includes(typeof value)&&String(value).length<180).slice(0,30);
 }
 function prettyKey(key){return String(key).replace(/^icu_/,'').replace(/_/g,' ').replace(/\b\w/g,letter=>letter.toUpperCase());}
+function renderActivityBlocks(data,externalId){
+  if(!window.RunflowSessionBlocks)return;
+  let host=$('athleteActivityBlocks');
+  if(!host){
+    const section=$('athleteActivityIntervals')?.closest('section');
+    if(!section)return;
+    host=document.createElement('section');host.id='athleteActivityBlocks';host.className='form-section';host.style.marginTop='16px';
+    section.parentNode.insertBefore(host,section);
+  }
+  window.RunflowSessionBlocks.render(host,data,{mode:'athlete',comparisonUrl:`/api/athlete/activities/${encodeURIComponent(externalId)}/block-comparison`});
+}
 async function openActivity(externalId){
   try{
     const data=await api(`/api/athlete/activities/${encodeURIComponent(externalId)}`); const activity=data.activity||{},raw=activity.raw_summary||{};
@@ -419,6 +430,7 @@ async function openActivity(externalId){
     $('athleteActivityMetrics').innerHTML=primary.map(([label,value])=>`<article class="metric"><span>${label}</span><strong>${value}</strong></article>`).join('');
     const intervals=activity.intervals||[];
     $('athleteActivityIntervals').innerHTML=intervals.length?`<table><thead><tr><th>#</th><th>Bloque</th><th>Tiempo</th><th>Distancia</th><th>Ritmo</th><th>FC med.</th><th>FC máx.</th></tr></thead><tbody>${intervals.map(item=>`<tr><td>${item.index}</td><td>${escapeHtml(item.type)}</td><td>${durationLabel(item.duration_seconds)}</td><td>${item.distance_m?`${item.distance_m} m`:'—'}</td><td>${escapeHtml(item.pace||'—')}</td><td>${item.average_hr??'—'}</td><td>${item.max_hr??'—'}</td></tr>`).join('')}</tbody></table>`:'<p class="muted">Intervals no ha devuelto parciales detallados.</p>';
+    renderActivityBlocks(data,externalId);
     const extras=scalarRawEntries(raw); $('athleteActivityExtra').innerHTML=extras.length?extras.map(([key,value])=>`<div><span>${escapeHtml(prettyKey(key))}</span><strong>${escapeHtml(value)}</strong></div>`).join(''):'<p class="muted">No hay más métricas de resumen disponibles.</p>';
     if(data.feedback){
       $('athleteActivityFeedbackExisting').classList.remove('hidden');
