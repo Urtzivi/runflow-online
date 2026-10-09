@@ -10,6 +10,8 @@ const SUPABASE_SERVICE_ROLE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY |
 const APP_ENCRYPTION_KEY = String(process.env.APP_ENCRYPTION_KEY || '');
 const PREFIX = 'RF_FOOTBALL|';
 const PROGRAM_CATEGORY = '__runflow_football_program__';
+const DEMO_MODE = process.env.DEMO_MODE === '1';
+const Schedule = require('./public/js/football-schedule.js');
 
 function parseCookies(req) {
   const out = {};
@@ -32,7 +34,43 @@ async function jsonFetch(url, options = {}) {
   return data;
 }
 
+// En DEMO_MODE las tablas viven en data/demo-football.json para poder probar el módulo en local.
+const demoStore = (() => {
+  if (!DEMO_MODE) return null;
+  const fs = require('fs'), path = require('path');
+  const file = path.join(process.env.DATA_DIR || path.join(__dirname, 'data'), 'demo-football.json');
+  let data = {};
+  try { data = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { data = {}; }
+  const save = () => { try { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify(data, null, 2)); } catch (error) { console.warn('[football-api] demo', error.message); } };
+  return {
+    query(table, query, options) {
+      const list = data[table] || (data[table] = []);
+      const params = new URLSearchParams(query);
+      const filters = [...params.entries()].filter(([k, v]) => !['select', 'order', 'limit'].includes(k) && v.startsWith('eq.')).map(([k, v]) => [k, v.slice(3)]);
+      const match = row => filters.every(([k, v]) => String(row[k]) === v);
+      const method = options.method || 'GET';
+      if (method === 'POST') { const row = { ...options.body }; list.push(row); save(); return [row]; }
+      if (method === 'PATCH') { const out = []; list.forEach(row => { if (match(row)) { Object.assign(row, options.body); out.push(row); } }); save(); return out; }
+      if (method === 'DELETE') { data[table] = list.filter(row => !match(row)); save(); return []; }
+      let out = list.filter(match);
+      const order = params.get('order');
+      if (order) { const [col, dir] = order.split('.'); out = out.slice().sort((a, b) => String(a[col]).localeCompare(String(b[col])) * (dir === 'desc' ? -1 : 1)); }
+      const limit = Number(params.get('limit')); if (limit) out = out.slice(0, limit);
+      return out;
+    },
+  };
+})();
+function demoUsers() {
+  try { return JSON.parse(require('fs').readFileSync(require('path').join(process.env.DATA_DIR || require('path').join(__dirname, 'data'), 'demo-state.json'), 'utf8')).users || []; } catch { return []; }
+}
+function demoUser(req) {
+  const id = parseCookies(req).rf_demo_user;
+  const fallback = { 'u-urtzi': { id: 'u-urtzi', roles: ['coach', 'athlete'], athlete_id: 'a-urtzi', email: 'urtzi@suibroker.es' }, 'u-ibon': { id: 'u-ibon', roles: ['athlete'], athlete_id: 'a-ibon', email: 'larri_hc@hotmail.es' } };
+  return demoUsers().find(user => user.id === id) || fallback[id] || null;
+}
+
 async function rows(table, query = '', options = {}) {
+  if (demoStore) return demoStore.query(table, query, options);
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) throw Object.assign(new Error('Supabase no configurado.'), { status: 503 });
   const headers = {
     apikey: SUPABASE_SERVICE_ROLE_KEY,
@@ -73,6 +111,11 @@ function readAthleteSessionToken(token) {
 }
 
 async function athleteIdentity(req) {
+  if (DEMO_MODE) {
+    const user = demoUser(req);
+    if (!user?.athlete_id) throw Object.assign(new Error('Acceso no válido.'), { status: 401 });
+    return { athleteId: user.athlete_id, email: user.email };
+  }
   const cookies = parseCookies(req);
   const direct = readAthleteSessionToken(cookies.rf_athlete);
   if (direct) return { athleteId: direct.athlete_id, email: direct.email };
@@ -86,6 +129,11 @@ async function athleteIdentity(req) {
 }
 
 async function coachIdentity(req, athleteId) {
+  if (DEMO_MODE) {
+    const user = demoUser(req);
+    if (!user || !(user.roles || []).includes('coach')) throw Object.assign(new Error('Acceso Coach requerido.'), { status: 403 });
+    return user;
+  }
   const cookies = parseCookies(req);
   const user = await authUser(cookies.rf_access);
   if (!user?.id) throw Object.assign(new Error('Acceso no válido.'), { status: 401 });
@@ -178,16 +226,24 @@ function sanitizeProgram(body) {
     title: programText(rawSession.title, 120), duration_min: boundedNumber(rawSession.duration_min, 0, 300),
     focus: programText(rawSession.focus, 160), note: programText(rawSession.note, 300),
   };
-  const program = {
-    session, exercises, drills,
-    challenges: {
-      technical: list(challenges.technical, 30).map(challenge('Reto técnico', 'tech')).filter(item => item.title),
-      quick: list(challenges.quick, 30).map(challenge('Reto rápido', 'quick')).filter(item => item.title),
-    },
-  };
-  if (!program.exercises.length && !program.drills.length && !program.challenges.technical.length && !program.challenges.quick.length) {
-    throw Object.assign(new Error('El programa está vacío.'), { status: 400 });
+  const program = {};
+  const content = ['session', 'exercises', 'drills', 'challenges'].some(key => source[key] !== undefined);
+  if (content) {
+    Object.assign(program, {
+      session, exercises, drills,
+      challenges: {
+        technical: list(challenges.technical, 30).map(challenge('Reto técnico', 'tech')).filter(item => item.title),
+        quick: list(challenges.quick, 30).map(challenge('Reto rápido', 'quick')).filter(item => item.title),
+      },
+    });
+    if (!program.exercises.length && !program.drills.length && !program.challenges.technical.length && !program.challenges.quick.length) {
+      throw Object.assign(new Error('El programa está vacío.'), { status: 400 });
+    }
   }
+  // Semana del deportista (entrenos, partidos, cambios) y circuitos de fuerza.
+  if (source.schedule !== undefined) program.schedule = Schedule.sanitizeSchedule(source.schedule);
+  if (source.strength !== undefined) program.strength = Schedule.sanitizeStrength(source.strength);
+  if (!Object.keys(program).length) throw Object.assign(new Error('El programa está vacío.'), { status: 400 });
   return program;
 }
 async function programRow(athleteId) {
@@ -198,7 +254,10 @@ function publicProgram(row) {
   return { program: row?.template_data || null, updated_at: row?.updated_at || null };
 }
 async function saveProgram(user, athleteId, body) {
-  const program = sanitizeProgram(body?.program || body), now = new Date().toISOString(), existing = await programRow(athleteId);
+  const now = new Date().toISOString(), existing = await programRow(athleteId);
+  // Cada editor guarda solo sus partes (contenido, semana o fuerza); el resto se conserva.
+  const program = { ...(existing?.template_data || {}), ...sanitizeProgram(body?.program || body) };
+  if (program.schedule) program.schedule.start = existing?.template_data?.schedule?.start || program.schedule.start || Schedule.todayMadrid();
   if (existing) {
     const updated = await rows('workout_templates', `id=eq.${encodeURIComponent(existing.id)}`, { method: 'PATCH', body: { template_data: program, updated_at: now }, prefer: 'return=representation' });
     return publicProgram(updated[0] || { template_data: program, updated_at: now });
@@ -235,7 +294,13 @@ function publicLog(log) {
     feeling: log.feeling || null, pain: log.pain ?? null, pain_area: log.pain_area || null,
     energy: meta.energy ?? null, soreness: meta.soreness ?? null, note: meta.note || '',
     challenge_id: meta.challenge_id || null, challenge_result: meta.challenge_result || null,
+    plan_key: meta.plan_key || null, plan_date: meta.plan_date || null, body_state: meta.body_state ?? null, mood: meta.mood ?? null,
+    date: meta.plan_date || madridDate(log.created_at),
   };
+}
+function madridDate(value) {
+  const d = new Date(value || Date.now());
+  return Number.isNaN(d.getTime()) ? null : new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
 }
 function summaryFromLogs(logs) {
   const now = Date.now(), seven = now - 7 * 86400000, twentyEight = now - 28 * 86400000;
@@ -274,6 +339,10 @@ async function saveFootballLog(athleteId, body, kind) {
     soreness: kind === 'wellbeing' ? boundedNumber(body.soreness, 1, 5) : null,
     challenge_id: kind === 'challenge' ? cleanText(body.challenge_id, 120) : null,
     challenge_result: kind === 'challenge' ? cleanText(body.challenge_result, 300) : null,
+    plan_key: cleanText(body.plan_key, 80) || null,
+    plan_date: /^\d{4}-\d{2}-\d{2}$/.test(String(body.plan_date || '')) ? body.plan_date : null,
+    body_state: ['football_training', 'strength', 'match'].includes(kind) ? boundedNumber(body.body_state, 1, 4) : null,
+    mood: ['football_training', 'strength', 'match'].includes(kind) ? boundedNumber(body.mood, 1, 5) : null,
     source: 'runflow-football',
   };
   const duration = kind === 'match' ? boundedNumber(body.minutes_played, 0, 180)
@@ -291,7 +360,63 @@ async function saveFootballLog(athleteId, body, kind) {
   return publicLog({ ...row, football: meta });
 }
 
+// Semana resuelta (plan + valoraciones) y datos de carga y estado.
+async function footballWeek(athleteId, from, to) {
+  const [row, logs] = await Promise.all([programRow(athleteId), footballRows(athleteId, 250)]);
+  const program = row?.template_data || {};
+  const today = Schedule.todayMadrid();
+  const activity = logs.filter(log => Schedule.RATED_KINDS.includes(log.football?.kind)).map(publicLog);
+  const days = Schedule.attachRatings(Schedule.resolvePlan(program, from, to), activity, today);
+  const pending = days.filter(day => day.date >= Schedule.addDays(today, -7)).flatMap(day => day.items.filter(item => item.pending)).reverse();
+  return { today, from, to, days, pending, strength: program.strength || [], schedule: program.schedule || null, logs: activity, updated_at: row?.updated_at || null };
+}
+function footballStats(week) {
+  const today = week.today, logs = week.logs;
+  const inRange = (from, to) => logs.filter(log => log.date && log.date >= from && log.date <= to);
+  const sum = list => list.reduce((acc, log) => acc + Number(log.load || 0), 0);
+  const avg = (list, key) => { const v = list.map(log => Number(log[key])).filter(n => Number.isFinite(n) && n > 0); return v.length ? Math.round((v.reduce((a, b) => a + b, 0) / v.length) * 10) / 10 : null; };
+  const monday = Schedule.mondayOf(today);
+  const weekLogs = inRange(monday, Schedule.addDays(monday, 6));
+  const acute = sum(inRange(Schedule.addDays(today, -6), today));
+  const chronic = sum(inRange(Schedule.addDays(today, -27), today)) / 4;
+  // La relación aguda/crónica solo tiene sentido con al menos 3 semanas de valoraciones.
+  const firstDate = logs.map(log => log.date).filter(Boolean).sort()[0];
+  const enoughHistory = !!firstDate && firstDate <= Schedule.addDays(today, -21);
+  const weekItems = week.days.filter(day => day.date >= monday && day.date <= today).flatMap(day => day.items.filter(item => Schedule.RATED_KINDS.includes(item.kind)));
+  const last14 = inRange(Schedule.addDays(today, -13), today);
+  const daily = [];
+  for (let date = Schedule.addDays(today, -27); date <= today; date = Schedule.addDays(date, 1)) {
+    const list = inRange(date, date);
+    daily.push({ date, football_training: sum(list.filter(l => l.kind === 'football_training')), match: sum(list.filter(l => l.kind === 'match')), strength: sum(list.filter(l => l.kind === 'strength')) });
+  }
+  return {
+    week_load: sum(weekLogs), avg_week_load_4: enoughHistory ? Math.round(chronic) : null, history_days: firstDate ? Schedule.daysBetween(firstDate, today) + 1 : 0, acute_7d: acute, acwr: enoughHistory && chronic > 0 ? Math.round((acute / chronic) * 100) / 100 : null,
+    rated: weekItems.filter(item => item.rating).length, planned: weekItems.length,
+    body_avg: avg(last14, 'body_state'), mood_avg: avg(last14, 'mood'), daily,
+  };
+}
+function weekRange(url, back, ahead) {
+  const today = Schedule.todayMadrid();
+  const from = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get('from') || '') ? url.searchParams.get('from') : Schedule.addDays(today, -back);
+  let to = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get('to') || '') ? url.searchParams.get('to') : Schedule.addDays(today, ahead);
+  if (Schedule.daysBetween(from, to) > 120) to = Schedule.addDays(from, 120);
+  return [from, to];
+}
+
 async function handleFootballApi(req, res, url) {
+  if (url.pathname === '/api/athlete/football/week' && req.method === 'GET') {
+    const identity = await athleteIdentity(req), [from, to] = weekRange(url, 7, 14);
+    const week = await footballWeek(identity.athleteId, from, to);
+    const used = new Set(week.days.flatMap(day => day.items.map(item => item.strength_id)).filter(Boolean));
+    return sendJson(res, 200, { ...week, schedule: undefined, logs: undefined, strength: week.strength.filter(block => used.has(block.id)) });
+  }
+  const weekMatch = url.pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/football-week$/);
+  if (weekMatch && req.method === 'GET') {
+    const athleteId = decodeURIComponent(weekMatch[1]); await coachIdentity(req, athleteId);
+    const [from, to] = weekRange(url, 28, 35);
+    const week = await footballWeek(athleteId, from, to);
+    return sendJson(res, 200, { ...week, stats: footballStats(week), logs: week.logs.slice(0, 60) });
+  }
   const method = String(req.method || 'GET').toUpperCase();
   if (url.pathname === '/api/athlete/football/summary' && method === 'GET') {
     const identity = await athleteIdentity(req), profile = await profileForAthlete(identity.athleteId), logs = await footballRows(identity.athleteId, 160);
@@ -347,7 +472,7 @@ http.createServer = function footballApiCreateServer(listener) {
   return previousCreateServer.call(http, async (req, res) => {
     try {
       const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-      const relevant = url.pathname.startsWith('/api/athlete/football/') || /^\/api\/coach\/athletes\/[^/]+\/football-(mode|summary|program)$/.test(url.pathname);
+      const relevant = url.pathname.startsWith('/api/athlete/football/') || /^\/api\/coach\/athletes\/[^/]+\/football-(mode|summary|program|week)$/.test(url.pathname);
       if (relevant) {
         const handled = await handleFootballApi(req, res, url);
         if (handled !== false) return;

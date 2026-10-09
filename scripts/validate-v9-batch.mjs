@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 
 const root = process.cwd();
 const syntaxFiles = [
-  'auth-recovery-hook.js','athlete-link-recovery-hook.js','learning-api-hook.js','assistant-api-hook.js','football-api-hook.js','library-policy-hook.js','session-comparison-metrics.js','v9-engine-hook.js','v9-supplement-hook.js','v9-reschedule-hook.js','public/js/login.js','public/js/activate.js','public/js/football.js','public/js/football-live.js','public/js/coach-football-integration.js','public/js/coach-football-program.js','public/js/football-default-program.js',
+  'auth-recovery-hook.js','athlete-link-recovery-hook.js','learning-api-hook.js','assistant-api-hook.js','football-api-hook.js','library-policy-hook.js','session-comparison-metrics.js','v9-engine-hook.js','v9-supplement-hook.js','v9-reschedule-hook.js','public/js/login.js','public/js/activate.js','public/js/football.js','public/js/football-live.js','public/js/coach-football-integration.js','public/js/coach-football-program.js','public/js/football-default-program.js','public/js/football-schedule.js','public/js/football-week.js','public/js/coach-football-week.js',
   'public/js/coach-v9-batch.js','public/js/coach-v9-supplement.js','public/js/coach-v9-season-planner.js','public/js/coach-v9-season-bridge.js',
   'public/js/coach-v9-profile-availability.js','public/js/coach-v9-hierarchy.js','public/js/coach-v9-stepwise-final.js','public/js/coach-v9-session-generator-fix.js',
   'public/js/coach-v9-manual-planning.js','public/js/coach-v9-contextual-recommender-v2.js','public/js/coach-v9-plan-v2-import.js','public/js/coach-learning.js',
