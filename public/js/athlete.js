@@ -321,12 +321,21 @@ function clearFeedbackRecordingResources(){
   setFeedbackRecordingUi(false);
 }
 function cancelFeedbackRecording(){
-  if(feedbackRecognition)feedbackRecognition.abort();
+  const session=feedbackRecognition;
+  feedbackRecognition=null;
+  if(session){session.cancelled=true;try{session.recognition.abort();}catch{}}
   clearFeedbackRecordingResources();
 }
+// Terminar siempre libera el botón: algunos móviles no avisan del final del dictado.
 function stopFeedbackRecording(){
-  if(feedbackRecognition)feedbackRecognition.stop();
-  else clearFeedbackRecordingResources();
+  const session=feedbackRecognition;
+  if(!session){clearFeedbackRecordingResources();return;}
+  if(feedbackTimer)clearInterval(feedbackTimer);
+  feedbackTimer=null;
+  $('stopFeedbackAudio').disabled=true;
+  $('feedbackAudioStatus').textContent='Terminando el dictado…';
+  try{session.recognition.stop();}catch{}
+  setTimeout(()=>{if(!session.done){try{session.recognition.abort();}catch{}session.finish();}},1200);
 }
 function keyboardDictationHint(message){
   $('feedbackAudioStatus').textContent=message||'Pulsa el micrófono del teclado del móvil para dictar el comentario.';
@@ -338,41 +347,53 @@ function startFeedbackRecording(){
   if(!Recognition){keyboardDictationHint('Este navegador no dicta desde RunFlow. Usa el micrófono del teclado del móvil para dictar.');return;}
   const base=$('logComment').value.trim();
   let finalText='';
+  let interimText='';
   let failure='';
+  let heard=false;
   const recognition=new Recognition();
+  const session={recognition,done:false,cancelled:false};
   recognition.lang='es-ES';
   recognition.continuous=true;
   recognition.interimResults=true;
-  const render=interim=>{
-    const spoken=`${finalText}${interim}`.replace(/\s+/g,' ').trim();
+  const render=()=>{
+    const spoken=`${finalText}${interimText}`.replace(/\s+/g,' ').trim();
     $('logComment').value=[base,spoken].filter(Boolean).join(base&&spoken?'\n\n':'');
+    return spoken;
   };
+  session.finish=()=>{
+    if(session.done)return;
+    session.done=true;
+    if(feedbackRecognition===session)feedbackRecognition=null;
+    clearFeedbackRecordingResources();
+    $('stopFeedbackAudio').disabled=false;
+    if(session.cancelled)return;
+    const spoken=render();
+    if(spoken){$('feedbackAudioStatus').textContent='Dictado listo. Revísalo antes de guardar.';$('logComment').focus();}
+    else if(failure)keyboardDictationHint(failure);
+    else keyboardDictationHint(heard?'No se ha detectado voz. Prueba otra vez o usa el micrófono del teclado.':'Tu móvil no ha devuelto texto. Usa el micrófono del teclado para dictar.');
+  };
+  recognition.onaudiostart=()=>{heard=true;};
   recognition.onresult=event=>{
-    let interim='';
+    heard=true;
+    interimText='';
     for(let i=event.resultIndex;i<event.results.length;i++){
       const text=event.results[i][0]?.transcript||'';
-      if(event.results[i].isFinal)finalText+=`${text} `;else interim+=text;
+      if(event.results[i].isFinal)finalText+=`${text} `;else interimText+=text;
     }
-    render(interim);
+    render();
   };
   recognition.onerror=event=>{
-    failure=event.error==='not-allowed'||event.error==='service-not-allowed'?'Necesitamos permiso para usar el micrófono.':event.error==='no-speech'?'No se ha detectado voz. Prueba otra vez.':event.error==='aborted'?'':'No se pudo dictar. Usa el micrófono del teclado del móvil.';
+    failure=event.error==='not-allowed'||event.error==='service-not-allowed'?'Necesitamos permiso para usar el micrófono. Mientras, usa el micrófono del teclado.':event.error==='no-speech'?'No se ha detectado voz. Prueba otra vez.':event.error==='aborted'?'':'No se pudo dictar. Usa el micrófono del teclado del móvil.';
   };
-  recognition.onend=()=>{
-    if(feedbackRecognition!==recognition)return;
-    render('');
-    clearFeedbackRecordingResources();
-    if(failure)$('feedbackAudioStatus').textContent=failure;
-    else if(finalText.trim()){$('feedbackAudioStatus').textContent='Dictado listo. Revísalo antes de guardar.';$('logComment').focus();}
-    else $('feedbackAudioStatus').textContent='No se ha detectado voz. Prueba otra vez.';
-  };
+  recognition.onend=()=>session.finish();
   try{recognition.start();}catch(error){keyboardDictationHint('No se pudo dictar. Usa el micrófono del teclado del móvil.');return;}
-  feedbackRecognition=recognition;
+  feedbackRecognition=session;
   feedbackStartedAt=Date.now();
   setFeedbackRecordingUi(true);
   const updateTime=()=>{
     const elapsed=Math.min(120,Math.floor((Date.now()-feedbackStartedAt)/1000));
     $('feedbackAudioStatus').textContent=`Escuchando… ${Math.floor(elapsed/60)}:${String(elapsed%60).padStart(2,'0')} / 2:00. Habla y verás el texto.`;
+    if(elapsed>=6&&!heard){try{recognition.abort();}catch{}failure='Tu móvil no permite dictar desde RunFlow. Usa el micrófono del teclado para dictar.';session.finish();return;}
     if(elapsed>=120)stopFeedbackRecording();
   };
   updateTime();
