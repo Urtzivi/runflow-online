@@ -26,6 +26,11 @@
     const workout=live.today;
     const homeTitle=$('#home .session-card h2'),sub=$('#sessionSub');
     const detailTitle=$('#training .cover-copy h2'),detailMeta=$('#training .cover-copy .muted'),detailNote=$('#training .cover-copy div:last-child');
+    if(!workout&&window.RunFlowFootball){
+      // Sin sesión publicada hoy: se muestra el programa de fútbol que ha preparado el coach.
+      window.RunFlowFootball.renderSession();window.RunFlowFootball.renderExercises();
+      return;
+    }
     if(!workout){
       if(homeTitle)homeTitle.textContent='Sin sesión publicada';
       if(sub)sub.textContent='Hoy no hay entrenamiento programado';
@@ -104,7 +109,12 @@
     try{
       const me=await api('/api/auth/me');
       if(!Array.isArray(me?.user?.roles)||!me.user.roles.includes('athlete'))return location.replace('/login?mode=athlete');
-      [live.dashboard,live.summary]=await Promise.all([api('/api/athlete/dashboard'),api('/api/athlete/football/summary')]);
+      const [dashboard,summary,saved]=await Promise.all([
+        api('/api/athlete/dashboard'),api('/api/athlete/football/summary'),
+        api('/api/athlete/football/program').catch(error=>{console.warn('[RunFlow Fútbol Live] programa',error);return null;})
+      ]);
+      live.dashboard=dashboard;live.summary=summary;
+      if(saved?.program)window.RunFlowFootball?.applyProgram({...saved.program,updated_at:saved.updated_at});
       renderIdentity();renderHistory();
     }catch(error){console.error('[RunFlow Fútbol Live]',error);liveToast(error.message);}
   })();
