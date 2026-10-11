@@ -15,6 +15,13 @@ on:
       - 'public/js/football.js'
       - 'public/js/football-live.js'
       - 'public/js/coach-football-integration.js'
+      - 'public/js/coach-football-program.js'
+      - 'public/js/football-default-program.js'
+      - 'public/js/football-schedule.js'
+      - 'public/js/football-week.js'
+      - 'public/js/coach-football-week.js'
+      - 'public/css/coach-football-week.css'
+      - 'scripts/test-football-schedule.cjs'
       - 'public/css/football.css'
       - 'public/js/coach-assistant.js'
       - 'plan-delete-hook.js'
@@ -66,6 +73,11 @@ jobs:
         run: |
           node --check public/js/session-blocks.js
           node --test scripts/test-session-blocks.cjs
+      - name: Test football week and strength circuits
+        run: |
+          node --check public/js/football-week.js
+          node --check public/js/coach-football-week.js
+          node --test scripts/test-football-schedule.cjs
       - name: Validate V9/V2 batch
         run: node scripts/validate-v9-batch.mjs
       - name: Check season calendar planner syntax
