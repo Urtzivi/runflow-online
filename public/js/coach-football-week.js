@@ -352,7 +352,7 @@
       const m = l.match;
       const aspects = [['Téc', m.technique], ['Dec', m.decisions], ['Def', m.defense], ['Conf', m.confidence]].map(([k, v]) => `${k} ${v ?? '—'}`).join(' · ');
       const actions = [m.goals ? `${m.goals} gol${m.goals > 1 ? 'es' : ''}` : '', m.assists ? `${m.assists} asist.` : ''].filter(Boolean).join(', ');
-      const words = [m.best ? `👍 ${m.best}` : '', m.improve ? `🎯 ${m.improve}` : ''].filter(Boolean).join('<br>');
+      const words = [m.best ? `👍 ${m.best}` : '', m.improve ? `🎯 ${m.improve}` : '', m.story ? `💬 ${m.story}` : ''].filter(Boolean).join('<br>');
       return `<tr><td><b>${esc(dayDate(l.date))}</b><br><small>${esc(l.title || '')}</small></td><td>${esc((RESULT[m.result] || '—') + score(m))}</td><td>${esc([m.role === 'starter' ? 'Titular' : m.role === 'sub' ? 'Suplente' : '', m.position].filter(Boolean).join(' · ') || '—')}<br><small>${fmt(l.minutes_played)} min</small></td><td><b>${m.rating ?? '—'}</b>/10</td><td>${esc(aspects)}</td><td class="fw-face">${m.enjoyment ? ENJOY[m.enjoyment - 1] : '—'}</td><td>${esc(actions || '—')}</td><td>${words ? words.split('<br>').map(esc).join('<br>') : '—'}</td></tr>`;
     }).join('');
     return `<div class="fw-card"><div class="fw-card-head"><div><h2>Partidos</h2><div class="fw-sub">Cómo ha visto el deportista cada partido</div></div></div>
