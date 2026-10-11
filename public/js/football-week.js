@@ -75,7 +75,7 @@
 .fwk-video a{position:relative;width:62px;height:62px;border-radius:50%;background:rgba(255,255,255,.92);color:#06111c;display:grid;place-items:center;font-size:22px;padding-left:4px;text-decoration:none}
 .fwk-video small{position:absolute;left:10px;bottom:8px;font-size:11px;font-weight:800;color:#cfe0f5}
 .fwk-cue{display:flex;gap:8px;align-items:flex-start;color:#cfe0f5;font-size:12.5px;line-height:1.45;margin-top:7px}
-.fwk-q{margin:16px 0 7px;font-weight:900;font-size:14px}.fwk-q small{color:var(--muted);font-weight:700;font-size:11.5px}
+.fwk-q{margin:16px 0 7px;font-weight:900;font-size:14px}.fwk-mrow{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.fwk-mcount{border:1px solid var(--line);border-radius:12px;padding:6px 8px;background:#071724}.fwk-mcount>span{display:block;font-size:11px;color:var(--muted);font-weight:800;text-align:center}.fwk-mcount .fwk-num{margin:2px 0 0}.fwk-aspect{margin-top:8px}.fwk-aspect>div:first-child{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;font-size:12.5px}.fwk-aspect small{color:var(--muted);font-size:11px}.fwk-rpe button.on:not([style]){background:var(--blue);color:#fff}.fwk-q small{color:var(--muted);font-weight:700;font-size:11.5px}
 .fwk-rpe{display:grid;grid-template-columns:repeat(10,1fr);gap:4px}
 .fwk-rpe button{border-radius:9px;padding:9px 0;text-align:center;font-weight:900;font-size:13px;border:1px solid var(--line);background:#071724;color:#9fb3cc;font-family:inherit}
 .fwk-rpe button.on{color:#06111c;border-color:transparent;transform:scale(1.08)}
@@ -284,8 +284,31 @@
       key: item?.key || null, date: item?.date || state.week?.today || S.todayMadrid(), kind: k, item,
       minutes: k === 'match' ? (item?.duration_min || 70) : (item?.duration_min || (k === 'strength' ? 30 : 75)),
       rpe: null, body: null, mood: null, pain: false, painArea: '', painLevel: 2, note: '',
+      match: k === 'match' ? { result: null, goals_for: null, goals_against: null, role: null, position: '', rating: null, technique: null, decisions: null, defense: null, confidence: null, enjoyment: null, goals: 0, assists: 0, best: '', improve: '' } : null,
     };
     renderRate(); show('fwkRate');
+  }
+  // Preguntas extra del partido: resultado, rol, nota, su fútbol, disfrute y acciones.
+  const MATCH_ASPECTS = [['technique', 'Técnica', 'control y pase'], ['decisions', 'Decisiones', 'elegir bien qué hacer'], ['defense', 'Esfuerzo defensivo', 'presionar y ayudar'], ['confidence', 'Confianza', 'pedir el balón, atreverse']];
+  const ENJOY = ['😣', '🙁', '😐', '🙂', '🤩'];
+  function matchQuestions(m) {
+    const opt = (field, value, label, extra = '') => `<button data-fwk-m="${field}" data-fwk-v="${value}" class="${String(m[field]) === String(value) ? 'on' : ''}"${extra}>${label}</button>`;
+    const counter = (field, label) => `<div class="fwk-mcount"><span>${label}</span><div class="fwk-num"><button data-fwk-mc="${field}" data-fwk-d="-1">−</button><b>${m[field] ?? '–'}</b><button data-fwk-mc="${field}" data-fwk-d="1">＋</button></div></div>`;
+    return `<div class="fwk-q">¿Cómo ha quedado el partido?</div>
+      <div class="fwk-opts c3">${opt('result', 'win', '<i>🏆</i>Ganamos')}${opt('result', 'draw', '<i>🤝</i>Empate')}${opt('result', 'loss', '<i>😤</i>Perdimos')}</div>
+      <div class="fwk-mrow">${counter('goals_for', 'Nosotros')}${counter('goals_against', 'Ellos')}</div>
+      <div class="fwk-q">¿Has sido titular? <small>y posición</small></div>
+      <div class="fwk-opts c2">${opt('role', 'starter', 'Titular')}${opt('role', 'sub', 'Suplente')}</div>
+      <input class="fwk-input" data-fwk-mfield="position" placeholder="Posición: interior, lateral…" value="${esc(m.position)}" style="margin-top:6px">
+      <div class="fwk-q">¿Qué nota le pones a tu partido? <small>(1–10)</small></div>
+      <div class="fwk-rpe">${Array.from({ length: 10 }, (_, i) => opt('rating', i + 1, i + 1)).join('')}</div>
+      <div class="fwk-q">Tu fútbol hoy <small>(1 flojo · 5 muy bien)</small></div>
+      ${MATCH_ASPECTS.map(([field, label, hint]) => `<div class="fwk-aspect"><div><b>${label}</b><small>${hint}</small></div><div class="fwk-opts c5">${[1, 2, 3, 4, 5].map(v => opt(field, v, v)).join('')}</div></div>`).join('')}
+      <div class="fwk-q">¿Cuánto has disfrutado?</div>
+      <div class="fwk-opts c5">${ENJOY.map((icon, i) => opt('enjoyment', i + 1, `<i>${icon}</i>`, ` aria-label="Disfrute ${i + 1} de 5"`)).join('')}</div>
+      <div class="fwk-mrow">${counter('goals', 'Goles')}${counter('assists', 'Asistencias')}</div>
+      <input class="fwk-input" data-fwk-mfield="best" placeholder="Lo mejor de mi partido…" value="${esc(m.best)}" style="margin-top:12px">
+      <input class="fwk-input" data-fwk-mfield="improve" placeholder="Lo que quiero mejorar…" value="${esc(m.improve)}" style="margin-top:6px">`;
   }
   const RPE_COLORS = ['#4cc38a', '#4cc38a', '#7fd17a', '#a8d86b', '#d6d55c', '#f2c14e', '#f2a65b', '#f2a65b', '#ee756e', '#e2534b'];
   function renderRate() {
@@ -298,6 +321,7 @@
         : `<div class="fwk-q">¿Cuánto ha durado?</div><div class="fwk-num"><button data-fwk-min="-5">−</button><b>${r.minutes} min</b><button data-fwk-min="5">＋</button></div>`;
     body.innerHTML = `<div class="card" style="padding:12px 14px"><div class="eyebrow" style="color:${color}">${esc(S.KIND_LABEL[r.kind])} · ${esc(dayLong(r.date))}</div><h3 style="margin:3px 0 0;font-size:17px">${esc(title)}</h3></div>
       ${durationQ}
+      ${r.match ? matchQuestions(r.match) : ''}
       <div class="fwk-q">¿Cuánto esfuerzo te ha costado? <small>(RPE)</small></div>
       <div class="fwk-rpe">${Array.from({ length: 10 }, (_, i) => `<button data-fwk-rpe="${i + 1}" class="${r.rpe === i + 1 ? 'on' : ''}" ${r.rpe === i + 1 ? `style="background:${RPE_COLORS[i]}"` : ''}>${i + 1}</button>`).join('')}</div>
       <div class="fwk-rpe-l"><span>Muy fácil</span><span>Muy duro</span><span>Máximo</span></div>
@@ -318,6 +342,8 @@
     if (!r.rpe) return toast('Elige el esfuerzo (RPE).');
     if (!r.body) return toast('Dinos cómo tienes el cuerpo.');
     if (!r.mood) return toast('Dinos cómo te sientes.');
+    if (r.match && !r.match.rating) return toast('Ponle una nota a tu partido.');
+    if (r.match && !r.match.enjoyment) return toast('Dinos cuánto has disfrutado.');
     const payload = {
       kind: r.kind, rpe: r.rpe, body_state: r.body, mood: r.mood, note: r.note,
       pain: r.pain ? r.painLevel : 0, pain_area: r.pain ? r.painArea : '',
@@ -325,7 +351,7 @@
       plan_key: r.key, plan_date: r.date,
       title: r.item ? (r.kind === 'match' ? (r.item.rival ? `vs ${r.item.rival}` : 'Partido') : r.item.title) : S.KIND_LABEL[r.kind],
     };
-    if (r.kind === 'match') payload.minutes_played = r.minutes; else payload.duration_min = r.minutes;
+    if (r.kind === 'match') { payload.minutes_played = r.minutes; payload.match = r.match; } else payload.duration_min = r.minutes;
     button.disabled = true;
     try {
       await api('/api/athlete/football/activity', { method: 'POST', body: JSON.stringify(payload) });
@@ -338,7 +364,7 @@
 
   // ---------- eventos ----------
   function onClick(event) {
-    const el = event.target.closest('[data-fwk-back],[data-fwk-rate],[data-fwk-circuit],[data-fwk-act],[data-fwk-ex],[data-fwk-day],[data-fwk-rpe],[data-fwk-body],[data-fwk-mood],[data-fwk-pain],[data-fwk-plevel],[data-fwk-min]');
+    const el = event.target.closest('[data-fwk-back],[data-fwk-rate],[data-fwk-circuit],[data-fwk-act],[data-fwk-ex],[data-fwk-day],[data-fwk-rpe],[data-fwk-body],[data-fwk-mood],[data-fwk-pain],[data-fwk-plevel],[data-fwk-min],[data-fwk-m],[data-fwk-mc]');
     if (!el) return;
     const d = el.dataset, r = state.rate;
     if (d.fwkBack) { if (d.fwkBack !== 'fwkCircuit') stopTimer(); show(d.fwkBack); return; }
@@ -351,6 +377,8 @@
     if (d.fwkMood) { r.mood = Number(d.fwkMood); renderRate(); return; }
     if (d.fwkPain) { r.pain = d.fwkPain === '1'; renderRate(); return; }
     if (d.fwkPlevel) { r.painLevel = Number(d.fwkPlevel); renderRate(); return; }
+    if (d.fwkM && r?.match) { const v = /^\d+$/.test(d.fwkV) ? Number(d.fwkV) : d.fwkV; r.match[d.fwkM] = r.match[d.fwkM] === v ? null : v; renderRate(); return; }
+    if (d.fwkMc && r?.match) { r.match[d.fwkMc] = Math.max(0, Math.min(30, Number(r.match[d.fwkMc] ?? 0) + Number(d.fwkD))); renderRate(); return; }
     if (d.fwkMin) { r.minutes = Math.max(0, Math.min(r.kind === 'match' ? 180 : 360, r.minutes + Number(d.fwkMin))); renderRate(); return; }
     const c = state.circuit;
     switch (d.fwkAct) {
@@ -366,6 +394,8 @@
   function onInput(event) {
     const field = event.target.dataset?.fwkField;
     if (field && state.rate) state.rate[field] = event.target.value;
+    const mfield = event.target.dataset?.fwkMfield;
+    if (mfield && state.rate?.match) state.rate.match[mfield] = event.target.value;
   }
   function dayDetail(date) {
     const day = state.week.days.find(d => d.date === date); if (!day) return;
