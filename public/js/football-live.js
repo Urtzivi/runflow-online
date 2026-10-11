@@ -81,6 +81,7 @@
         api('/api/athlete/football/wellbeing',{method:'POST',body:JSON.stringify({feeling:{5:'muy_bien',4:'bien',3:'normal',1:'mal'}[score],energy:score,soreness:6-score,title:'Bienestar diario'})})
       ]);
       liveToast('Estado guardado en RunFlow');
+      document.dispatchEvent(new CustomEvent('runflow:daily-checkin-saved',{detail:{source:'mood-card'}}));
       await refreshSummary();
     }catch(error){liveToast(error.message);}
   }
