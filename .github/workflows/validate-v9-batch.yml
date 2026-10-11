@@ -17,6 +17,7 @@ on:
       - 'public/js/coach-football-integration.js'
       - 'public/js/coach-football-program.js'
       - 'public/js/football-readiness.js'
+      - 'public/js/runflow-dictation.js'
       - 'public/js/football-default-program.js'
       - 'public/js/football-schedule.js'
       - 'public/js/football-week.js'

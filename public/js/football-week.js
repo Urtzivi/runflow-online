@@ -75,7 +75,7 @@
 .fwk-video a{position:relative;width:62px;height:62px;border-radius:50%;background:rgba(255,255,255,.92);color:#06111c;display:grid;place-items:center;font-size:22px;padding-left:4px;text-decoration:none}
 .fwk-video small{position:absolute;left:10px;bottom:8px;font-size:11px;font-weight:800;color:#cfe0f5}
 .fwk-cue{display:flex;gap:8px;align-items:flex-start;color:#cfe0f5;font-size:12.5px;line-height:1.45;margin-top:7px}
-.fwk-q{margin:16px 0 7px;font-weight:900;font-size:14px}.fwk-mrow{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.fwk-mcount{border:1px solid var(--line);border-radius:12px;padding:6px 8px;background:#071724}.fwk-mcount>span{display:block;font-size:11px;color:var(--muted);font-weight:800;text-align:center}.fwk-mcount .fwk-num{margin:2px 0 0}.fwk-aspect{margin-top:8px}.fwk-aspect>div:first-child{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;font-size:12.5px}.fwk-aspect small{color:var(--muted);font-size:11px}.fwk-rpe button.on:not([style]){background:var(--blue);color:#fff}.fwk-q small{color:var(--muted);font-weight:700;font-size:11.5px}
+.fwk-q{margin:16px 0 7px;font-weight:900;font-size:14px}.fwk-mrow{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.fwk-mcount{border:1px solid var(--line);border-radius:12px;padding:6px 8px;background:#071724}.fwk-mcount>span{display:block;font-size:11px;color:var(--muted);font-weight:800;text-align:center}.fwk-mcount .fwk-num{margin:2px 0 0}.fwk-aspect{margin-top:8px}.fwk-aspect>div:first-child{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;font-size:12.5px}.fwk-aspect small{color:var(--muted);font-size:11px}.fwk-rpe button.on:not([style]){background:var(--blue);color:#fff}.fwk-dict{display:flex;gap:6px;align-items:stretch;margin-top:6px}.fwk-dict .fwk-input{flex:1;margin:0}.fwk-dict.big{flex-direction:column}.fwk-dict.big textarea.fwk-story{min-height:130px;height:auto;resize:vertical;font:inherit;line-height:1.4}.fwk-mic{flex:0 0 46px;border-radius:12px;border:1px solid var(--line);background:#0f2a4a;color:#fff;font-size:18px;font-family:inherit}.fwk-dict.big .fwk-mic{flex:none;min-height:46px;font-size:15px;font-weight:800}.fwk-dict.big .fwk-mic::after{content:' Dictar';font-size:13px}.fwk-dict.big .fwk-mic.rec::after{content:' Parar'}.fwk-mic.rec{background:#e2534b;border-color:#e2534b}.fwk-dstatus{font-size:11px;color:var(--muted);min-height:2px;margin-top:3px}.fwk-sub{font-size:12px;color:var(--muted);margin:-3px 0 4px}.fwk-q small{color:var(--muted);font-weight:700;font-size:11.5px}
 .fwk-rpe{display:grid;grid-template-columns:repeat(10,1fr);gap:4px}
 .fwk-rpe button{border-radius:9px;padding:9px 0;text-align:center;font-weight:900;font-size:13px;border:1px solid var(--line);background:#071724;color:#9fb3cc;font-family:inherit}
 .fwk-rpe button.on{color:#06111c;border-color:transparent;transform:scale(1.08)}
@@ -278,13 +278,15 @@
 
   // ---------- valoración ----------
   function openRate(key, kind) {
+    if (state.dict?.session) state.dict.session.cancel();
+    state.dict = null;
     const item = key ? findItem(key) : null;
     const k = item?.kind || kind || 'football_training';
     state.rate = {
       key: item?.key || null, date: item?.date || state.week?.today || S.todayMadrid(), kind: k, item,
       minutes: k === 'match' ? (item?.duration_min || 70) : (item?.duration_min || (k === 'strength' ? 30 : 75)),
       rpe: null, body: null, mood: null, pain: false, painArea: '', painLevel: 2, note: '',
-      match: k === 'match' ? { result: null, goals_for: null, goals_against: null, role: null, position: '', rating: null, technique: null, decisions: null, defense: null, confidence: null, enjoyment: null, goals: 0, assists: 0, best: '', improve: '' } : null,
+      match: k === 'match' ? { result: null, goals_for: null, goals_against: null, role: null, position: '', rating: null, technique: null, decisions: null, defense: null, confidence: null, enjoyment: null, goals: 0, assists: 0, best: '', improve: '', story: '' } : null,
     };
     renderRate(); show('fwkRate');
   }
@@ -307,8 +309,40 @@
       <div class="fwk-q">¿Cuánto has disfrutado?</div>
       <div class="fwk-opts c5">${ENJOY.map((icon, i) => opt('enjoyment', i + 1, `<i>${icon}</i>`, ` aria-label="Disfrute ${i + 1} de 5"`)).join('')}</div>
       <div class="fwk-mrow">${counter('goals', 'Goles')}${counter('assists', 'Asistencias')}</div>
-      <input class="fwk-input" data-fwk-mfield="best" placeholder="Lo mejor de mi partido…" value="${esc(m.best)}" style="margin-top:12px">
-      <input class="fwk-input" data-fwk-mfield="improve" placeholder="Lo que quiero mejorar…" value="${esc(m.improve)}" style="margin-top:6px">`;
+      <div class="fwk-q">En tus palabras <small>(escribe o pulsa 🎤 y habla)</small></div>
+      ${dictField('best', 'Lo mejor de mi partido…', m.best)}
+      ${dictField('improve', 'Lo que quiero mejorar…', m.improve)}`;
+  }
+  // Campo con dictado por voz (RunFlowDictation). El estado vive en state.dict para sobrevivir a los repintados.
+  function dictField(field, placeholder, value, big = false) {
+    const d = state.dict && state.dict.field === field ? state.dict : null;
+    const input = big ? `<textarea class="fwk-input fwk-story" data-fwk-mfield="${field}" placeholder="${esc(placeholder)}" maxlength="2000">${esc(value)}</textarea>`
+      : `<input class="fwk-input" data-fwk-mfield="${field}" placeholder="${esc(placeholder)}" value="${esc(value)}">`;
+    return `<div class="fwk-dict${big ? ' big' : ''}">${input}<button type="button" class="fwk-mic${d?.recording ? ' rec' : ''}" data-fwk-dict="${field}" aria-label="${d?.recording ? 'Parar dictado' : 'Dictar con la voz'}">${d?.recording ? '■' : '🎤'}</button></div>
+      <div class="fwk-dstatus" data-fwk-dstatus="${field}">${esc(d?.message || '')}</div>`;
+  }
+  function toggleDictation(field) {
+    const r = state.rate; if (!r?.match) return;
+    if (state.dict?.session && !state.dict.session.done) {
+      const same = state.dict.field === field;
+      state.dict.session.stop();
+      if (same) return;
+    }
+    if (!window.RunFlowDictation) return toast('El dictado no está disponible. Usa el micrófono del teclado.');
+    const input = () => document.querySelector(`[data-fwk-mfield="${field}"]`);
+    const dict = { field, recording: true, message: '', session: null };
+    state.dict = dict;
+    const paint = () => {
+      const button = document.querySelector(`[data-fwk-dict="${field}"]`), status = document.querySelector(`[data-fwk-dstatus="${field}"]`);
+      if (button) { button.classList.toggle('rec', dict.recording); button.textContent = dict.recording ? '■' : '🎤'; }
+      if (status) status.textContent = dict.message;
+    };
+    dict.session = window.RunFlowDictation.start({
+      getText: () => state.rate?.match?.[field] || '',
+      setText: text => { if (state.rate?.match) state.rate.match[field] = text; const el = input(); if (el) el.value = text; },
+      onState: ({ recording, message }) => { dict.recording = recording; dict.message = message; paint(); if (!recording && !message?.startsWith('Dictado listo')) input()?.focus(); },
+    });
+    paint();
   }
   const RPE_COLORS = ['#4cc38a', '#4cc38a', '#7fd17a', '#a8d86b', '#d6d55c', '#f2c14e', '#f2a65b', '#f2a65b', '#ee756e', '#e2534b'];
   function renderRate() {
@@ -333,7 +367,10 @@
       <div class="fwk-opts c2"><button data-fwk-pain="0" class="${!r.pain ? 'on' : ''}">No</button><button data-fwk-pain="1" class="${r.pain ? 'on' : ''}">Sí, dime dónde</button></div>
       ${r.pain ? `<input class="fwk-input" data-fwk-field="painArea" placeholder="Gemelo derecho, rodilla…" value="${esc(r.painArea)}">
         <div class="fwk-opts c3" style="margin-top:6px">${[[2, 'Leve'], [5, 'Media'], [8, 'Fuerte']].map(([v, l]) => `<button data-fwk-plevel="${v}" class="${r.painLevel === v ? 'on' : ''}">${l}</button>`).join('')}</div>` : ''}
-      <input class="fwk-input" data-fwk-field="note" placeholder="Nota opcional: sensaciones, rival, resultado…" value="${esc(r.note)}" style="margin-top:14px">
+      ${r.match ? `<div class="fwk-q">Cuéntanos tu partido <small>(libre, escribe o habla)</small></div>
+      <div class="fwk-sub">Lo que quieras: cómo te has visto, jugadas que recuerdas, qué te ha dicho el entrenador, cómo te has sentido…</div>
+      ${dictField('story', 'Habla o escribe con tranquilidad…', r.match.story, true)}`
+        : `<input class="fwk-input" data-fwk-field="note" placeholder="Nota opcional: sensaciones, rival, resultado…" value="${esc(r.note)}" style="margin-top:14px">`}
       <div class="fwk-load"><div><small>Carga de la sesión</small><br><b>${load ?? '—'}</b></div><small style="text-align:right">${r.minutes} min × RPE ${r.rpe ?? '—'}<br>Tu entrenador la verá</small></div>
       <button class="primary" style="width:100%;margin-top:12px" data-fwk-act="save-rate">Guardar valoración</button>`;
   }
@@ -342,6 +379,7 @@
     if (!r.rpe) return toast('Elige el esfuerzo (RPE).');
     if (!r.body) return toast('Dinos cómo tienes el cuerpo.');
     if (!r.mood) return toast('Dinos cómo te sientes.');
+    if (state.dict?.recording) return toast('Para el dictado antes de guardar.');
     if (r.match && !r.match.rating) return toast('Ponle una nota a tu partido.');
     if (r.match && !r.match.enjoyment) return toast('Dinos cuánto has disfrutado.');
     const payload = {
@@ -364,7 +402,7 @@
 
   // ---------- eventos ----------
   function onClick(event) {
-    const el = event.target.closest('[data-fwk-back],[data-fwk-rate],[data-fwk-circuit],[data-fwk-act],[data-fwk-ex],[data-fwk-day],[data-fwk-rpe],[data-fwk-body],[data-fwk-mood],[data-fwk-pain],[data-fwk-plevel],[data-fwk-min],[data-fwk-m],[data-fwk-mc]');
+    const el = event.target.closest('[data-fwk-back],[data-fwk-rate],[data-fwk-circuit],[data-fwk-act],[data-fwk-ex],[data-fwk-day],[data-fwk-rpe],[data-fwk-body],[data-fwk-mood],[data-fwk-pain],[data-fwk-plevel],[data-fwk-min],[data-fwk-m],[data-fwk-mc],[data-fwk-dict]');
     if (!el) return;
     const d = el.dataset, r = state.rate;
     if (d.fwkBack) { if (d.fwkBack !== 'fwkCircuit') stopTimer(); show(d.fwkBack); return; }
@@ -377,6 +415,7 @@
     if (d.fwkMood) { r.mood = Number(d.fwkMood); renderRate(); return; }
     if (d.fwkPain) { r.pain = d.fwkPain === '1'; renderRate(); return; }
     if (d.fwkPlevel) { r.painLevel = Number(d.fwkPlevel); renderRate(); return; }
+    if (d.fwkDict) { toggleDictation(d.fwkDict); return; }
     if (d.fwkM && r?.match) { const v = /^\d+$/.test(d.fwkV) ? Number(d.fwkV) : d.fwkV; r.match[d.fwkM] = r.match[d.fwkM] === v ? null : v; renderRate(); return; }
     if (d.fwkMc && r?.match) { r.match[d.fwkMc] = Math.max(0, Math.min(30, Number(r.match[d.fwkMc] ?? 0) + Number(d.fwkD))); renderRate(); return; }
     if (d.fwkMin) { r.minutes = Math.max(0, Math.min(r.kind === 'match' ? 180 : 360, r.minutes + Number(d.fwkMin))); renderRate(); return; }

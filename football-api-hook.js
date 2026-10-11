@@ -344,7 +344,7 @@ function matchFeedback(value) {
     technique: scale(value.technique), decisions: scale(value.decisions), defense: scale(value.defense), confidence: scale(value.confidence),
     enjoyment: scale(value.enjoyment),
     goals: boundedNumber(value.goals, 0, 20), assists: boundedNumber(value.assists, 0, 20),
-    best: cleanText(value.best, 200), improve: cleanText(value.improve, 200),
+    best: cleanText(value.best, 300), improve: cleanText(value.improve, 300), story: cleanText(value.story, 2000),
   };
   return Object.values(out).some(v => v !== null && v !== '') ? out : null;
 }
