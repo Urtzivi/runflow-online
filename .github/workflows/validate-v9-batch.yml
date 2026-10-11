@@ -16,6 +16,7 @@ on:
       - 'public/js/football-live.js'
       - 'public/js/coach-football-integration.js'
       - 'public/js/coach-football-program.js'
+      - 'public/js/football-readiness.js'
       - 'public/js/football-default-program.js'
       - 'public/js/football-schedule.js'
       - 'public/js/football-week.js'
