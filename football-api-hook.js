@@ -295,6 +295,7 @@ function publicLog(log) {
     energy: meta.energy ?? null, soreness: meta.soreness ?? null, note: meta.note || '',
     challenge_id: meta.challenge_id || null, challenge_result: meta.challenge_result || null,
     plan_key: meta.plan_key || null, plan_date: meta.plan_date || null, body_state: meta.body_state ?? null, mood: meta.mood ?? null,
+    match: meta.match || null,
     date: meta.plan_date || madridDate(log.created_at),
   };
 }
@@ -331,6 +332,23 @@ function summaryFromLogs(logs) {
   };
 }
 
+// Feedback post partido: resultado, rol, nota, su fútbol por aspectos, disfrute y acciones.
+function matchFeedback(value) {
+  if (!value || typeof value !== 'object') return null;
+  const scale = v => boundedNumber(v, 1, 5);
+  const out = {
+    result: ['win', 'draw', 'loss'].includes(value.result) ? value.result : null,
+    goals_for: boundedNumber(value.goals_for, 0, 30), goals_against: boundedNumber(value.goals_against, 0, 30),
+    role: ['starter', 'sub'].includes(value.role) ? value.role : null, position: cleanText(value.position, 40),
+    rating: boundedNumber(value.rating, 1, 10),
+    technique: scale(value.technique), decisions: scale(value.decisions), defense: scale(value.defense), confidence: scale(value.confidence),
+    enjoyment: scale(value.enjoyment),
+    goals: boundedNumber(value.goals, 0, 20), assists: boundedNumber(value.assists, 0, 20),
+    best: cleanText(value.best, 200), improve: cleanText(value.improve, 200),
+  };
+  return Object.values(out).some(v => v !== null && v !== '') ? out : null;
+}
+
 async function saveFootballLog(athleteId, body, kind) {
   const meta = {
     kind, title: cleanText(body.title, 160), note: cleanText(body.note, 1000),
@@ -343,6 +361,7 @@ async function saveFootballLog(athleteId, body, kind) {
     plan_date: /^\d{4}-\d{2}-\d{2}$/.test(String(body.plan_date || '')) ? body.plan_date : null,
     body_state: ['football_training', 'strength', 'match'].includes(kind) ? boundedNumber(body.body_state, 1, 4) : null,
     mood: ['football_training', 'strength', 'match'].includes(kind) ? boundedNumber(body.mood, 1, 5) : null,
+    match: kind === 'match' ? matchFeedback(body.match) : null,
     source: 'runflow-football',
   };
   const duration = kind === 'match' ? boundedNumber(body.minutes_played, 0, 180)

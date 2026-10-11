@@ -338,7 +338,26 @@
         <div class="fw-card"><div class="fw-card-head"><div><h2>Estado físico y ánimo</h2><div class="fw-sub">Después de cada sesión, últimas 4 semanas</div></div></div>
           <div class="fw-chart" id="fwBodyChart"></div><div class="fw-chart" id="fwMoodChart" style="margin-top:8px"></div>
           ${pains.length ? `<div class="fw-warnbox"><b>Para revisar:</b> ${pains.slice(0, 3).map(p => `${esc(dayDate(p.date))}, dolor ${p.pain}/10${p.pain_area ? ` en ${esc(p.pain_area)}` : ''}`).join('; ')}.</div>` : ''}</div>
-      </div>`;
+      </div>
+      ${renderMatches()}`;
+  }
+  // Feedback post partido del deportista.
+  function renderMatches() {
+    const matches = (ui.data.logs || []).filter(l => l.kind === 'match' && l.match).sort((a, b) => b.date.localeCompare(a.date));
+    if (!matches.length) return `<div class="fw-card"><div class="fw-card-head"><div><h2>Partidos</h2><div class="fw-sub">Cuando el deportista valore un partido verás aquí su nota, su fútbol y lo que ha disfrutado.</div></div></div></div>`;
+    const RESULT = { win: 'Victoria', draw: 'Empate', loss: 'Derrota' };
+    const ENJOY = ['😣', '🙁', '😐', '🙂', '🤩'];
+    const score = m => m.goals_for === null || m.goals_for === undefined || m.goals_against === null || m.goals_against === undefined ? '' : ` ${m.goals_for}-${m.goals_against}`;
+    const rows = matches.slice(0, 12).map(l => {
+      const m = l.match;
+      const aspects = [['Téc', m.technique], ['Dec', m.decisions], ['Def', m.defense], ['Conf', m.confidence]].map(([k, v]) => `${k} ${v ?? '—'}`).join(' · ');
+      const actions = [m.goals ? `${m.goals} gol${m.goals > 1 ? 'es' : ''}` : '', m.assists ? `${m.assists} asist.` : ''].filter(Boolean).join(', ');
+      const words = [m.best ? `👍 ${m.best}` : '', m.improve ? `🎯 ${m.improve}` : ''].filter(Boolean).join('<br>');
+      return `<tr><td><b>${esc(dayDate(l.date))}</b><br><small>${esc(l.title || '')}</small></td><td>${esc((RESULT[m.result] || '—') + score(m))}</td><td>${esc([m.role === 'starter' ? 'Titular' : m.role === 'sub' ? 'Suplente' : '', m.position].filter(Boolean).join(' · ') || '—')}<br><small>${fmt(l.minutes_played)} min</small></td><td><b>${m.rating ?? '—'}</b>/10</td><td>${esc(aspects)}</td><td class="fw-face">${m.enjoyment ? ENJOY[m.enjoyment - 1] : '—'}</td><td>${esc(actions || '—')}</td><td>${words ? words.split('<br>').map(esc).join('<br>') : '—'}</td></tr>`;
+    }).join('');
+    return `<div class="fw-card"><div class="fw-card-head"><div><h2>Partidos</h2><div class="fw-sub">Cómo ha visto el deportista cada partido</div></div></div>
+      <div class="fw-scroll"><table class="fw-table"><thead><tr><th>Día</th><th>Resultado</th><th>Rol</th><th>Nota</th><th>Su fútbol (1–5)</th><th>Disfrute</th><th>Acciones</th><th>En sus palabras</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <div class="fw-chart" id="fwMatchRatingChart" style="margin-top:8px"></div><div class="fw-chart" id="fwMatchEnjoyChart" style="margin-top:8px"></div></div>`;
   }
   function drawCharts() {
     const st = ui.data.stats || {};
@@ -361,6 +380,9 @@
     const logs = (ui.data.logs || []).filter(l => l.date >= S.addDays(ui.data.today, -27)).slice().sort((a, b) => a.date.localeCompare(b.date));
     line('fwBodyChart', 'Estado físico', logs.filter(l => l.body_state).map(l => ({ date: l.date, v: 5 - l.body_state })), [1, 4], v => S.BODY[4 - v]?.label || '', '#2f6fb0');
     line('fwMoodChart', 'Ánimo (1–5)', logs.filter(l => l.mood).map(l => ({ date: l.date, v: l.mood })), [1, 5], v => String(v), '#638e16');
+    const matches = (ui.data.logs || []).filter(l => l.kind === 'match' && l.match).slice().sort((a, b) => a.date.localeCompare(b.date)).slice(-12);
+    line('fwMatchRatingChart', 'Nota del partido', matches.filter(l => l.match.rating).map(l => ({ date: l.date, v: l.match.rating })), [1, 10], v => String(v), '#ee756e');
+    line('fwMatchEnjoyChart', 'Disfrute (1–5)', matches.filter(l => l.match.enjoyment).map(l => ({ date: l.date, v: l.match.enjoyment })), [1, 5], v => String(v), '#638e16');
   }
   function line(id, label, points, [min, max], tick, color) {
     const host = byId(id); if (!host) return;
