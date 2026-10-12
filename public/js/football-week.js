@@ -75,7 +75,7 @@
 .fwk-video a{position:relative;width:62px;height:62px;border-radius:50%;background:rgba(255,255,255,.92);color:#06111c;display:grid;place-items:center;font-size:22px;padding-left:4px;text-decoration:none}
 .fwk-video small{position:absolute;left:10px;bottom:8px;font-size:11px;font-weight:800;color:#cfe0f5}
 .fwk-cue{display:flex;gap:8px;align-items:flex-start;color:#cfe0f5;font-size:12.5px;line-height:1.45;margin-top:7px}
-.fwk-q{margin:16px 0 7px;font-weight:900;font-size:14px}.fwk-mrow{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.fwk-mcount{border:1px solid var(--line);border-radius:12px;padding:6px 8px;background:#071724}.fwk-mcount>span{display:block;font-size:11px;color:var(--muted);font-weight:800;text-align:center}.fwk-mcount .fwk-num{margin:2px 0 0}.fwk-aspect{margin-top:8px}.fwk-aspect>div:first-child{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;font-size:12.5px}.fwk-aspect small{color:var(--muted);font-size:11px}.fwk-rpe button.on:not([style]){background:var(--blue);color:#fff}.fwk-dict{display:flex;gap:6px;align-items:stretch;margin-top:6px}.fwk-dict .fwk-input{flex:1;margin:0}.fwk-dict.big{flex-direction:column}.fwk-dict.big textarea.fwk-story{min-height:130px;height:auto;resize:vertical;font:inherit;line-height:1.4}.fwk-mic{flex:0 0 46px;border-radius:12px;border:1px solid var(--line);background:#0f2a4a;color:#fff;font-size:18px;font-family:inherit}.fwk-dict.big .fwk-mic{flex:none;min-height:46px;font-size:15px;font-weight:800}.fwk-dict.big .fwk-mic::after{content:' Dictar';font-size:13px}.fwk-dict.big .fwk-mic.rec::after{content:' Parar'}.fwk-mic.rec{background:#e2534b;border-color:#e2534b}.fwk-dstatus{font-size:11px;color:var(--muted);min-height:2px;margin-top:3px}.fwk-sub{font-size:12px;color:var(--muted);margin:-3px 0 4px}.fwk-q small{color:var(--muted);font-weight:700;font-size:11.5px}.fwk-inner{margin-top:18px;border:1px solid var(--line);border-radius:16px;padding:12px;background:#0a1d2c}.fwk-inner-h{display:flex;justify-content:space-between;align-items:baseline;font-size:15px}.fwk-inner-h small{color:var(--muted);font-size:11px;font-weight:800}.fwk-inner-s{margin:14px 0 2px;font-size:11px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:#7fc4ff}.fwk-inner-q{margin-top:9px;font-size:13px;font-weight:700}.fwk-inner-q small{color:var(--muted);font-weight:700;font-size:11px}
+.fwk-q{margin:16px 0 7px;font-weight:900;font-size:14px}.fwk-mrow{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.fwk-mcount{border:1px solid var(--line);border-radius:12px;padding:6px 8px;background:#071724}.fwk-mcount>span{display:block;font-size:11px;color:var(--muted);font-weight:800;text-align:center}.fwk-mcount .fwk-num{margin:2px 0 0}.fwk-aspect{margin-top:8px}.fwk-aspect>div:first-child{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;font-size:12.5px}.fwk-aspect small{color:var(--muted);font-size:11px}.fwk-rpe button.on:not([style]){background:var(--blue);color:#fff}.fwk-dict{display:flex;gap:6px;align-items:stretch;margin-top:6px}.fwk-dict .fwk-input{flex:1;margin:0}.fwk-dict.big{flex-direction:column}.fwk-dict.big textarea.fwk-story{min-height:130px;height:auto;resize:vertical;font:inherit;line-height:1.4}.fwk-mic{flex:0 0 46px;border-radius:12px;border:1px solid var(--line);background:#0f2a4a;color:#fff;font-size:18px;font-family:inherit}.fwk-dict.big .fwk-mic{flex:none;min-height:46px;font-size:15px;font-weight:800}.fwk-dict.big .fwk-mic::after{content:' Dictar';font-size:13px}.fwk-dict.big .fwk-mic.rec::after{content:' Parar'}.fwk-mic.rec{background:#e2534b;border-color:#e2534b}.fwk-dstatus{font-size:11px;color:var(--muted);min-height:2px;margin-top:3px}.fwk-sub{font-size:12px;color:var(--muted);margin:-3px 0 4px}.fwk-q small{color:var(--muted);font-weight:700;font-size:11.5px}.fwk-inner{margin-top:18px;border:1px solid var(--line);border-radius:16px;padding:12px;background:#0a1d2c}.fwk-inner-h{display:flex;justify-content:space-between;align-items:baseline;font-size:15px}.fwk-inner-h small{color:var(--muted);font-size:11px;font-weight:800}.fwk-inner-s{margin:14px 0 2px;font-size:11px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:#7fc4ff}.fwk-inner-q{margin-top:9px;font-size:13px;font-weight:700}.fwk-inner-q small{color:var(--muted);font-weight:700;font-size:11px}.fwk-choice{display:grid;gap:5px;margin-top:6px}.fwk-choice button{text-align:left;border-radius:11px;padding:10px 12px;font-weight:700;font-size:13px;border:1px solid var(--line);background:#071724;color:#c8d8e3;font-family:inherit}.fwk-choice button.on{background:var(--blue);border-color:var(--blue);color:#fff}.fwk-slider{margin-top:12px}.fwk-slider-h{display:flex;justify-content:space-between;align-items:baseline;font-size:13px;font-weight:700}.fwk-slider-h b{font-size:22px;color:#fff;min-width:56px;text-align:right}.fwk-slider-h b small{font-size:11px;color:var(--muted);margin-left:2px}.fwk-slider input{width:100%;margin:8px 0 2px;accent-color:var(--blue);height:28px}.fwk-slider.unset input{opacity:.45}.fwk-slider.unset .fwk-slider-h b{color:var(--muted)}.fwk-slider-l{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);font-weight:700}
 .fwk-rpe{display:grid;grid-template-columns:repeat(10,1fr);gap:4px}
 .fwk-rpe button{border-radius:9px;padding:9px 0;text-align:center;font-weight:900;font-size:13px;border:1px solid var(--line);background:#071724;color:#9fb3cc;font-family:inherit}
 .fwk-rpe button.on{color:#06111c;border-color:transparent;transform:scale(1.08)}
@@ -100,6 +100,8 @@
     view('fwkRate', 'Valorar', 'home');
     app.addEventListener('click', onClick);
     app.addEventListener('input', onInput);
+    // Tocar la barra sin moverla (por ejemplo, para dejar un 5) también cuenta como respuesta.
+    app.addEventListener('pointerup', event => { if (event.target.dataset?.fwkRange) onInput(event); });
     const home = $('#home'), anchor = home?.querySelector('.mood-card');
     if (home && anchor) { const box = document.createElement('div'); box.id = 'fwkHome'; anchor.before(box); }
     const training = $('#training');
@@ -286,34 +288,58 @@
       key: item?.key || null, date: item?.date || state.week?.today || S.todayMadrid(), kind: k, item,
       minutes: k === 'match' ? (item?.duration_min || 70) : (item?.duration_min || (k === 'strength' ? 30 : 75)),
       rpe: null, body: null, mood: null, pain: false, painArea: '', painLevel: 2, note: '',
-      match: k === 'match' ? { result: null, goals_for: null, goals_against: null, role: null, position: '', rating: null, technique: null, decisions: null, defense: null, confidence: null, enjoyment: null, goals: 0, assists: 0, best: '', improve: '', story: '', ...INNER_EMPTY() } : null,
+      match: k === 'match' ? { result: null, goals_for: null, goals_against: null, role: null, position: '', story: '', ...INNER_EMPTY() } : null,
     };
     renderRate(); show('fwkRate');
   }
-  // Preguntas extra del partido: resultado, rol, nota, su fútbol, disfrute y acciones.
-  const MATCH_ASPECTS = [['technique', 'Técnica', 'control y pase'], ['decisions', 'Decisiones', 'elegir bien qué hacer'], ['defense', 'Esfuerzo defensivo', 'presionar y ayudar'], ['confidence', 'Confianza', 'pedir el balón, atreverse']];
-  const ENJOY = ['😣', '🙁', '😐', '🙂', '🤩'];
-  // "Mi partido por dentro": preguntas abiertas (opcionales) para que el deportista se observe sin juzgarse.
+  // "Mi partido por dentro": cuestionario post partido con opciones a marcar (una por pregunta) y barras 0–10.
   const INNER_SECTIONS = [
-    ['Cómo he empezado', [['in1', '¿Cómo me he sentido en los primeros minutos?'], ['in2', 'Si he cometido errores al principio, ¿cómo me han afectado?']]],
-    ['Mi forma de jugar', [['in3', '¿He buscado participar aunque el balón no llegara a mi zona?'], ['in4', 'Cuando el partido era físico o había muchos balones largos, ¿cómo me encontraba?'], ['in5', 'Cuando veía una jugada que podía intentar, ¿qué hacía?']]],
-    ['Mi energía y mis emociones', [['in6', 'Durante el partido, ¿cómo he utilizado mi energía?'], ['in7', 'Cuando algo no me salía bien, ¿qué me ocurría?'], ['in8', '¿Cuánto he disfrutado jugando, independientemente del resultado?']]],
-    ['Lo que descubro de mí', [['in9', '¿En qué momento he sentido que estaba jugando con más libertad?'], ['in10', '¿Cómo me he sentido con mi manera de afrontar el partido, sin pensar en el marcador?']]],
+    ['Cómo he empezado', [
+      ['q1', '¿Cómo me he sentido en los primeros minutos?', ['Con confianza y ganas', 'Tranquilo, entrando poco a poco', 'Algo nervioso o inseguro', 'Cansado o sin mucha energía', 'No lo tengo claro']],
+      ['q2', '¿Cómo me han salido mis primeras participaciones?', ['La mayoría me han salido bien', 'La mayoría no me han salido como quería', 'He tenido de las dos', 'Apenas he participado', 'No lo recuerdo bien']],
+      ['q3', '¿Cómo me he sentido después de esas primeras jugadas?', ['Más seguro y con confianza', 'Con más ganas de participar', 'Igual que antes', 'Con algunas dudas', 'Nervioso o frustrado', 'No lo sé']],
+      ['q4', '¿Y cómo he seguido jugando después?', ['Con más decisión', 'Igual que antes', 'Con algunas dudas', 'Me ha costado participar', 'Ha ido cambiando durante el partido', 'No lo sé']],
+    ]],
+    ['Mi forma de jugar', [
+      ['q5', '¿He buscado participar aunque el balón no llegara a mi zona?', ['Casi siempre', 'Muchas veces', 'Pocas veces', 'Casi nunca', 'No lo sé']],
+      ['q6', 'Cuando el partido era físico o había muchos balones largos, ¿cómo me encontraba?', ['Sabía cómo participar', 'Me costaba encontrar mi sitio', 'Me sentía incómodo', 'Hoy no ha sido así', 'No lo sé']],
+      ['q7', 'Cuando veía una jugada que podía intentar, ¿qué hacía?', ['La intentaba con decisión', 'A veces dudaba', 'Prefería asegurar para no fallar', 'Dependía de la jugada', 'No lo recuerdo']],
+    ]],
+    ['Mi energía y mis emociones', [
+      ['q8', 'Durante el partido, ¿cómo he utilizado mi energía?', ['He corrido cuando la jugada lo pedía', 'A veces he guardado fuerzas para después', 'Quería correr más, pero estaba cansado', 'No encontraba cuándo intervenir', 'No lo sé']],
+      ['q9', 'Cuando algo no me salía bien, ¿qué me ocurría?', ['Me recuperaba rápido', 'Me enfadaba, pero seguía intentándolo', 'Perdía confianza durante un rato', 'Me costaba volver a concentrarme', 'No lo sé']],
+      ['q10', '¿Cuánto he disfrutado jugando, independientemente del resultado?', ['Muchísimo', 'Bastante', 'Un poco', 'Muy poco']],
+    ]],
+    ['Lo que descubro de mí', [
+      ['q11', '¿En qué momento he sentido que estaba jugando con más libertad?', ['Desde el principio', 'Después de una buena jugada', 'Cuando participaba más', 'En la segunda parte', 'No he notado un momento concreto']],
+      ['q12', '¿Cómo me he sentido con mi manera de afrontar el partido, sin pensar en el marcador?', ['Muy satisfecho', 'Bastante satisfecho', 'Poco satisfecho', 'Nada satisfecho', 'No lo sé']],
+    ]],
   ];
-  const INNER_EMPTY = () => ({ ...Object.fromEntries(INNER_SECTIONS.flatMap(([, qs]) => qs.map(([f]) => [f, '']))), legs: null, energy_pre: null, felt_good: '', next_focus: '' });
-  function innerQuestions(m) {
-    const scale = field => `<div class="fwk-rpe">${Array.from({ length: 10 }, (_, i) => `<button data-fwk-m="${field}" data-fwk-v="${i + 1}" class="${m[field] === i + 1 ? 'on' : ''}">${i + 1}</button>`).join('')}</div>`;
-    const answered = INNER_SECTIONS.flatMap(([, qs]) => qs).filter(([f]) => String(m[f] || '').trim()).length;
-    return `<div class="fwk-inner"><div class="fwk-inner-h"><b>Mi partido por dentro</b><small>${answered}/10 respondidas</small></div>
-      <div class="fwk-sub">Opcional. No hay respuestas buenas ni malas: cuenta lo que has notado. Responde las que quieras, escribiendo o con 🎤.</div>
-      ${INNER_SECTIONS.map(([title, qs]) => `<div class="fwk-inner-s">${esc(title)}</div>${qs.map(([field, q]) => `<div class="fwk-inner-q">${esc(q)}</div>${dictField(field, 'Tu respuesta…', m[field])}`).join('')}`).join('')}
-      <div class="fwk-inner-s">Cómo estaba</div>
-      <div class="fwk-inner-q">Cansancio de piernas <small>(1 nada · 10 muchísimo)</small></div>${scale('legs')}
-      <div class="fwk-inner-q">Energía antes del partido <small>(1 muy poca · 10 muchísima)</small></div>${scale('energy_pre')}
-      <div class="fwk-inner-q">Un momento en que me sentí bien</div>${dictField('felt_good', 'Ej.: después de la primera recuperación…', m.felt_good)}
-      <div class="fwk-inner-q">Para el próximo partido quiero…</div>${dictField('next_focus', 'Una sola cosa…', m.next_focus)}
-      <div class="fwk-sub" style="margin-top:6px">El esfuerzo general lo recoge la pregunta de esfuerzo (RPE) de abajo.</div></div>`;
+  const INNER_QUESTIONS = INNER_SECTIONS.flatMap(([, qs]) => qs);
+  // El disfrute (q10) también alimenta la gráfica de disfrute 1–5 del coach.
+  const ENJOY_FROM_Q10 = { 'Muchísimo': 5, 'Bastante': 4, 'Un poco': 2, 'Muy poco': 1 };
+  const INNER_SLIDERS = [['effort', 'Esfuerzo general del partido'], ['legs', 'Cansancio de piernas al terminar'], ['energy_pre', 'Energía antes del partido']];
+  const INNER_EMPTY = () => ({ ...Object.fromEntries(INNER_QUESTIONS.map(([f]) => [f, null])), effort: null, legs: null, energy_pre: null, felt_good: '', try_next: '' });
+  // Barra horizontal 0–10: empieza sin valor (no marca un 5 por defecto) y enseña el número elegido.
+  function slider(field, label, value) {
+    const set = value !== null && value !== undefined;
+    return `<div class="fwk-slider${set ? '' : ' unset'}" data-fwk-slider="${field}"><div class="fwk-slider-h"><span>${esc(label)}</span><b data-fwk-sval="${field}">${set ? value : '–'}<small>/10</small></b></div>
+      <input type="range" min="0" max="10" step="1" value="${set ? value : 5}" data-fwk-range="${field}" aria-label="${esc(label)}">
+      <div class="fwk-slider-l"><span>Poco</span><span>Mucho</span></div></div>`;
   }
+  function innerQuestions(m) {
+    const answered = INNER_QUESTIONS.filter(([f]) => m[f]).length;
+    return `<div class="fwk-inner"><div class="fwk-inner-h"><b>Mi partido por dentro</b><small>${answered}/${INNER_QUESTIONS.length}</small></div>
+      <div class="fwk-sub">No hay respuestas buenas ni malas. Responde según cómo te has sentido tú durante el partido.</div>
+      ${INNER_SECTIONS.map(([title, qs]) => `<div class="fwk-inner-s">${esc(title)}</div>${qs.map(([field, q, options]) => `<div class="fwk-inner-q">${INNER_QUESTIONS.findIndex(x => x[0] === field) + 1}. ${esc(q)}</div>
+        <div class="fwk-choice">${options.map(o => `<button data-fwk-m="${field}" data-fwk-v="${esc(o)}" class="${m[field] === o ? 'on' : ''}">${esc(o)}</button>`).join('')}</div>`).join('')}`).join('')}
+      <div class="fwk-inner-s">Mis sensaciones físicas</div>
+      ${INNER_SLIDERS.map(([field, label]) => slider(field, label, m[field])).join('')}
+      <div class="fwk-inner-s">Mis propias palabras</div>
+      <div class="fwk-inner-q">¿Qué momento del partido me ha hecho sentir bien?</div>${dictField('felt_good', 'Escribe o pulsa 🎤 y habla…', m.felt_good)}
+      <div class="fwk-inner-q">¿Qué me gustaría probar en el próximo partido?</div>${dictField('try_next', 'Escribe o pulsa 🎤 y habla…', m.try_next)}</div>`;
+  }
+  // Datos del partido (resultado y rol) seguidos del cuestionario.
   function matchQuestions(m) {
     const opt = (field, value, label, extra = '') => `<button data-fwk-m="${field}" data-fwk-v="${value}" class="${String(m[field]) === String(value) ? 'on' : ''}"${extra}>${label}</button>`;
     const counter = (field, label) => `<div class="fwk-mcount"><span>${label}</span><div class="fwk-num"><button data-fwk-mc="${field}" data-fwk-d="-1">−</button><b>${m[field] ?? '–'}</b><button data-fwk-mc="${field}" data-fwk-d="1">＋</button></div></div>`;
@@ -323,16 +349,6 @@
       <div class="fwk-q">¿Has sido titular? <small>y posición</small></div>
       <div class="fwk-opts c2">${opt('role', 'starter', 'Titular')}${opt('role', 'sub', 'Suplente')}</div>
       <input class="fwk-input" data-fwk-mfield="position" placeholder="Posición: interior, lateral…" value="${esc(m.position)}" style="margin-top:6px">
-      <div class="fwk-q">¿Qué nota le pones a tu partido? <small>(1–10)</small></div>
-      <div class="fwk-rpe">${Array.from({ length: 10 }, (_, i) => opt('rating', i + 1, i + 1)).join('')}</div>
-      <div class="fwk-q">Tu fútbol hoy <small>(1 flojo · 5 muy bien)</small></div>
-      ${MATCH_ASPECTS.map(([field, label, hint]) => `<div class="fwk-aspect"><div><b>${label}</b><small>${hint}</small></div><div class="fwk-opts c5">${[1, 2, 3, 4, 5].map(v => opt(field, v, v)).join('')}</div></div>`).join('')}
-      <div class="fwk-q">¿Cuánto has disfrutado?</div>
-      <div class="fwk-opts c5">${ENJOY.map((icon, i) => opt('enjoyment', i + 1, `<i>${icon}</i>`, ` aria-label="Disfrute ${i + 1} de 5"`)).join('')}</div>
-      <div class="fwk-mrow">${counter('goals', 'Goles')}${counter('assists', 'Asistencias')}</div>
-      <div class="fwk-q">En tus palabras <small>(escribe o pulsa 🎤 y habla)</small></div>
-      ${dictField('best', 'Lo mejor de mi partido…', m.best)}
-      ${dictField('improve', 'Lo que quiero mejorar…', m.improve)}
       ${innerQuestions(m)}`;
   }
   // Campo con dictado por voz (RunFlowDictation). El estado vive en state.dict para sobrevivir a los repintados.
@@ -371,6 +387,7 @@
     const r = state.rate, body = $('#fwkRateBody'); if (!r || !body) return;
     const color = r.kind === 'match' ? '#ee756e' : r.kind === 'strength' ? '#f2a65b' : '#29a7ff';
     const title = r.item ? (r.kind === 'match' ? (r.item.rival ? `vs ${r.item.rival}` : 'Partido') : r.kind === 'football_training' ? 'Entreno fútbol' : r.item.title) : `${S.KIND_LABEL[r.kind]} fuera de tu semana`;
+    if (r.match) r.rpe = r.match.effort === null || r.match.effort === undefined ? null : Math.max(1, r.match.effort);
     const load = r.rpe ? Math.round(r.minutes * r.rpe) : null;
     const durationQ = r.kind === 'match' ? `<div class="fwk-q">¿Cuántos minutos has jugado?</div><div class="fwk-num"><button data-fwk-min="-5">−</button><b>${r.minutes} min</b><button data-fwk-min="5">＋</button></div>`
       : r.item ? `<div class="fwk-info" style="margin-top:14px">Duración: <b>${r.minutes} min</b> (según tu plan)</div>`
@@ -378,9 +395,9 @@
     body.innerHTML = `<div class="card" style="padding:12px 14px"><div class="eyebrow" style="color:${color}">${esc(S.KIND_LABEL[r.kind])} · ${esc(dayLong(r.date))}</div><h3 style="margin:3px 0 0;font-size:17px">${esc(title)}</h3></div>
       ${durationQ}
       ${r.match ? matchQuestions(r.match) : ''}
-      <div class="fwk-q">¿Cuánto esfuerzo te ha costado? <small>(RPE)</small></div>
+      ${r.match ? '' : `<div class="fwk-q">¿Cuánto esfuerzo te ha costado? <small>(RPE)</small></div>
       <div class="fwk-rpe">${Array.from({ length: 10 }, (_, i) => `<button data-fwk-rpe="${i + 1}" class="${r.rpe === i + 1 ? 'on' : ''}" ${r.rpe === i + 1 ? `style="background:${RPE_COLORS[i]}"` : ''}>${i + 1}</button>`).join('')}</div>
-      <div class="fwk-rpe-l"><span>Muy fácil</span><span>Muy duro</span><span>Máximo</span></div>
+      <div class="fwk-rpe-l"><span>Muy fácil</span><span>Muy duro</span><span>Máximo</span></div>`}
       <div class="fwk-q">¿Cómo tienes el cuerpo?</div>
       <div class="fwk-opts c4">${S.BODY.map(b => `<button data-fwk-body="${b.value}" class="${r.body === b.value ? 'on' : ''}"><i>${b.icon}</i>${b.label}</button>`).join('')}</div>
       <div class="fwk-q">¿Cómo te sientes?</div>
@@ -396,14 +413,20 @@
       <div class="fwk-load"><div><small>Carga de la sesión</small><br><b>${load ?? '—'}</b></div><small style="text-align:right">${r.minutes} min × RPE ${r.rpe ?? '—'}<br>Tu entrenador la verá</small></div>
       <button class="primary" style="width:100%;margin-top:12px" data-fwk-act="save-rate">Guardar valoración</button>`;
   }
+  function updateLoad() {
+    const r = state.rate, box = document.querySelector('.fwk-load'); if (!r || !box) return;
+    if (r.match) r.rpe = r.match.effort === null || r.match.effort === undefined ? null : Math.max(1, r.match.effort);
+    const load = r.rpe ? Math.round(r.minutes * r.rpe) : null;
+    box.querySelector('b').textContent = load ?? '—';
+    box.lastElementChild.innerHTML = `${r.minutes} min × esfuerzo ${r.rpe ?? '—'}<br>Tu entrenador la verá`;
+  }
   async function saveRate(button) {
     const r = state.rate;
-    if (!r.rpe) return toast('Elige el esfuerzo (RPE).');
+    if (r.match) r.rpe = r.match.effort === null || r.match.effort === undefined ? null : Math.max(1, r.match.effort);
+    if (!r.rpe) return toast(r.match ? 'Marca tu esfuerzo general del partido.' : 'Elige el esfuerzo (RPE).');
     if (!r.body) return toast('Dinos cómo tienes el cuerpo.');
     if (!r.mood) return toast('Dinos cómo te sientes.');
     if (state.dict?.recording) return toast('Para el dictado antes de guardar.');
-    if (r.match && !r.match.rating) return toast('Ponle una nota a tu partido.');
-    if (r.match && !r.match.enjoyment) return toast('Dinos cuánto has disfrutado.');
     const payload = {
       kind: r.kind, rpe: r.rpe, body_state: r.body, mood: r.mood, note: r.note,
       pain: r.pain ? r.painLevel : 0, pain_area: r.pain ? r.painArea : '',
@@ -411,7 +434,7 @@
       plan_key: r.key, plan_date: r.date,
       title: r.item ? (r.kind === 'match' ? (r.item.rival ? `vs ${r.item.rival}` : 'Partido') : r.item.title) : S.KIND_LABEL[r.kind],
     };
-    if (r.kind === 'match') { payload.minutes_played = r.minutes; payload.match = r.match; } else payload.duration_min = r.minutes;
+    if (r.kind === 'match') { payload.minutes_played = r.minutes; payload.match = { ...r.match, enjoyment: ENJOY_FROM_Q10[r.match.q10] || null }; } else payload.duration_min = r.minutes;
     button.disabled = true;
     try {
       await api('/api/athlete/football/activity', { method: 'POST', body: JSON.stringify(payload) });
@@ -457,6 +480,14 @@
     if (field && state.rate) state.rate[field] = event.target.value;
     const mfield = event.target.dataset?.fwkMfield;
     if (mfield && state.rate?.match) state.rate.match[mfield] = event.target.value;
+    const range = event.target.dataset?.fwkRange;
+    if (range && state.rate?.match) {
+      const v = Number(event.target.value);
+      state.rate.match[range] = v;
+      event.target.closest('.fwk-slider')?.classList.remove('unset');
+      const out = document.querySelector(`[data-fwk-sval="${range}"]`); if (out) out.innerHTML = `${v}<small>/10</small>`;
+      if (range === 'effort') updateLoad();
+    }
   }
   function dayDetail(date) {
     const day = state.week.days.find(d => d.date === date); if (!day) return;
