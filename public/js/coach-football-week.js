@@ -342,6 +342,8 @@
       ${renderMatches()}`;
   }
   // Feedback post partido del deportista.
+  // Preguntas de "Mi partido por dentro" (resumidas para la tabla).
+  const INNER_Q = [['in1', 'Primeros minutos'], ['in2', 'Errores al principio'], ['in3', 'Participar sin balón'], ['in4', 'Partido físico / balones largos'], ['in5', 'Jugadas que podía intentar'], ['in6', 'Uso de la energía'], ['in7', 'Cuando algo no salía'], ['in8', 'Disfrute sin resultado'], ['in9', 'Más libertad'], ['in10', 'Cómo he afrontado el partido']];
   function renderMatches() {
     const matches = (ui.data.logs || []).filter(l => l.kind === 'match' && l.match).sort((a, b) => b.date.localeCompare(a.date));
     if (!matches.length) return `<div class="fw-card"><div class="fw-card-head"><div><h2>Partidos</h2><div class="fw-sub">Cuando el deportista valore un partido verás aquí su nota, su fútbol y lo que ha disfrutado.</div></div></div></div>`;
@@ -352,7 +354,9 @@
       const m = l.match;
       const aspects = [['Téc', m.technique], ['Dec', m.decisions], ['Def', m.defense], ['Conf', m.confidence]].map(([k, v]) => `${k} ${v ?? '—'}`).join(' · ');
       const actions = [m.goals ? `${m.goals} gol${m.goals > 1 ? 'es' : ''}` : '', m.assists ? `${m.assists} asist.` : ''].filter(Boolean).join(', ');
-      const words = [m.best ? `👍 ${m.best}` : '', m.improve ? `🎯 ${m.improve}` : '', m.story ? `💬 ${m.story}` : ''].filter(Boolean).join('<br>');
+      const inner = INNER_Q.filter(([f]) => m[f]).map(([f, q]) => `🔎 ${q}: ${m[f]}`);
+      const innerScales = [m.legs ? `piernas ${m.legs}/10` : '', m.energy_pre ? `energía previa ${m.energy_pre}/10` : ''].filter(Boolean).join(' · ');
+      const words = [m.best ? `👍 ${m.best}` : '', m.improve ? `🎯 ${m.improve}` : '', m.story ? `💬 ${m.story}` : '', ...inner, innerScales ? `🦵 ${innerScales}` : '', m.felt_good ? `✨ Me sentí bien: ${m.felt_good}` : '', m.next_focus ? `➡️ Próximo partido: ${m.next_focus}` : ''].filter(Boolean).join('<br>');
       return `<tr><td><b>${esc(dayDate(l.date))}</b><br><small>${esc(l.title || '')}</small></td><td>${esc((RESULT[m.result] || '—') + score(m))}</td><td>${esc([m.role === 'starter' ? 'Titular' : m.role === 'sub' ? 'Suplente' : '', m.position].filter(Boolean).join(' · ') || '—')}<br><small>${fmt(l.minutes_played)} min</small></td><td><b>${m.rating ?? '—'}</b>/10</td><td>${esc(aspects)}</td><td class="fw-face">${m.enjoyment ? ENJOY[m.enjoyment - 1] : '—'}</td><td>${esc(actions || '—')}</td><td>${words ? words.split('<br>').map(esc).join('<br>') : '—'}</td></tr>`;
     }).join('');
     return `<div class="fw-card"><div class="fw-card-head"><div><h2>Partidos</h2><div class="fw-sub">Cómo ha visto el deportista cada partido</div></div></div>

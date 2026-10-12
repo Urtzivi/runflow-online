@@ -345,6 +345,10 @@ function matchFeedback(value) {
     enjoyment: scale(value.enjoyment),
     goals: boundedNumber(value.goals, 0, 20), assists: boundedNumber(value.assists, 0, 20),
     best: cleanText(value.best, 300), improve: cleanText(value.improve, 300), story: cleanText(value.story, 2000),
+    // Mi partido por dentro
+    ...Object.fromEntries(Array.from({ length: 10 }, (_, i) => [`in${i + 1}`, cleanText(value[`in${i + 1}`], 600)])),
+    legs: boundedNumber(value.legs, 1, 10), energy_pre: boundedNumber(value.energy_pre, 1, 10),
+    felt_good: cleanText(value.felt_good, 300), next_focus: cleanText(value.next_focus, 300),
   };
   return Object.values(out).some(v => v !== null && v !== '') ? out : null;
 }

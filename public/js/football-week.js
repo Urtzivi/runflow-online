@@ -75,7 +75,7 @@
 .fwk-video a{position:relative;width:62px;height:62px;border-radius:50%;background:rgba(255,255,255,.92);color:#06111c;display:grid;place-items:center;font-size:22px;padding-left:4px;text-decoration:none}
 .fwk-video small{position:absolute;left:10px;bottom:8px;font-size:11px;font-weight:800;color:#cfe0f5}
 .fwk-cue{display:flex;gap:8px;align-items:flex-start;color:#cfe0f5;font-size:12.5px;line-height:1.45;margin-top:7px}
-.fwk-q{margin:16px 0 7px;font-weight:900;font-size:14px}.fwk-mrow{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.fwk-mcount{border:1px solid var(--line);border-radius:12px;padding:6px 8px;background:#071724}.fwk-mcount>span{display:block;font-size:11px;color:var(--muted);font-weight:800;text-align:center}.fwk-mcount .fwk-num{margin:2px 0 0}.fwk-aspect{margin-top:8px}.fwk-aspect>div:first-child{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;font-size:12.5px}.fwk-aspect small{color:var(--muted);font-size:11px}.fwk-rpe button.on:not([style]){background:var(--blue);color:#fff}.fwk-dict{display:flex;gap:6px;align-items:stretch;margin-top:6px}.fwk-dict .fwk-input{flex:1;margin:0}.fwk-dict.big{flex-direction:column}.fwk-dict.big textarea.fwk-story{min-height:130px;height:auto;resize:vertical;font:inherit;line-height:1.4}.fwk-mic{flex:0 0 46px;border-radius:12px;border:1px solid var(--line);background:#0f2a4a;color:#fff;font-size:18px;font-family:inherit}.fwk-dict.big .fwk-mic{flex:none;min-height:46px;font-size:15px;font-weight:800}.fwk-dict.big .fwk-mic::after{content:' Dictar';font-size:13px}.fwk-dict.big .fwk-mic.rec::after{content:' Parar'}.fwk-mic.rec{background:#e2534b;border-color:#e2534b}.fwk-dstatus{font-size:11px;color:var(--muted);min-height:2px;margin-top:3px}.fwk-sub{font-size:12px;color:var(--muted);margin:-3px 0 4px}.fwk-q small{color:var(--muted);font-weight:700;font-size:11.5px}
+.fwk-q{margin:16px 0 7px;font-weight:900;font-size:14px}.fwk-mrow{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.fwk-mcount{border:1px solid var(--line);border-radius:12px;padding:6px 8px;background:#071724}.fwk-mcount>span{display:block;font-size:11px;color:var(--muted);font-weight:800;text-align:center}.fwk-mcount .fwk-num{margin:2px 0 0}.fwk-aspect{margin-top:8px}.fwk-aspect>div:first-child{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;font-size:12.5px}.fwk-aspect small{color:var(--muted);font-size:11px}.fwk-rpe button.on:not([style]){background:var(--blue);color:#fff}.fwk-dict{display:flex;gap:6px;align-items:stretch;margin-top:6px}.fwk-dict .fwk-input{flex:1;margin:0}.fwk-dict.big{flex-direction:column}.fwk-dict.big textarea.fwk-story{min-height:130px;height:auto;resize:vertical;font:inherit;line-height:1.4}.fwk-mic{flex:0 0 46px;border-radius:12px;border:1px solid var(--line);background:#0f2a4a;color:#fff;font-size:18px;font-family:inherit}.fwk-dict.big .fwk-mic{flex:none;min-height:46px;font-size:15px;font-weight:800}.fwk-dict.big .fwk-mic::after{content:' Dictar';font-size:13px}.fwk-dict.big .fwk-mic.rec::after{content:' Parar'}.fwk-mic.rec{background:#e2534b;border-color:#e2534b}.fwk-dstatus{font-size:11px;color:var(--muted);min-height:2px;margin-top:3px}.fwk-sub{font-size:12px;color:var(--muted);margin:-3px 0 4px}.fwk-q small{color:var(--muted);font-weight:700;font-size:11.5px}.fwk-inner{margin-top:18px;border:1px solid var(--line);border-radius:16px;padding:12px;background:#0a1d2c}.fwk-inner-h{display:flex;justify-content:space-between;align-items:baseline;font-size:15px}.fwk-inner-h small{color:var(--muted);font-size:11px;font-weight:800}.fwk-inner-s{margin:14px 0 2px;font-size:11px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:#7fc4ff}.fwk-inner-q{margin-top:9px;font-size:13px;font-weight:700}.fwk-inner-q small{color:var(--muted);font-weight:700;font-size:11px}
 .fwk-rpe{display:grid;grid-template-columns:repeat(10,1fr);gap:4px}
 .fwk-rpe button{border-radius:9px;padding:9px 0;text-align:center;font-weight:900;font-size:13px;border:1px solid var(--line);background:#071724;color:#9fb3cc;font-family:inherit}
 .fwk-rpe button.on{color:#06111c;border-color:transparent;transform:scale(1.08)}
@@ -286,13 +286,34 @@
       key: item?.key || null, date: item?.date || state.week?.today || S.todayMadrid(), kind: k, item,
       minutes: k === 'match' ? (item?.duration_min || 70) : (item?.duration_min || (k === 'strength' ? 30 : 75)),
       rpe: null, body: null, mood: null, pain: false, painArea: '', painLevel: 2, note: '',
-      match: k === 'match' ? { result: null, goals_for: null, goals_against: null, role: null, position: '', rating: null, technique: null, decisions: null, defense: null, confidence: null, enjoyment: null, goals: 0, assists: 0, best: '', improve: '', story: '' } : null,
+      match: k === 'match' ? { result: null, goals_for: null, goals_against: null, role: null, position: '', rating: null, technique: null, decisions: null, defense: null, confidence: null, enjoyment: null, goals: 0, assists: 0, best: '', improve: '', story: '', ...INNER_EMPTY() } : null,
     };
     renderRate(); show('fwkRate');
   }
   // Preguntas extra del partido: resultado, rol, nota, su fútbol, disfrute y acciones.
   const MATCH_ASPECTS = [['technique', 'Técnica', 'control y pase'], ['decisions', 'Decisiones', 'elegir bien qué hacer'], ['defense', 'Esfuerzo defensivo', 'presionar y ayudar'], ['confidence', 'Confianza', 'pedir el balón, atreverse']];
   const ENJOY = ['😣', '🙁', '😐', '🙂', '🤩'];
+  // "Mi partido por dentro": preguntas abiertas (opcionales) para que el deportista se observe sin juzgarse.
+  const INNER_SECTIONS = [
+    ['Cómo he empezado', [['in1', '¿Cómo me he sentido en los primeros minutos?'], ['in2', 'Si he cometido errores al principio, ¿cómo me han afectado?']]],
+    ['Mi forma de jugar', [['in3', '¿He buscado participar aunque el balón no llegara a mi zona?'], ['in4', 'Cuando el partido era físico o había muchos balones largos, ¿cómo me encontraba?'], ['in5', 'Cuando veía una jugada que podía intentar, ¿qué hacía?']]],
+    ['Mi energía y mis emociones', [['in6', 'Durante el partido, ¿cómo he utilizado mi energía?'], ['in7', 'Cuando algo no me salía bien, ¿qué me ocurría?'], ['in8', '¿Cuánto he disfrutado jugando, independientemente del resultado?']]],
+    ['Lo que descubro de mí', [['in9', '¿En qué momento he sentido que estaba jugando con más libertad?'], ['in10', '¿Cómo me he sentido con mi manera de afrontar el partido, sin pensar en el marcador?']]],
+  ];
+  const INNER_EMPTY = () => ({ ...Object.fromEntries(INNER_SECTIONS.flatMap(([, qs]) => qs.map(([f]) => [f, '']))), legs: null, energy_pre: null, felt_good: '', next_focus: '' });
+  function innerQuestions(m) {
+    const scale = field => `<div class="fwk-rpe">${Array.from({ length: 10 }, (_, i) => `<button data-fwk-m="${field}" data-fwk-v="${i + 1}" class="${m[field] === i + 1 ? 'on' : ''}">${i + 1}</button>`).join('')}</div>`;
+    const answered = INNER_SECTIONS.flatMap(([, qs]) => qs).filter(([f]) => String(m[f] || '').trim()).length;
+    return `<div class="fwk-inner"><div class="fwk-inner-h"><b>Mi partido por dentro</b><small>${answered}/10 respondidas</small></div>
+      <div class="fwk-sub">Opcional. No hay respuestas buenas ni malas: cuenta lo que has notado. Responde las que quieras, escribiendo o con 🎤.</div>
+      ${INNER_SECTIONS.map(([title, qs]) => `<div class="fwk-inner-s">${esc(title)}</div>${qs.map(([field, q]) => `<div class="fwk-inner-q">${esc(q)}</div>${dictField(field, 'Tu respuesta…', m[field])}`).join('')}`).join('')}
+      <div class="fwk-inner-s">Cómo estaba</div>
+      <div class="fwk-inner-q">Cansancio de piernas <small>(1 nada · 10 muchísimo)</small></div>${scale('legs')}
+      <div class="fwk-inner-q">Energía antes del partido <small>(1 muy poca · 10 muchísima)</small></div>${scale('energy_pre')}
+      <div class="fwk-inner-q">Un momento en que me sentí bien</div>${dictField('felt_good', 'Ej.: después de la primera recuperación…', m.felt_good)}
+      <div class="fwk-inner-q">Para el próximo partido quiero…</div>${dictField('next_focus', 'Una sola cosa…', m.next_focus)}
+      <div class="fwk-sub" style="margin-top:6px">El esfuerzo general lo recoge la pregunta de esfuerzo (RPE) de abajo.</div></div>`;
+  }
   function matchQuestions(m) {
     const opt = (field, value, label, extra = '') => `<button data-fwk-m="${field}" data-fwk-v="${value}" class="${String(m[field]) === String(value) ? 'on' : ''}"${extra}>${label}</button>`;
     const counter = (field, label) => `<div class="fwk-mcount"><span>${label}</span><div class="fwk-num"><button data-fwk-mc="${field}" data-fwk-d="-1">−</button><b>${m[field] ?? '–'}</b><button data-fwk-mc="${field}" data-fwk-d="1">＋</button></div></div>`;
@@ -311,7 +332,8 @@
       <div class="fwk-mrow">${counter('goals', 'Goles')}${counter('assists', 'Asistencias')}</div>
       <div class="fwk-q">En tus palabras <small>(escribe o pulsa 🎤 y habla)</small></div>
       ${dictField('best', 'Lo mejor de mi partido…', m.best)}
-      ${dictField('improve', 'Lo que quiero mejorar…', m.improve)}`;
+      ${dictField('improve', 'Lo que quiero mejorar…', m.improve)}
+      ${innerQuestions(m)}`;
   }
   // Campo con dictado por voz (RunFlowDictation). El estado vive en state.dict para sobrevivir a los repintados.
   function dictField(field, placeholder, value, big = false) {
