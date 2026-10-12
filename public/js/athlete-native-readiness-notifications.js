@@ -77,8 +77,8 @@
       if (i === 0 && (todayCompleted || at <= now)) continue;
       notifications.push({
         id: notificationId(at),
-        title: 'RunFlow · ¿Cómo te encuentras hoy?',
-        body: 'Completa tu check-in de recuperación. Son unos segundos y ayuda a ajustar tu entrenamiento.',
+        title: (window.RunFlowI18n?.t || (text => text))('RunFlow · ¿Cómo te encuentras hoy?'),
+        body: (window.RunFlowI18n?.t || (text => text))('Completa tu check-in de recuperación. Son unos segundos y ayuda a ajustar tu entrenamiento.'),
         schedule: { at, allowWhileIdle: true },
         extra: { runflow_action: 'daily_readiness', day: localDay(at) },
       });
