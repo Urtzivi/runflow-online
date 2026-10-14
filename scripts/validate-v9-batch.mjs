@@ -121,7 +121,7 @@ const footballLive=fs.readFileSync(path.join(root,'public/js/football-live.js'),
 const footballApi=fs.readFileSync(path.join(root,'football-api-hook.js'),'utf8');
 const coachFootball=fs.readFileSync(path.join(root,'public/js/coach-football-integration.js'),'utf8');
 const render=fs.readFileSync(path.join(root,'render.yaml'),'utf8');
-if(!render.includes('-r ./assistant-api-hook.js')||!primaryCoach.includes('/js/coach-assistant.js?v=1.0.0'))throw new Error('Asistente RunFlow no está cargado en producción.');
+if(!render.includes('-r ./assistant-api-hook.js')||!primaryCoach.includes('/js/coach-assistant.js?v=1.0.1'))throw new Error('Asistente RunFlow no está cargado en producción.');
 if(!loginHtml.includes('forgotPassword')||!loginJs.includes('/api/auth/recover')||!render.includes('-r ./auth-recovery-hook.js'))throw new Error('Recuperación de contraseña incompleta.');
 for(const marker of ['/api/athlete/football/summary',"location.replace('/football.html')"])if(!athleteOfficial.includes(marker))throw new Error(`Athlete no enruta Fútbol: falta ${marker}`);
 for(const marker of ['Fuerza total + Potencia','Terraza','Tests & métricas','data:image/jpeg;base64','/js/football-live.js'])if(!footballHtml.includes(marker))throw new Error(`Beta original de Athlete Fútbol incompleta: falta ${marker}`);
