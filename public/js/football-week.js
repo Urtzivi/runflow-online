@@ -7,8 +7,8 @@
   const $ = selector => document.querySelector(selector);
   const esc = value => String(value ?? '').replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
   const ICON = { football_training: '⚽', strength: '🏋️', match: '🏆', rest: '💤' };
-  const dayLong = iso => { const s = new Intl.DateTimeFormat('es-ES', { weekday: 'long', day: 'numeric' }).format(new Date(`${iso}T12:00:00`)); return s.charAt(0).toUpperCase() + s.slice(1); };
-  const monthName = iso => new Intl.DateTimeFormat('es-ES', { month: 'long' }).format(new Date(`${iso}T12:00:00`));
+  const dayLong = iso => { if (window.RunFlowI18n?.lang === 'eu') return window.RunFlowI18n.dayLong(iso); const s = new Intl.DateTimeFormat('es-ES', { weekday: 'long', day: 'numeric' }).format(new Date(`${iso}T12:00:00`)); return s.charAt(0).toUpperCase() + s.slice(1); };
+  const monthName = iso => window.RunFlowI18n?.lang === 'eu' ? window.RunFlowI18n.monthName(iso) : new Intl.DateTimeFormat('es-ES', { month: 'long' }).format(new Date(`${iso}T12:00:00`));
   const STORE = 'rf_football_circuit_v1';
   const state = { week: null, rate: null, circuit: null, timer: null, lastView: 'home' };
 
@@ -140,7 +140,7 @@
           const main = d.items.find(i => i.kind === 'match') || d.items.find(i => i.kind === 'football_training') || d.items.find(i => i.kind === 'strength') || d.items[0];
           const rated = d.items.filter(i => S.RATED_KINDS.includes(i.kind));
           const dot = !rated.length ? '' : rated.some(i => i.pending) ? 'todo' : rated.every(i => i.rating) ? 'ok' : '';
-          return `<button class="${d.date === today ? 'today' : d.date < today ? 'past' : ''}" data-fwk-day="${d.date}"><b>${'LMXJVSD'[d.day]}</b><span>${main ? ICON[main.kind] : ''}${d.items.length > 1 && main?.kind !== 'rest' ? '<sup style="font-size:9px">+</sup>' : ''}</span><small>${Number(d.date.slice(8))}${d.md ? ` · ${d.md}` : ''}</small><i class="fwk-dot ${dot}"></i></button>`;
+          return `<button class="${d.date === today ? 'today' : d.date < today ? 'past' : ''}" data-fwk-day="${d.date}"><b>${(window.RunFlowI18n?.dayLetters || 'LMXJVSD')[d.day]}</b><span>${main ? ICON[main.kind] : ''}${d.items.length > 1 && main?.kind !== 'rest' ? '<sup style="font-size:9px">+</sup>' : ''}</span><small>${Number(d.date.slice(8))}${d.md ? ` · ${d.md}` : ''}</small><i class="fwk-dot ${dot}"></i></button>`;
         }).join('')}</div>
         <div class="fwk-legend"><span style="color:#4cc38a">●</span> valorada &nbsp; <span style="color:#f2a65b">●</span> pendiente de valorar</div></div>`;
       const upcoming = allItems().filter(i => i.date >= today && i.kind !== 'rest').slice(0, 4);

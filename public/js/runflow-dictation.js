@@ -15,7 +15,7 @@
 
   // options: { getText():string, setText(text), onState({recording, message}), lang }
   function start(options){
-    const lang=options.lang||'es-ES';
+    const lang=options.lang||window.RunFlowI18n?.speechLang||'es-ES';
     const base=String(options.getText()||'').trim();
     const state=message=>options.onState({recording:!session.done&&session.running,message});
     const session={finalText:'',interimText:'',failure:'',heard:false,done:false,running:false,cancelled:false,cleanup:[],stopImpl:()=>{},abortImpl:()=>{},timer:null};
