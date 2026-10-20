@@ -499,9 +499,21 @@
   }
 
   async function refresh() {
-    try { state.week = await api('/api/athlete/football/week'); renderHome(); }
+    try {
+      state.week = await api('/api/athlete/football/week'); renderHome();
+      // Los avisos del móvil (football-session-notifications.js) se reprograman con cada semana cargada.
+      document.dispatchEvent(new CustomEvent('runflow:football-week', { detail: { week: state.week } }));
+    }
     catch (error) { console.warn('[RunFlow Fútbol semana]', error); }
   }
+  // Al pulsar el aviso de un entreno o de la fuerza se abre directamente su valoración.
+  document.addEventListener('runflow:open-football-rate', async event => {
+    const key = event?.detail?.key;
+    if (!state.week) await refresh();
+    const item = key ? findItem(key) : null;
+    if (item?.rating) { toast('Esta sesión ya está valorada ✓'); return; }
+    stopTimer(); openRate(item ? key : null, event?.detail?.kind);
+  });
   injectUi();
   refresh();
 })();
