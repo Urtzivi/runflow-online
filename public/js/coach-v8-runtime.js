@@ -148,7 +148,7 @@
     } else if(item.type==='football'){
       const m=f?.match||{}, result={win:'Victoria',draw:'Empate',loss:'Derrota'}[m.result];
       const score=Number.isFinite(Number(m.goals_for))&&Number.isFinite(Number(m.goals_against))?` ${m.goals_for}–${m.goals_against}`:'';
-      text='Valoración del deportista en RunFlow Fútbol · carga = minutos × RPE'+(f?.kind==='match'?` · ${f.minutes_played??'—'} min jugados${result?` · ${result}${score}`:''}${m.rating?` · nota ${m.rating}/10`:''}`:'');
+      text='Valoración del deportista en RunFlow Fútbol · carga = minutos × RPE'+(f?.kind==='match'?` × 1,3 (partido) · ${f.minutes_played??'—'} min jugados${result?` · ${result}${score}`:''}${m.rating?` · nota ${m.rating}/10`:''}`:'');
       action='<button type="button" class="btn secondary small" data-source-football>Ver en Fútbol →</button>';
     } else if(item.type==='manual') text='Registro manual del atleta en RunFlow';
     if(item.type!=='intervals'&&item.type!=='football'&&w.id&&w.workout_date) action='<button type="button" class="btn secondary small" data-source-calendar>Ver en el calendario →</button>';

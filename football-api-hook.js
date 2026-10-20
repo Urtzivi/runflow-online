@@ -290,7 +290,7 @@ function publicLog(log) {
   return {
     id: log.id, created_at: log.created_at, workout_id: log.workout_id || null,
     kind: meta.kind || 'unknown', title: meta.title || '', duration_min: Number(log.actual_duration_min || 0),
-    minutes_played: meta.minutes_played ?? null, rpe: log.rpe ?? null, load: minutes && rpe ? Math.round(minutes * rpe) : 0,
+    minutes_played: meta.minutes_played ?? null, rpe: log.rpe ?? null, load: Schedule.sessionLoad(meta.kind, minutes, rpe) || 0,
     feeling: log.feeling || null, pain: log.pain ?? null, pain_area: log.pain_area || null,
     energy: meta.energy ?? null, soreness: meta.soreness ?? null, note: meta.note || '',
     challenge_id: meta.challenge_id || null, challenge_result: meta.challenge_result || null,

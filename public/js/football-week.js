@@ -388,7 +388,7 @@
     const color = r.kind === 'match' ? '#ee756e' : r.kind === 'strength' ? '#f2a65b' : '#29a7ff';
     const title = r.item ? (r.kind === 'match' ? (r.item.rival ? `vs ${r.item.rival}` : 'Partido') : r.kind === 'football_training' ? 'Entreno fútbol' : r.item.title) : `${S.KIND_LABEL[r.kind]} fuera de tu semana`;
     if (r.match) r.rpe = r.match.effort === null || r.match.effort === undefined ? null : Math.max(1, r.match.effort);
-    const load = r.rpe ? Math.round(r.minutes * r.rpe) : null;
+    const load = S.sessionLoad(r.match ? 'match' : r.kind, r.minutes, r.rpe);
     const durationQ = r.kind === 'match' ? `<div class="fwk-q">¿Cuántos minutos has jugado?</div><div class="fwk-num"><button data-fwk-min="-5">−</button><b>${r.minutes} min</b><button data-fwk-min="5">＋</button></div>`
       : r.item ? `<div class="fwk-info" style="margin-top:14px">Duración: <b>${r.minutes} min</b> (según tu plan)</div>`
         : `<div class="fwk-q">¿Cuánto ha durado?</div><div class="fwk-num"><button data-fwk-min="-5">−</button><b>${r.minutes} min</b><button data-fwk-min="5">＋</button></div>`;
@@ -410,15 +410,15 @@
       <div class="fwk-sub">Lo que quieras: cómo te has visto, jugadas que recuerdas, qué te ha dicho el entrenador, cómo te has sentido…</div>
       ${dictField('story', 'Habla o escribe con tranquilidad…', r.match.story, true)}`
         : `<input class="fwk-input" data-fwk-field="note" placeholder="Nota opcional: sensaciones, rival, resultado…" value="${esc(r.note)}" style="margin-top:14px">`}
-      <div class="fwk-load"><div><small>Carga de la sesión</small><br><b>${load ?? '—'}</b></div><small style="text-align:right">${r.minutes} min × RPE ${r.rpe ?? '—'}<br>Tu entrenador la verá</small></div>
+      <div class="fwk-load"><div><small>Carga de la sesión</small><br><b>${load ?? '—'}</b></div><small style="text-align:right">${r.minutes} min × RPE ${r.rpe ?? '—'}${r.match ? ' × 1,3' : ''}<br>Tu entrenador la verá</small></div>
       <button class="primary" style="width:100%;margin-top:12px" data-fwk-act="save-rate">Guardar valoración</button>`;
   }
   function updateLoad() {
     const r = state.rate, box = document.querySelector('.fwk-load'); if (!r || !box) return;
     if (r.match) r.rpe = r.match.effort === null || r.match.effort === undefined ? null : Math.max(1, r.match.effort);
-    const load = r.rpe ? Math.round(r.minutes * r.rpe) : null;
+    const load = S.sessionLoad(r.match ? 'match' : r.kind, r.minutes, r.rpe);
     box.querySelector('b').textContent = load ?? '—';
-    box.lastElementChild.innerHTML = `${r.minutes} min × esfuerzo ${r.rpe ?? '—'}<br>Tu entrenador la verá`;
+    box.lastElementChild.innerHTML = `${r.minutes} min × esfuerzo ${r.rpe ?? '—'}${r.match ? ' × 1,3' : ''}<br>Tu entrenador la verá`;
   }
   async function saveRate(button) {
     const r = state.rate;

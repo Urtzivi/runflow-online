@@ -37,7 +37,7 @@
   const isRest = workout => /rest|descanso/i.test(`${workout.sport || ''}`) || /^descanso/i.test(workout.title || '');
   const manualValidationKey = (athleteId, workout) => `rf_v8_manual_validation:${athleteId}:${workout.id}:${workout.manual_log?.created_at || ''}`;
 
-  // Valoraciones de RunFlow Fútbol (partido, entreno, fuerza): carga = minutos × RPE.
+  // Valoraciones de RunFlow Fútbol (partido, entreno, fuerza): carga = minutos × RPE (× 1,3 en partido).
   const FOOTBALL_KINDS = { match: 'Partido', football_training: 'Entreno fútbol', strength: 'Fuerza' };
   const FOOTBALL_COLORS = { match: '#c2413b', football_training: '#2f6fb0', strength: '#b8661a' };
 
