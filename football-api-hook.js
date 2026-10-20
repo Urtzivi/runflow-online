@@ -438,7 +438,10 @@ async function handleFootballApi(req, res, url) {
     const athleteId = decodeURIComponent(weekMatch[1]); await coachIdentity(req, athleteId);
     const [from, to] = weekRange(url, 28, 35);
     const week = await footballWeek(athleteId, from, to);
-    return sendJson(res, 200, { ...week, stats: footballStats(week), logs: week.logs.slice(0, 60) });
+    // logs_from: devuelve todas las valoraciones desde esa fecha (Evolución del coach); por defecto, las 60 últimas.
+    const logsFrom = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get('logs_from') || '') ? url.searchParams.get('logs_from') : null;
+    const logs = logsFrom ? week.logs.filter(log => log.date && log.date >= logsFrom) : week.logs.slice(0, 60);
+    return sendJson(res, 200, { ...week, stats: footballStats(week), logs });
   }
   const method = String(req.method || 'GET').toUpperCase();
   if (url.pathname === '/api/athlete/football/summary' && method === 'GET') {
