@@ -16,9 +16,11 @@ const loginHtml = read('public/login.html');
 const server = read('server.js');
 const engine = read('v9-engine-hook.js');
 
+assert(read('public/js/coach-v10-calendar-planner.js').includes('data-v10-action="delete-season"'), 'Falta el botón Borrar temporada del planificador V10.');
+
 for (const html of [coach, beta]) {
   assert(html.includes('/css/coach-v10-calendar-planner.css?v=10.2.1'), 'Falta cargar el CSS del planificador V10.');
-  assert(html.includes('/js/coach-v10-calendar-planner.js?v=10.4.0'), 'Falta cargar el JavaScript del planificador V10.');
+  assert(html.includes('/js/coach-v10-calendar-planner.js?v=10.5.0'), 'Falta cargar el JavaScript del planificador V10.');
   assert(html.includes('/js/coach-v9-profile-availability.js?v=9.4.7'), 'Falta cargar la disponibilidad semanal actualizada.');
   assert(html.includes('/js/coach-v9-season-planner.js?v=9.3.1'), 'Falta cargar la corrección de semanas del deportista.');
 }
