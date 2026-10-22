@@ -12,7 +12,7 @@ jobs:
   build-android:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -48,6 +48,9 @@ jobs:
             "server": {
               "url": "https://runflow-online-pilot.onrender.com/login?mode=athlete",
               "cleartext": false
+            },
+            "plugins": {
+              "SystemBars": { "insetsHandling": "disable" }
             }
           }
           EOF
@@ -60,6 +63,7 @@ jobs:
           npx cap add android
           npx @capacitor/assets generate --android --assetPath resources --iconBackgroundColor '#B7F34A' --iconBackgroundColorDark '#B7F34A'
           npx cap sync android
+          node scripts/android-system-bars.cjs
 
       - name: Build debug APK
         working-directory: mobile/android
@@ -73,3 +77,17 @@ jobs:
           name: RunFlow-Athlete-Android-debug
           path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      # Descarga directa desde el móvil (sin entrar en GitHub ni descomprimir):
+      # https://github.com/Urtzivi/runflow-online/releases/download/athlete-apk-latest/RunFlow-Athlete.apk
+      - name: Publish APK for direct download
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp mobile/android/app/build/outputs/apk/debug/app-debug.apk RunFlow-Athlete.apk
+          if ! gh release view athlete-apk-latest >/dev/null 2>&1; then
+            gh release create athlete-apk-latest --prerelease --target "$GITHUB_SHA" \
+              --title "RunFlow Athlete APK (última)" \
+              --notes "APK de prueba de RunFlow Athlete. Se sustituye en cada compilación."
+          fi
+          gh release upload athlete-apk-latest RunFlow-Athlete.apk --clobber
