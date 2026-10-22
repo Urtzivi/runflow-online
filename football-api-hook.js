@@ -250,6 +250,7 @@ function sanitizeProgram(body) {
   if (source.schedule !== undefined) program.schedule = Schedule.sanitizeSchedule(source.schedule);
   if (source.strength !== undefined) program.strength = Schedule.sanitizeStrength(source.strength);
   if (source.strength_plan !== undefined) program.strength_plan = Schedule.sanitizeStrengthPlan(source.strength_plan);
+  if (source.availability !== undefined) program.availability = { strength_min: Schedule.sanitizeAvailability(source.availability).strength_min, updated_at: new Date().toISOString() };
   if (!Object.keys(program).length) throw Object.assign(new Error('El programa está vacío.'), { status: 400 });
   return program;
 }
@@ -295,6 +296,28 @@ async function saveLibrary(user, body) {
   };
   await rows('workout_templates', '', { method: 'POST', body: row, prefer: 'return=representation' });
   return { exercises: data.exercises, updated_at: now };
+}
+
+// Disponibilidad que indica el deportista: sus entrenos de fútbol van a la semana tipo y el tiempo para fuerza al programa.
+function publicAvailability(program) {
+  return { strength_min: program?.availability?.strength_min || null, football: Schedule.footballFromSchedule(program?.schedule), updated_at: program?.availability?.updated_at || null };
+}
+async function saveAthleteAvailability(athleteId, body) {
+  const clean = Schedule.sanitizeAvailability(body);
+  const existing = await programRow(athleteId);
+  const current = existing?.template_data || {};
+  const schedule = Schedule.applyFootballAvailability(current.schedule || {}, clean.football);
+  let owner = { id: null };
+  if (!existing) {
+    if (DEMO_MODE) owner = { id: 'u-urtzi' };
+    else {
+      const links = await rows('coach_athletes', `athlete_id=eq.${encodeURIComponent(athleteId)}&select=coach_user_id&limit=1`).catch(() => []);
+      if (!links.length) throw Object.assign(new Error('Todavía no tienes entrenador asignado.'), { status: 409 });
+      owner = { id: links[0].coach_user_id };
+    }
+  }
+  const saved = await saveProgram(owner, athleteId, { schedule, availability: { strength_min: clean.strength_min } });
+  return publicAvailability(saved.program);
 }
 
 async function profileForAthlete(athleteId) {
@@ -418,7 +441,7 @@ async function footballWeek(athleteId, from, to) {
   const activity = logs.filter(log => Schedule.RATED_KINDS.includes(log.football?.kind)).map(publicLog);
   const days = Schedule.attachRatings(Schedule.resolvePlan(program, from, to), activity, today);
   const pending = days.filter(day => day.date >= Schedule.addDays(today, -7)).flatMap(day => day.items.filter(item => item.pending)).reverse();
-  return { today, from, to, days, pending, strength: program.strength || [], strength_plan: program.strength_plan || null, schedule: program.schedule || null, logs: activity, updated_at: row?.updated_at || null };
+  return { today, from, to, days, pending, strength: program.strength || [], strength_plan: program.strength_plan || null, availability: publicAvailability(program), schedule: program.schedule || null, logs: activity, updated_at: row?.updated_at || null };
 }
 function footballStats(week) {
   const today = week.today, logs = week.logs;
@@ -491,6 +514,12 @@ async function handleFootballApi(req, res, url) {
   if (url.pathname === '/api/athlete/football/challenge' && method === 'POST') {
     const identity = await athleteIdentity(req), body = await readJson(req);
     return sendJson(res, 201, { log: await saveFootballLog(identity.athleteId, body, 'challenge') });
+  }
+  if (url.pathname === '/api/athlete/football/availability' && ['GET', 'PUT'].includes(method)) {
+    const identity = await athleteIdentity(req);
+    if (method === 'PUT') return sendJson(res, 200, { availability: await saveAthleteAvailability(identity.athleteId, await readJson(req)) });
+    const row = await programRow(identity.athleteId);
+    return sendJson(res, 200, { availability: publicAvailability(row?.template_data) });
   }
   if (url.pathname === '/api/athlete/football/program' && method === 'GET') {
     const identity = await athleteIdentity(req);

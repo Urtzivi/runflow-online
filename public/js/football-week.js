@@ -10,7 +10,7 @@
   const dayLong = iso => { const s = new Intl.DateTimeFormat('es-ES', { weekday: 'long', day: 'numeric' }).format(new Date(`${iso}T12:00:00`)); return s.charAt(0).toUpperCase() + s.slice(1); };
   const monthName = iso => new Intl.DateTimeFormat('es-ES', { month: 'long' }).format(new Date(`${iso}T12:00:00`));
   const STORE = 'rf_football_circuit_v1';
-  const state = { week: null, rate: null, circuit: null, timer: null, lastView: 'home' };
+  const state = { week: null, rate: null, circuit: null, timer: null, lastView: 'home', avail: null, availDraft: null };
 
   async function api(url, options = {}) {
     const response = await fetch(url, { credentials: 'same-origin', cache: 'no-store', ...options, headers: { 'Content-Type': 'application/json', ...(options.headers || {}) } });
@@ -92,6 +92,9 @@
 .fwk-load b{font-size:22px}.fwk-load small{color:#9fb3cc;font-size:11.5px}
 .fwk-input{width:100%;box-sizing:border-box;min-height:44px;background:#071724;border:1px solid var(--line);border-radius:12px;color:white;padding:0 12px;font:inherit;margin-top:6px}
 .fwk-info{color:var(--muted);font-size:12.5px;background:#071724;border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.fwk-avhead,.fwk-avrow{display:grid;grid-template-columns:1.15fr 1.2fr 1fr 40px;gap:6px;align-items:center}
+.fwk-avhead{margin-top:12px;font-size:10.5px;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.06em}
+.fwk-avrow .fwk-input{margin-top:6px;padding:0 6px;min-width:0;font-size:14px}.fwk-avrow button{height:44px;margin-top:6px;border-radius:12px;padding:0}
 .fwk-done{text-align:center;padding:22px 14px}.fwk-done b{display:block;font-size:20px;margin:8px 0 4px}`;
     document.head.appendChild(style);
     const app = $('#app'), nav = app?.querySelector('nav.nav');
@@ -100,6 +103,9 @@
     view('fwkCircuit', 'Fuerza', 'home');
     view('fwkExercise', 'Cómo se hace', 'fwkCircuit');
     view('fwkRate', 'Valorar', 'home');
+    view('fwkAvail', 'Mis horarios', 'more');
+    const menu = $('#more .menu');
+    if (menu) { const b = document.createElement('button'); b.className = 'card'; b.dataset.fwkAvail = '1'; b.innerHTML = '⏱<strong>Mis horarios</strong><span>›</span>'; menu.prepend(b); }
     app.addEventListener('click', onClick);
     app.addEventListener('input', onInput);
     // Tocar la barra sin moverla (por ejemplo, para dejar un 5) también cuenta como respuesta.
@@ -136,6 +142,9 @@
       const what = p.kind === 'match' ? `el partido ${when}` : p.kind === 'strength' ? `la fuerza ${when}` : `el entreno ${when}`;
       html += `<button class="fwk-pend" data-fwk-rate="${esc(p.key)}"><span class="ic">📝</span><span><b>¿Qué tal ${what}?</b><small>${pending.length > 1 ? `Tienes ${pending.length} sesiones sin valorar` : 'Valóralo en 30 segundos'}</small></span><span class="go">›</span></button>`;
     }
+    if (!state.week.availability?.strength_min) {
+      html += `<button class="fwk-pend" style="border-color:rgba(59,140,255,.5);background:linear-gradient(90deg,rgba(59,140,255,.16),rgba(59,140,255,.04))" data-fwk-avail="1"><span class="ic">⏱</span><span><b>¿Cuándo entrenas fútbol?</b><small>Dinos días, hora y cuánto tiempo tienes para la fuerza</small></span><span class="go">›</span></button>`;
+    }
     if (hasPlan) {
       html += `<div class="card fwk-card"><div class="eyebrow">Tu semana</div><h3>${Number(monday.slice(8))}–${Number(S.addDays(monday, 6).slice(8))} de ${monthName(S.addDays(monday, 6))}</h3>
         <div class="fwk-strip">${week.map(d => {
@@ -165,6 +174,54 @@
     const act = i.kind === 'strength' && !i.rating ? `data-fwk-circuit="${esc(i.key)}"` : i.pending ? `data-fwk-rate="${esc(i.key)}"` : '';
     const title = i.kind === 'football_training' ? 'Entreno fútbol' : i.title;
     return `<button class="fwk-next" ${act}><span class="ic fwk-ic-${i.kind}">${ICON[i.kind]}</span><span><b>${esc(title)} · ${esc(when.toLowerCase() === 'hoy' ? 'hoy' : when)}</b><small>${esc(detail)}</small></span>${status}</button>`;
+  }
+
+  // ---------- mis horarios (disponibilidad) ----------
+  const DURATIONS = [60, 75, 90, 105, 120];
+  async function openAvail() {
+    show('fwkAvail');
+    if (!state.avail) {
+      $('#fwkAvailBody').innerHTML = '<div class="card fwk-card muted">Cargando…</div>';
+      try { state.avail = (await api('/api/athlete/football/availability')).availability; }
+      catch (error) { $('#fwkAvailBody').innerHTML = `<div class="card fwk-card">${esc(error.message)}</div>`; return; }
+    }
+    state.availDraft = JSON.parse(JSON.stringify(state.avail));
+    if (!state.availDraft.football.length) state.availDraft.football.push({ day: 1, time: '19:00', duration_min: 90 });
+    renderAvail();
+  }
+  function renderAvail() {
+    const a = state.availDraft, body = $('#fwkAvailBody'); if (!a || !body) return;
+    const rows = a.football.map((f, i) => `<div class="fwk-avrow">
+        <select class="fwk-input" data-fwk-avf="day" data-i="${i}">${S.DAYS.map((d, j) => `<option value="${j}"${f.day === j ? ' selected' : ''}>${d}</option>`).join('')}</select>
+        <input class="fwk-input" type="time" data-fwk-avf="time" data-i="${i}" value="${esc(f.time)}">
+        <select class="fwk-input" data-fwk-avf="duration_min" data-i="${i}">${[...new Set([...DURATIONS, f.duration_min])].sort((x, y) => x - y).map(m => `<option value="${m}"${f.duration_min === m ? ' selected' : ''}>${m} min</option>`).join('')}</select>
+        <button class="secondary" data-fwk-av="del" data-i="${i}" aria-label="Quitar">✕</button></div>`).join('');
+    body.innerHTML = `<div class="card fwk-card"><div class="eyebrow">Entrenos de fútbol</div><h3>¿Qué días entrenas y a qué hora?</h3>
+        <div class="muted" style="font-size:12.5px;margin-top:4px">Con esto tu entrenador encaja la fuerza y te pedimos la valoración cuando acabes.</div>
+        <div class="fwk-avhead"><span>Día</span><span>Hora</span><span>Dura</span><span></span></div>${rows || '<div class="muted" style="margin-top:8px">Sin entrenos de fútbol.</div>'}
+        <button class="secondary" style="width:100%;margin-top:10px" data-fwk-av="add">＋ Añadir entreno</button></div>
+      <div class="card fwk-card"><div class="eyebrow">Fuerza</div><h3>¿Cuánto tiempo puedes dedicar a cada sesión de fuerza?</h3>
+        <div class="fwk-opts c3" style="margin-top:10px">${S.STRENGTH_MINUTES.map(m => `<button class="${a.strength_min === m ? 'on' : ''}" data-fwk-av="min" data-min="${m}"><i>⏱</i>${m} min</button>`).join('')}</div>
+        <div class="muted" style="font-size:12px;margin-top:8px">Si tienes menos tiempo, la sesión se adapta sin quitar lo importante.</div></div>
+      <button class="primary" style="width:100%;margin-top:12px" data-fwk-av="save">Guardar</button>`;
+  }
+  async function saveAvail() {
+    const a = state.availDraft;
+    if (!a.strength_min) { toast('Elige cuánto tiempo tienes para la fuerza.'); return; }
+    if (a.football.some(f => !f.time)) { toast('Pon la hora de cada entreno.'); return; }
+    try {
+      state.avail = (await api('/api/athlete/football/availability', { method: 'PUT', body: JSON.stringify(a) })).availability;
+      toast('Guardado ✓ Tu entrenador ya lo ve.');
+      await refresh(); show('home');
+    } catch (error) { toast(error.message); }
+  }
+  function onAvail(el) {
+    const a = state.availDraft, d = el.dataset;
+    if (d.fwkAv === 'add') { const last = a.football[a.football.length - 1]; a.football.push({ day: last ? (last.day + 2) % 7 : 1, time: last?.time || '19:00', duration_min: last?.duration_min || 90 }); }
+    if (d.fwkAv === 'del') a.football.splice(Number(d.i), 1);
+    if (d.fwkAv === 'min') a.strength_min = Number(d.min);
+    if (d.fwkAv === 'save') { saveAvail(); return; }
+    renderAvail();
   }
 
   // ---------- circuito ----------
@@ -455,9 +512,11 @@
 
   // ---------- eventos ----------
   function onClick(event) {
-    const el = event.target.closest('[data-fwk-back],[data-fwk-rate],[data-fwk-circuit],[data-fwk-act],[data-fwk-ex],[data-fwk-day],[data-fwk-rpe],[data-fwk-body],[data-fwk-mood],[data-fwk-pain],[data-fwk-plevel],[data-fwk-min],[data-fwk-m],[data-fwk-mc],[data-fwk-dict]');
+    const el = event.target.closest('[data-fwk-back],[data-fwk-rate],[data-fwk-circuit],[data-fwk-act],[data-fwk-ex],[data-fwk-day],[data-fwk-rpe],[data-fwk-body],[data-fwk-mood],[data-fwk-pain],[data-fwk-plevel],[data-fwk-min],[data-fwk-m],[data-fwk-mc],[data-fwk-dict],[data-fwk-avail],[data-fwk-av]');
     if (!el) return;
     const d = el.dataset, r = state.rate;
+    if (d.fwkAvail) { openAvail(); return; }
+    if (d.fwkAv) { onAvail(el); return; }
     if (d.fwkBack) { if (d.fwkBack !== 'fwkCircuit') stopTimer(); show(d.fwkBack); return; }
     if (d.fwkRate) { stopTimer(); openRate(d.fwkRate); return; }
     if (d.fwkCircuit) { openCircuit(d.fwkCircuit); return; }
@@ -484,6 +543,8 @@
     }
   }
   function onInput(event) {
+    const avf = event.target.dataset?.fwkAvf;
+    if (avf && state.availDraft) { const f = state.availDraft.football[Number(event.target.dataset.i)]; f[avf] = avf === 'time' ? event.target.value : Number(event.target.value); return; }
     const field = event.target.dataset?.fwkField;
     if (field && state.rate) state.rate[field] = event.target.value;
     const mfield = event.target.dataset?.fwkMfield;

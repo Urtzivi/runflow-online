@@ -178,6 +178,30 @@
       section: text(s.section, 60), sets: num(s.sets, 1, 10, null), rest_sec: num(s.rest_sec, 0, 600, null), effort: text(s.effort, 200),
     };
   }
+  // Lo que dice el deportista: días, hora y duración de sus entrenos de fútbol y tiempo para la fuerza.
+  const STRENGTH_MINUTES = [30, 45, 60];
+  const snapMinutes = value => { const n = Number(value); return Number.isFinite(n) && n > 0 ? STRENGTH_MINUTES.reduce((best, m) => Math.abs(m - n) < Math.abs(best - n) ? m : best, 60) : null; };
+  function sanitizeAvailability(value) {
+    const v = value && typeof value === 'object' ? value : {};
+    const football = (Array.isArray(v.football) ? v.football : []).slice(0, 7).map(f => ({
+      day: Number.isInteger(Number(f?.day)) && Number(f.day) >= 0 && Number(f.day) <= 6 ? Number(f.day) : null, time: time(f?.time), duration_min: num(f?.duration_min, 15, 240, 90),
+    })).filter(f => f.day !== null).sort((a, b) => a.day - b.day || a.time.localeCompare(b.time));
+    return { strength_min: snapMinutes(v.strength_min), football };
+  }
+  // Lleva los entrenos que indica el deportista a la semana tipo (sustituye solo los de fútbol).
+  function applyFootballAvailability(schedule, football) {
+    const clean = sanitizeSchedule(schedule);
+    clean.week = clean.week.map((items, d) => [
+      ...items.filter(i => i.kind !== 'football_training' && !(i.kind === 'rest' && football.some(f => f.day === d))),
+      ...football.filter(f => f.day === d).map(f => ({ kind: 'football_training', time: f.time, duration_min: f.duration_min, place: '', note: '' })),
+    ]);
+    return clean;
+  }
+  function footballFromSchedule(schedule) {
+    const week = Array.isArray(schedule?.week) ? schedule.week : [];
+    return week.flatMap((items, day) => (items || []).filter(i => i.kind === 'football_training').map(i => ({ day, time: i.time || '', duration_min: i.duration_min || 90 })));
+  }
+
   // Respuestas del asistente de programa de fuerza guiado (para mostrar el estado y poder regenerarlo).
   function sanitizeStrengthPlan(value) {
     const v = value && typeof value === 'object' ? value : null;
@@ -185,7 +209,7 @@
     const pick = (x, list, fallback) => list.includes(x) ? x : fallback;
     const days = list => (Array.isArray(list) ? list : []).map(Number).filter(d => Number.isInteger(d) && d >= 0 && d <= 6).filter((d, i, a) => a.indexOf(d) === i).sort().slice(0, 7);
     return {
-      weeks: num(v.weeks, 1, 16, 8), days_per_week: num(v.days_per_week, 1, 3, 2), start: isoDate(v.start),
+      weeks: num(v.weeks, 1, 16, 8), days_per_week: num(v.days_per_week, 1, 3, 2), start: isoDate(v.start), minutes: snapMinutes(v.minutes) || 60,
       season: pick(v.season, ['pre', 'inicio', 'media', 'final'], 'inicio'), focus: pick(v.focus, ['equilibrado', 'aceleracion', 'salto', 'cod', 'prevencion'], 'equilibrado'),
       level: pick(v.level, ['inicial', 'intermedio', 'avanzado'], 'intermedio'), material: pick(v.material, ['corporal', 'mancuernas', 'gimnasio'], 'mancuernas'),
       match_day: v.match_day === null || v.match_day === undefined || v.match_day === '' ? null : num(v.match_day, 0, 6, null),
@@ -351,7 +375,7 @@
 
   return {
     DAYS, DAYS_SHORT, WEEK_KINDS, EVENT_KINDS, RATED_KINDS, KIND_LABEL, IMPORTANCE, BODY, MOOD, STRENGTH_CATEGORIES, STRENGTH_LIBRARY, TEMPLATES,
-    sanitizeSchedule, sanitizeStrength, sanitizeStation, sanitizeLibrary, sanitizeStrengthPlan, resolvePlan, attachRatings, blockMinutes, stationSeconds, timedSeconds, fromTemplate, mdLabel,
+    sanitizeSchedule, sanitizeStrength, sanitizeStation, sanitizeLibrary, sanitizeStrengthPlan, sanitizeAvailability, applyFootballAvailability, footballFromSchedule, STRENGTH_MINUTES, resolvePlan, attachRatings, blockMinutes, stationSeconds, timedSeconds, fromTemplate, mdLabel,
     addDays, dayIndex, mondayOf, daysBetween, todayMadrid, randomId, MATCH_LOAD_FACTOR, sessionLoad,
   };
 }));

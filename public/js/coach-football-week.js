@@ -318,7 +318,8 @@
       const phase = P.phasePlan(plan.weeks)[Math.min(plan.weeks, Math.max(1, week)) - 1];
       const now = week < 1 ? `Empieza el ${shortDate(start)}` : week > plan.weeks ? 'Programa terminado' : `Semana ${week} de ${plan.weeks} · ${P.PHASES[phase.key].label}`;
       return `<div class="fw-plan"><div class="fw-eyebrow">Programa guiado</div><b>${esc(now)}</b>
-        <div class="fw-sub">${plan.weeks} semanas · ${plan.strength_days.map(d => S.DAYS[d]).join(' y ')} · ${esc(P.label('season', plan.season))} · ${esc(P.label('level', plan.level))}</div>
+        <div class="fw-sub">${plan.weeks} semanas · ${plan.minutes || 60} min · ${plan.strength_days.map(d => S.DAYS[d]).join(' y ')} · ${esc(P.label('season', plan.season))} · ${esc(P.label('level', plan.level))}</div>
+        ${ui.data.availability?.strength_min && ui.data.availability.strength_min !== (plan.minutes || 60) ? `<div class="fw-warnbox" style="margin-top:8px">El deportista ahora dice que tiene ${ui.data.availability.strength_min} min para la fuerza. Pulsa “Cambiar respuestas” para adaptar el programa.</div>` : ''}
         ${phase && week >= 1 && week <= plan.weeks ? `<div class="fw-info" style="margin-top:8px">🎯 ${esc(P.PHASES[phase.key].effort)}</div>` : ''}
         <details${guided.some(b => b.id === ui.block) ? ' open' : ''}><summary>${guided.length} sesiones</summary><div class="fw-blocks">${guided.map(blockButton).join('')}</div></details>
         <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><button class="fw-btn small" data-act="wz-edit">Cambiar respuestas</button><button class="fw-btn small danger" data-act="wz-remove">Quitar programa</button></div></div>`;
@@ -384,6 +385,7 @@
     { key: 'days_per_week', q: '¿Cuántos días a la semana va a hacer fuerza?', help: 'Lo ideal son 2 días con 48–72 h entre ellos.' },
     { key: 'football', q: '¿Qué días entrena fútbol y cuándo juega?', help: 'Con esto se eligen los días de fuerza lejos del partido (nunca el día antes ni el después).' },
     { key: 'season', q: '¿En qué momento de la temporada estáis?', help: 'Cambia cuántas series se hacen.' },
+    { key: 'minutes', q: '¿Cuánto tiempo tiene para cada sesión de fuerza?', help: 'La sesión se adapta sin quitar lo importante. Por debajo de 30 min no da para calentar y hacer fuerza con calidad.' },
     { key: 'weeks', q: '¿Cuántas semanas va a durar el programa?', help: 'Se divide en fases: aprender → ganar fuerza → convertirla en potencia → llevarla al fútbol.' },
     { key: 'focus', q: '¿Quieres potenciar algo en concreto?', help: 'Añade algunos ejercicios extra en esa dirección.' },
     { key: 'level', q: '¿Qué nivel tiene?', help: 'Se progresa por técnica, no por edad. Si dudas, elige el más bajo.' },
@@ -391,13 +393,13 @@
     { key: 'summary', q: 'Revisa el programa', help: 'Puedes cambiar los días antes de crearlo. Después podrás editar cualquier ejercicio.' },
   ];
   function wizardDefaults() {
-    const prev = ui.program.strength_plan;
-    if (prev) return { ...prev, strength_days: prev.strength_days || [] };
+    const prev = ui.program.strength_plan, said = ui.data.availability || {};
+    if (prev) return { ...prev, strength_days: prev.strength_days || [], minutes: prev.minutes || said.strength_min || 60 };
     const football = ui.program.schedule.week.map((items, d) => items.some(i => i.kind === 'football_training') ? d : -1).filter(d => d >= 0);
     const matches = ui.program.schedule.events.filter(e => e.kind === 'match').map(e => S.dayIndex(e.date));
     const counts = [0, 0, 0, 0, 0, 0, 0]; matches.forEach(d => { counts[d] += 1; });
     const matchDay = matches.length ? counts.indexOf(Math.max(...counts)) : 5;
-    return { days_per_week: 2, football_days: football, match_day: matchDay, season: 'inicio', weeks: 8, focus: 'equilibrado', level: 'intermedio', material: 'mancuernas', start: P.nextMonday(ui.data.today), strength_days: [] };
+    return { days_per_week: 2, football_days: football, match_day: matchDay, minutes: said.strength_min || 60, season: 'inicio', weeks: 8, focus: 'equilibrado', level: 'intermedio', material: 'mancuernas', start: P.nextMonday(ui.data.today), strength_days: [] };
   }
   function optionButtons(key, value) {
     return `<div class="fw-opts">${P.OPTIONS[key].map(o => `<button class="fw-opt${o.value === value ? ' on' : ''}" data-act="wz-set" data-key="${key}" data-value="${esc(o.value)}"><b>${esc(o.label)}${o.recommended ? ' <span class="fw-tag good">Recomendado</span>' : ''}</b>${o.hint ? `<small>${esc(o.hint)}</small>` : ''}</button>`).join('')}</div>`;
@@ -405,9 +407,12 @@
   function renderWizard() {
     const w = ui.wizard, a = w.a, step = WZ_STEPS[w.step];
     let body = '';
+    const said = ui.data.availability || {};
     if (step.key === 'football') {
-      body = `<div class="fw-f"><label>Días de entreno de fútbol</label><div class="fw-daychips">${S.DAYS_SHORT.map((d, i) => `<button class="${a.football_days.includes(i) ? 'on f' : ''}" data-act="wz-fday" data-day="${i}">${d}</button>`).join('')}</div></div>
+      body = `${said.football?.length && said.updated_at ? `<div class="fw-info" style="margin-bottom:12px">El deportista indicó: ${said.football.map(f => `${S.DAYS[f.day]}${f.time ? ` ${f.time}` : ''} (${f.duration_min} min)`).join(' · ')}</div>` : ''}<div class="fw-f"><label>Días de entreno de fútbol</label><div class="fw-daychips">${S.DAYS_SHORT.map((d, i) => `<button class="${a.football_days.includes(i) ? 'on f' : ''}" data-act="wz-fday" data-day="${i}">${d}</button>`).join('')}</div></div>
         <div class="fw-f" style="margin-top:14px"><label>Día de partido</label><div class="fw-daychips">${S.DAYS_SHORT.map((d, i) => `<button class="${a.match_day === i ? 'on m' : ''}" data-act="wz-match" data-day="${i}">${d}</button>`).join('')}<button class="${a.match_day === null ? 'on' : ''}" data-act="wz-match" data-day="">Sin partido</button></div></div>`;
+    } else if (step.key === 'minutes') {
+      body = `${said.strength_min ? `<div class="fw-info" style="margin-bottom:12px">El deportista dijo que tiene ${said.strength_min} minutos.</div>` : ''}${optionButtons('minutes', a.minutes)}`;
     } else if (step.key === 'weeks') {
       body = `${optionButtons('weeks', a.weeks)}<div class="fw-f" style="margin-top:14px;max-width:220px"><label>Empieza el</label><input type="date" data-wz="start" value="${esc(a.start)}"></div>`;
     } else if (step.key === 'summary') {
@@ -430,13 +435,13 @@
     const days = custom ? a.strength_days : g.days;
     const manual = ui.program.schedule.week.reduce((n, items) => n + items.filter(i => i.kind === 'strength').length, 0);
     const replacing = ui.program.strength.some(b => P.isGuided(b.id));
-    const sections = Object.values(P.SECTIONS);
+    const sections = P.sectionPlan(a.minutes);
     return `<div class="fw-row2" style="margin-top:6px">
       <div>
         <h3>Días de fuerza</h3><div class="fw-sub">Elegidos para dejar 48–72 h entre sesiones y no tocar el día antes ni el después del partido. Toca para cambiarlos.</div>
         <div class="fw-daychips" style="margin-top:8px">${S.DAYS_SHORT.map((d, i) => `<button class="${days.includes(i) ? 'on s' : a.match_day === i ? 'm' : a.football_days.includes(i) ? 'f' : ''}" data-act="wz-sday" data-day="${i}">${d}<small>${esc(P.mdText(i, a.match_day) || (a.football_days.includes(i) ? 'fútbol' : ''))}</small></button>`).join('')}</div>
         ${ui.wizard.invalid ? `<div class="fw-warnbox">Elige ${a.days_per_week} ${a.days_per_week === 1 ? 'día' : 'días'}.</div>` : ''}
-        <h3 style="margin-top:16px">Cada sesión (≈ 60 min)</h3>
+        <h3 style="margin-top:16px">Cada sesión (≈ ${a.minutes || 60} min)</h3>
         <div class="fw-sections">${sections.map(s => `<div><b>${esc(s.name)}</b><span>${s.minutes} min</span></div>`).join('')}</div>
         <h3 style="margin-top:16px">Reglas del programa</h3>
         <ul class="fw-rules">${P.RULES.map(r => `<li>${esc(r)}</li>`).join('')}</ul>
@@ -459,7 +464,7 @@
       case 'wz-next': w.step = Math.min(WZ_STEPS.length - 1, w.step + 1); break;
       case 'wz-set': {
         const key = el.dataset.key, raw = el.dataset.value;
-        w.a[key] = ['days_per_week', 'weeks'].includes(key) ? Number(raw) : raw;
+        w.a[key] = ['days_per_week', 'weeks', 'minutes'].includes(key) ? Number(raw) : raw;
         if (key === 'days_per_week') w.a.strength_days = [];
         if (key !== 'weeks') w.step = Math.min(WZ_STEPS.length - 1, w.step + 1);
         break;
