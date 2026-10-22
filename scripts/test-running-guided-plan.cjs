@@ -110,6 +110,32 @@ test('la fuerza va periodizada y colocada lejos de las sesiones duras',()=>{
     .forEach(s=>assert.match(lib[s.runflow_library_id].mat,/^(Peso corporal|Gomas|Escalon|Suelo)/,`${s.title} sin material`));
 });
 
+test('respeta lo que se puede hacer cada día y deja como propuesta lo que no es obligatorio',()=>{
+  const a={...answers,strength:2,equipment:'gimnasio',other_races:[],long_day:6,days:[
+    {day:0,minutes:60,types:['strength']},{day:1,minutes:60,types:['run']},{day:2,minutes:45,types:['run','strength']},
+    {day:3,minutes:60,types:['run','trail']},{day:4,minutes:60,types:['bike']},{day:5,minutes:45,types:['walk']},{day:6,minutes:120,types:['trail']}]};
+  const st=P.buildStructure(a);
+  assert.ok(Math.max(...st.weeks.map(w=>w.minutes))<=60+45+60+120,'el volumen solo cuenta los días de correr');
+  const allowed=d=>a.days.find(x=>x.day===d).types;
+  for(const week of st.weeks.filter(w=>w.type!=='competition').slice(0,8)){
+    const sessions=P.buildWeekSessions(a,st,week,library);
+    for(const s of sessions){
+      const types=allowed(P.dayIndex(s.workout_date));
+      if(s.is_strength) assert.ok(types.includes('strength'),`${s.title}: fuerza en un día de fuerza`);
+      else if(s.sport==='Ride') assert.ok(types.includes('bike')&&s.optional);
+      else if(s.sport==='Walk') assert.ok(types.includes('walk')&&s.optional);
+      else assert.ok(types.includes('run')||types.includes('trail'),`${s.title}: carrera en un día de correr`);
+      if(P.dayIndex(s.workout_date)===6&&!s.is_strength) assert.match(s.title,/trail|montaña|desnivel/i,'solo trail ese día: por montaña');
+    }
+    const strengthDays=sessions.filter(s=>s.is_strength).map(s=>s.workout_date);
+    sessions.filter(s=>!s.is_strength&&strengthDays.includes(s.workout_date)&&/Rodaje/.test(s.summary)).forEach(s=>assert.ok(s.optional&&/^Opcional/.test(s.title),'rodaje en día de fuerza: opcional'));
+  }
+  const week=st.weeks.find(w=>w.phase==='base'&&w.type!=='deload');
+  const guided=P.buildWeekSessions({...a,equipment:'gimnasio_guiado'},st,week,library).filter(s=>s.is_strength);
+  assert.ok(guided.length);
+  guided.forEach(s=>{assert.match(s.title,/Fuerza guiada en el gimnasio · Ganar fuerza/);assert.match(s.structured_description,/entrenador/);assert.equal(s.runflow_library_id,null)});
+});
+
 test('traduce el bloque principal de la biblioteca a pasos para Intervals',()=>{
   assert.deepEqual(P.parseMain("3x8' a umbral, rec 2'"),{repetitions:3,work_value:8,work_unit:'m',recovery_value:2,recovery_unit:'m'});
   assert.deepEqual(P.parseMain('6x800m @ ritmo 5K, rec 2\''),{repetitions:6,work_value:0.8,work_unit:'km',recovery_value:2,recovery_unit:'m'});
@@ -136,7 +162,7 @@ test('cargas para la API y respuestas guardadas en el macrociclo',()=>{
   const st=P.buildStructure(answers);
   const macro=P.macroPayload(answers,st,'g1');
   assert.equal(macro.name,'Camino a la media maratón');
-  assert.deepEqual(P.readAnswers(macro.notes).days,answers.days);
+  assert.deepEqual(P.readAnswers(macro.notes).days,answers.days.map(d=>({...d,types:P.dayTypes(d)})));
   const goals=P.goalPayloads(answers,st,'s1');
   assert.equal(goals.length,2);
   assert.equal(goals[0].target_time_sec,6300);
@@ -147,5 +173,5 @@ test('cargas para la API y respuestas guardadas en el macrociclo',()=>{
   const workouts=P.buildWeekSessions(answers,st,st.weeks[0],library);
   const micro=P.microPayload(st.mesos[0],st.weeks[0],workouts,answers);
   assert.equal(micro.publication_status,'draft');
-  assert.equal(micro.planned.load,workouts.reduce((s,w)=>s+w.planned_load,0));
+  assert.equal(micro.planned.load,workouts.filter(w=>!w.optional).reduce((s,w)=>s+w.planned_load,0));
 });

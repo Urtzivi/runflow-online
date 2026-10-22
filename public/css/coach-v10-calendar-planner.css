@@ -104,11 +104,18 @@
 }
 
 /* Athlete availability is part of the V10 planning contract. */
-.v9-h-availability-card .v9-av-head { grid-template-columns: 80px minmax(160px, 1fr) minmax(160px, 1fr) minmax(120px, .55fr) minmax(210px, 1fr); gap: 10px; padding: 0 10px 7px; font-size: .68rem; }
-.v9-h-availability-row { grid-template-columns: 80px minmax(160px, 1fr) minmax(160px, 1fr) minmax(120px, .55fr) minmax(210px, 1fr); gap: 10px; border: 1px solid #edf0eb; padding: 10px; }
+.v9-h-availability-card .v9-av-head { grid-template-columns: 80px minmax(0, 1.6fr) 110px minmax(0, 1fr); gap: 10px; padding: 0 10px 7px; font-size: .68rem; }
+.v9-h-availability-row { grid-template-columns: 80px minmax(0, 1.6fr) 110px minmax(0, 1fr); gap: 10px; border: 1px solid #edf0eb; padding: 10px; }
 .v9-h-availability-row label { font-size: .74rem; }
 .v9-h-availability-row select, .v9-h-availability-row input[type=number] { width: 100%; margin-top: 4px; }
 .v9-h-availability-row b { font-size: .88rem; }
+.v9h-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.v9-h-availability-row .v9h-rule { min-width: 0; overflow-wrap: anywhere; }
+.v9h-chip { display: inline-flex; align-items: center; cursor: pointer; }
+.v9h-chip input { position: absolute; opacity: 0; pointer-events: none; }
+.v9h-chip span { border: 1px solid #dde1da; background: #fff; border-radius: 999px; padding: 4px 9px; font-size: .74rem; font-weight: 700; color: #5d6b6e; }
+.v9h-chip input:checked + span { background: #e4f4cc; border-color: #6aa51c; color: #2e4d0d; }
+.v9h-chip input:focus-visible + span { outline: 2px solid #6aa51c; outline-offset: 1px; }
 .v9h-minutes { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 6px; }
 .v9h-minutes i { color: #707970; font-style: normal; }
 .v9h-rule { color: #667168; font-size: .74rem; }
