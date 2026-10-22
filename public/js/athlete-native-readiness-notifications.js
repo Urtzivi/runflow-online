@@ -4,7 +4,7 @@
   if (window.__runflowNativeReadinessNotificationsInstalled) return;
   window.__runflowNativeReadinessNotificationsInstalled = true;
 
-  const REMINDER_HOUR = 8;
+  const REMINDER_HOUR = 10;
   const REMINDER_MINUTE = 0;
   const DAYS_AHEAD = 14;
 

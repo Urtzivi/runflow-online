@@ -1,6 +1,6 @@
 // RunFlow Fútbol · avisos en el móvil para valorar los entrenos de fútbol, la fuerza y el partido.
 // Entrenos y fuerza: a media tarde (o 30 min después de acabar si terminan más tarde). Partido: 1 h después de terminar.
-// El "¿Cómo te encuentras hoy?" de antes de entrenar lo programa athlete-native-readiness-notifications.js (8:00).
+// El "¿Cómo te encuentras hoy?" de antes de entrenar lo programa athlete-native-readiness-notifications.js (10:00).
 // Igual que el aviso de readiness (athlete-native-readiness-notifications.js): notificaciones locales de la app nativa.
 // Se reprograman cada vez que la app carga la semana (evento runflow:football-week) y quitan las sesiones ya valoradas.
 (() => {
