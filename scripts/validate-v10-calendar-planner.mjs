@@ -19,9 +19,9 @@ const engine = read('v9-engine-hook.js');
 assert(read('public/js/coach-v10-calendar-planner.js').includes('data-v10-action="delete-season"'), 'Falta el botón Borrar temporada del planificador V10.');
 
 for (const html of [coach, beta]) {
-  assert(html.includes('/css/coach-v10-calendar-planner.css?v=10.2.1'), 'Falta cargar el CSS del planificador V10.');
+  assert(html.includes('/css/coach-v10-calendar-planner.css?v=10.3.0'), 'Falta cargar el CSS del planificador V10.');
   assert(html.includes('/js/coach-v10-calendar-planner.js?v=10.5.0'), 'Falta cargar el JavaScript del planificador V10.');
-  assert(html.includes('/js/coach-v9-profile-availability.js?v=9.4.7'), 'Falta cargar la disponibilidad semanal actualizada.');
+  assert(html.includes('/js/coach-v9-profile-availability.js?v=9.5.0'), 'Falta cargar la disponibilidad semanal actualizada.');
   assert(html.includes('/js/coach-v9-season-planner.js?v=9.3.1'), 'Falta cargar la corrección de semanas del deportista.');
 }
 
@@ -44,7 +44,7 @@ assert(styles.includes('.v10-meso-overview'), 'Faltan los estilos del listado de
 assert(base.includes('Correo de acceso Athlete'), 'La ficha no identifica el correo de acceso del deportista.');
 assert(base.includes('v9HierarchyAvailability'), 'La matriz semanal no está integrada en el cuerpo principal de la ficha.');
 assert(base.includes('Notas adicionales de disponibilidad'), 'El texto libre debe distinguirse de la disponibilidad estructurada.');
-for (const marker of ['activity_type', 'activity_types', 'modesFromStored', 'data-v9h-mode-secondary', 'configured: true', 'Gimnasio / fuerza externa', 'validateWorkout', 'Elige una o dos opciones para cada día']) {
+for (const marker of ['activity_type', 'activity_types', 'modesFromStored', 'data-v9h-type', 'configured: true', 'Gimnasio / fuerza externa', 'validateWorkout', 'Marca todo lo que puede hacer cada día']) {
   assert(availability.includes(marker), `Disponibilidad semanal incompleta: ${marker}`);
 }
 assert(availability.includes('v9hRetryAvailability'), 'La disponibilidad no permite reintentar si falla la carga.');

@@ -12,8 +12,12 @@
     bike: 'Bici',
     strength: 'Fuerza programada por RunFlow',
     gym: 'Gimnasio / fuerza externa',
+    walk: 'Paseo',
     flexible: 'Flexible',
   };
+  // Opciones que se pueden marcar a la vez en cada día.
+  const CHOICES = ['run', 'trail', 'bike', 'strength', 'gym', 'walk'];
+  const CHIP = { run: 'Correr', trail: 'Trail', bike: 'Bici', strength: 'Fuerza RunFlow', gym: 'Fuerza en gimnasio (guiada)', walk: 'Paseo' };
   let current = null;
   let currentAthleteId = '';
 
@@ -58,55 +62,54 @@
   }
 
   function modesFromStored(stored = {}, strengthMode = 'runflow') {
-    const explicit = Array.isArray(stored.activity_types) ? stored.activity_types.filter(mode => MODES[mode] && !['undefined', 'unavailable', 'flexible'].includes(mode)).slice(0, 2) : [];
+    const explicit = Array.isArray(stored.activity_types) ? stored.activity_types.filter(mode => MODES[mode] && !['undefined', 'unavailable', 'flexible'].includes(mode)) : [];
     if (explicit.length) return explicit;
     const legacy = modeFromStored(stored, strengthMode);
     return ['undefined', 'unavailable', 'flexible'].includes(legacy) ? [legacy] : [legacy];
   }
 
+  function selectedChoices(modes) {
+    if (modes[0] === 'flexible') return ['run', 'bike', 'strength'];
+    return modes.filter(mode => CHOICES.includes(mode));
+  }
+
   function dayRow(day, stored = {}, strengthMode = 'runflow') {
     const modes = modesFromStored(stored, strengthMode);
-    const mode = modes[0];
-    const second = modes[1] || '';
-    const disabled = mode === 'unavailable' || mode === 'undefined';
-    return `<div class="v9-h-availability-row" data-v9h-day="${day[0]}">
+    const selected = selectedChoices(modes);
+    const state = selected.length ? selected : [modes[0] === 'undefined' ? 'undefined' : 'unavailable'];
+    return `<div class="v9-h-availability-row" data-v9h-day="${day[0]}" data-v9h-defined="${modes[0] === 'undefined' ? 'no' : 'yes'}">
       <b>${day[1]}</b>
-      <label class="v9h-mode">Qué puede hacer
-        <select data-v9h-mode>
-          ${Object.entries(MODES).map(([value, label]) => `<option value="${value}" ${mode === value ? 'selected' : ''}>${label}</option>`).join('')}
-        </select>
-      </label>
-      <label class="v9h-mode">Segunda opción
-        <select data-v9h-mode-secondary ${disabled || mode === 'flexible' ? 'disabled' : ''}>
-          <option value="">Ninguna</option>
-          ${Object.entries(MODES).filter(([value]) => !['undefined', 'unavailable', 'flexible'].includes(value)).map(([value, label]) => `<option value="${value}" ${second === value ? 'selected' : ''} ${mode === value ? 'disabled' : ''}>${label}</option>`).join('')}
-        </select>
-      </label>
+      <div class="v9h-mode v9h-chips" role="group" aria-label="Qué puede hacer el ${day[1].toLowerCase()}">
+        ${CHOICES.map(value => `<label class="v9h-chip"><input type="checkbox" data-v9h-type value="${value}" ${selected.includes(value) ? 'checked' : ''}><span>${CHIP[value]}</span></label>`).join('')}
+      </div>
       <label>Tiempo máximo
-        <span class="v9h-minutes"><input type="number" min="5" max="1440" step="5" data-v9h-minutes value="${stored.max_minutes ?? ''}" ${disabled ? 'disabled' : ''}><i>min</i></span>
+        <span class="v9h-minutes"><input type="number" min="5" max="1440" step="5" data-v9h-minutes value="${stored.max_minutes ?? ''}" ${selected.length ? '' : 'disabled'}><i>min</i></span>
       </label>
-      <span class="v9h-rule">${ruleText(modes, stored.max_minutes)}</span>
+      <span class="v9h-rule">${ruleText(state, stored.max_minutes)}</span>
     </div>`;
   }
+
+  const rowChoices = row => qa('[data-v9h-type]:checked', row).map(input => input.value);
 
   function ruleText(value, minutes) {
     const modes = Array.isArray(value) ? value.filter(Boolean) : [value];
     const mode = modes[0];
     if (mode === 'undefined') return 'Completa este día';
-    if (mode === 'unavailable') return 'RunFlow no colocará ninguna sesión';
+    if (!mode || mode === 'unavailable') return 'No entrena: RunFlow no colocará ninguna sesión';
     if (modes.length > 1) return `${modes.map(item => MODES[item]).join(' o ')}${minutes ? ` · máximo ${minutes} min` : ''}`;
     if (mode === 'gym') return 'Reserva exclusiva: no admite carrera ni series';
     if (mode === 'strength') return 'Solo fuerza creada por RunFlow';
     if (mode === 'trail') return 'Solo carrera con acceso a montaña';
     if (mode === 'run') return 'Solo sesiones de carrera';
     if (mode === 'bike') return 'Solo sesiones de bici';
+    if (mode === 'walk') return 'Solo paseo (recuperación)';
     return minutes ? `Cualquier actividad compatible hasta ${minutes} min` : 'Cualquier actividad compatible';
   }
 
   function modesToDay(day, modes, maxMinutes) {
-    const clean = [...new Set(modes.filter(Boolean))].slice(0, 2);
-    const exclusive = clean[0] === 'unavailable' || clean[0] === 'undefined';
-    const allowed = exclusive ? clean.slice(0, 1) : clean;
+    const clean = [...new Set(modes.filter(Boolean))];
+    const exclusive = !clean.length || clean[0] === 'unavailable' || clean[0] === 'undefined';
+    const allowed = exclusive ? ['unavailable'] : clean;
     const legacyMode = allowed.length > 1 ? 'flexible' : allowed[0];
     const base = {
       day,
@@ -118,6 +121,7 @@
       strength: allowed.some(mode => ['strength', 'gym', 'flexible'].includes(mode)),
       gym: allowed.includes('gym'),
       mountain: allowed.includes('trail'),
+      walk: allowed.includes('walk'),
       max_minutes: legacyMode === 'unavailable' ? null : maxMinutes,
     };
     return base;
@@ -133,6 +137,7 @@
     const declaredSport = String(workout?.sport || workout?.type || '').toLowerCase();
     const title = String(workout?.title || '').toLowerCase();
     if (workout?.is_strength || /strength|fuerza|gym|gimnasio/.test(declaredSport)) return 'strength';
+    if (/walk|paseo|caminar/.test(declaredSport)) return 'walk';
     if (/ride|bike|cycling|bici|ciclismo/.test(declaredSport)) return 'bike';
     if (/trail|mountain|montaña/.test(declaredSport)) return 'trail';
     if (/run|running|correr|carrera/.test(declaredSport)) return /trail|montaña|mountain|desnivel/.test(title) ? 'trail' : 'run';
@@ -152,10 +157,11 @@
     if (!day) return { ok: false, error: `La disponibilidad del ${dayName} no está definida en la ficha.` };
     const modes = modesFromStored(day, data?.strength_mode);
     const mode = modes[0];
+    const multiple = Array.isArray(day.activity_types) && day.activity_types.length;
     const title = workout?.title || 'La sesión';
     if (mode === 'unavailable' || day.can_train === false) return { ok: false, error: `No puedes colocar “${title}” el ${dayName}: el deportista no entrena ese día.` };
     const kind = workoutKind(workout);
-    const allowed = modes.length > 1
+    const allowed = modes.length > 1 || multiple
       ? modes.some(item => item === kind || (kind === 'strength' && item === 'gym'))
       : mode === 'flexible'
       ? (kind === 'strength' ? day.strength !== false : kind === 'bike' ? day.bike === true : day.run !== false)
@@ -163,6 +169,7 @@
         : mode === 'trail' ? kind === 'trail'
           : mode === 'bike' ? kind === 'bike'
             : ['strength', 'gym'].includes(mode) ? kind === 'strength'
+              : mode === 'walk' ? kind === 'walk'
               : false;
     if (!allowed) return { ok: false, error: `No puedes colocar “${title}” el ${dayName}: ese día admite ${modes.map(item => MODES[item].toLowerCase()).join(' o ')}.` };
     const duration = Number(workout?.planned_duration_min);
@@ -217,34 +224,28 @@
     const complete = DAYS.every(day => modeFromStored(map.get(day[0]) || {}, data.strength_mode) !== 'undefined');
     card.innerHTML = `<div class="card-head"><div><p class="eyebrow">Disponibilidad semanal</p><h2>Qué puede hacer y cuánto tiempo tiene cada día</h2><p>Es una restricción del planificador, no una simple nota.</p></div><span class="badge ${complete ? '' : 'pending'}">${complete ? 'Completa' : 'Pendiente'}</span></div>
       <div class="card-body">
-        <p class="v9-h-profile-note">Elige una o dos opciones para cada día. Si marcas running y trail, ambas serán válidas; cualquier otra actividad quedará bloqueada. El tiempo máximo se comprueba también en sesiones manuales, importadas y antes de publicar.</p>
-        <div class="v9-av-head"><span>Día</span><span>Primera opción</span><span>Segunda opción</span><span>Tiempo máximo</span><span>Regla aplicada</span></div>
+        <p class="v9-h-profile-note">Marca todo lo que puede hacer cada día (una o varias opciones). Si no marcas nada, ese día no entrena. Lo que no esté marcado quedará bloqueado. El tiempo máximo se comprueba también en sesiones manuales, importadas y antes de publicar.</p>
+        <div class="v9-av-head"><span>Día</span><span>Qué puede hacer</span><span>Tiempo máximo</span><span>Regla aplicada</span></div>
         ${DAYS.map(day => dayRow(day, map.get(day[0]) || {}, data.strength_mode)).join('')}
         <div class="v9-load-ceiling"><label>Carga máxima semanal actual<input id="v9hMaxLoad" type="number" min="0" value="${data.max_load ?? ''}"></label><label>Fecha efectiva<input id="v9hEffectiveDate" type="date" value="${new Date().toISOString().slice(0, 10)}"></label></div>
         <div class="actions" style="margin-top:14px"><button id="v9hSaveAvailability" class="btn primary" type="button">Guardar disponibilidad</button><span id="v9hAvailabilityStatus" class="muted small"></span></div>
       </div>`;
     q('#v9DynamicProfile')?.classList.add('hidden');
-    qa('[data-v9h-mode]', card).forEach(select => {
-      select.addEventListener('change', () => {
-        const row = select.closest('[data-v9h-day]');
-        const input = q('[data-v9h-minutes]', row);
-        const secondary = q('[data-v9h-mode-secondary]', row);
-        const disabled = ['undefined', 'unavailable'].includes(select.value);
-        input.disabled = disabled;
-        secondary.disabled = disabled || select.value === 'flexible';
-        if (secondary.value === select.value || disabled || select.value === 'flexible') secondary.value = '';
-        qa('option', secondary).forEach(option => { if (option.value) option.disabled = option.value === select.value; });
-        if (select.value === 'unavailable') input.value = '';
-        q('.v9h-rule', row).textContent = ruleText([select.value, secondary.value], input.value);
-      });
-    });
-    qa('[data-v9h-mode-secondary]', card).forEach(select => select.addEventListener('change', () => {
-      const row = select.closest('[data-v9h-day]');
-      q('.v9h-rule', row).textContent = ruleText([q('[data-v9h-mode]', row).value, select.value], q('[data-v9h-minutes]', row).value);
+    qa('[data-v9h-type]', card).forEach(input => input.addEventListener('change', () => {
+      const row = input.closest('[data-v9h-day]');
+      const minutes = q('[data-v9h-minutes]', row);
+      // Fuerza RunFlow y fuerza guiada en gimnasio son dos formas de lo mismo: solo una por día.
+      if (input.checked && ['strength', 'gym'].includes(input.value)) qa('[data-v9h-type]', row).forEach(other => { if (other !== input && ['strength', 'gym'].includes(other.value)) other.checked = false; });
+      const choices = rowChoices(row);
+      row.dataset.v9hDefined = 'yes';
+      minutes.disabled = !choices.length;
+      if (!choices.length) minutes.value = '';
+      q('.v9h-rule', row).textContent = ruleText(choices.length ? choices : ['unavailable'], minutes.value);
     }));
     qa('[data-v9h-minutes]', card).forEach(input => input.addEventListener('input', () => {
       const row = input.closest('[data-v9h-day]');
-      q('.v9h-rule', row).textContent = ruleText([q('[data-v9h-mode]', row).value, q('[data-v9h-mode-secondary]', row).value], input.value);
+      const choices = rowChoices(row);
+      q('.v9h-rule', row).textContent = ruleText(choices.length ? choices : ['unavailable'], input.value);
     }));
     q('#v9hSaveAvailability').onclick = save;
   }
@@ -253,20 +254,15 @@
     const id = athleteId();
     if (!id) return;
     const rows = qa('[data-v9h-day]', q('#v9HierarchyAvailability'));
-    const incomplete = rows.find(row => q('[data-v9h-mode]', row).value === 'undefined');
-    if (incomplete) return notify(`Define qué ocurre el ${DAYS[Number(incomplete.dataset.v9hDay) - 1][1].toLowerCase()}.`, 'error');
     for (const row of rows) {
-      const mode = q('[data-v9h-mode]', row).value;
       const value = q('[data-v9h-minutes]', row).value;
-      if (mode !== 'unavailable' && (!value || Number(value) <= 0)) {
+      if (rowChoices(row).length && (!value || Number(value) <= 0)) {
         return notify(`Indica el tiempo disponible del ${DAYS[Number(row.dataset.v9hDay) - 1][1].toLowerCase()}.`, 'error');
       }
     }
     const days = rows.map(row => {
-      const mode = q('[data-v9h-mode]', row).value;
       const minutes = q('[data-v9h-minutes]', row).value === '' ? null : Number(q('[data-v9h-minutes]', row).value);
-      const secondary = q('[data-v9h-mode-secondary]', row).value;
-      return modesToDay(Number(row.dataset.v9hDay), [mode, secondary], minutes);
+      return modesToDay(Number(row.dataset.v9hDay), rowChoices(row), minutes);
     });
     const externalStrengthDays = days.filter(item => item.activity_types?.includes('gym')).map(item => item.day);
     const payload = {

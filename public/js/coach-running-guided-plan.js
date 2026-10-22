@@ -45,29 +45,28 @@
     catch { ui.profile = null; }
     return ui.profile;
   }
+  // Ficha → días del asistente. La ficha guarda 'gym' para la fuerza con entrenador.
+  const FROM_PROFILE = { run: 'run', trail: 'trail', bike: 'bike', strength: 'strength', gym: 'strength', walk: 'walk' };
   function profileDays(profile) {
     const days = profile?.availability?.days || [];
     const configured = profile?.availability?.configured || days.some(day => day && (day.activity_type || Object.prototype.hasOwnProperty.call(day, 'can_train')));
     if (!configured) return null;
     return [0, 1, 2, 3, 4, 5, 6].map(index => {
       const stored = days.find(day => Number(day.day) === index + 1) || {};
-      const types = Array.isArray(stored.activity_types) && stored.activity_types.length ? stored.activity_types : [stored.activity_type || (stored.can_train === false ? 'unavailable' : 'flexible')];
-      const runs = stored.can_train !== false && stored.run !== false && types.some(type => ['run', 'trail', 'flexible'].includes(type));
-      return {
-        day: index,
-        minutes: runs ? Number(stored.max_minutes) || 60 : 0,
-        trail: types.includes('trail') || types.includes('flexible') || stored.mountain === true,
-        strength: types.some(type => ['strength', 'flexible'].includes(type)) || stored.strength === true,
-      };
+      const listed = Array.isArray(stored.activity_types) && stored.activity_types.length ? stored.activity_types : [stored.activity_type || (stored.can_train === false ? 'unavailable' : 'flexible')];
+      let types = [...new Set(listed.flatMap(type => type === 'flexible' ? ['run', 'strength'] : FROM_PROFILE[type] ? [FROM_PROFILE[type]] : []))];
+      if (stored.can_train === false) types = [];
+      return { day: index, minutes: types.length ? Number(stored.max_minutes) || 60 : 0, types };
     });
   }
+  const guidedGym = profile => (profile?.availability?.days || []).some(day => (day.activity_types || []).includes('gym') || day.activity_type === 'gym');
   function defaults() {
     const fromProfile = profileDays(ui.profile);
-    const days = fromProfile || [0, 1, 2, 3, 4, 5, 6].map(day => ({ day, minutes: [1, 3, 6].includes(day) ? (day === 6 ? 90 : 60) : 0, trail: true, strength: true }));
-    const longest = days.slice().sort((a, b) => b.minutes - a.minutes)[0];
+    const days = fromProfile || [0, 1, 2, 3, 4, 5, 6].map(day => ({ day, minutes: [1, 3, 6].includes(day) ? (day === 6 ? 90 : 60) : 0, types: [1, 3].includes(day) ? ['run', 'strength'] : day === 6 ? ['run'] : [] }));
+    const longest = days.filter(P.runsOn).sort((a, b) => b.minutes - a.minutes)[0];
     return {
       race: '', race_date: '', race_name: '', goal_mode: 'terminar', target_time: '', other_races: [],
-      level: 'regular', injuries: '', days, long_day: longest?.minutes ? longest.day : 6, strength: 2, equipment: 'gimnasio',
+      level: 'regular', injuries: '', days, long_day: longest ? longest.day : 6, strength: 2, equipment: guidedGym(ui.profile) ? 'gimnasio_guiado' : 'gimnasio',
       start_date: P.nextMonday(P.addDays(today(), 1)), from_profile: Boolean(fromProfile),
     };
   }
@@ -111,12 +110,16 @@
         <label class="rgp-f">¿Alguna molestia o lesión a vigilar? (opcional)<input type="text" data-rgp-field="injuries" value="${esc(a.injuries)}" placeholder="Fascitis el año pasado, rodilla derecha…"></label>`;
     } else if (step.key === 'week') {
       body = `${a.from_profile ? '<div class="rgp-info">Rellenado con la disponibilidad de su ficha. Si lo cambias aquí, también se actualizará la ficha.</div>' : '<div class="rgp-info">Su ficha todavía no tiene disponibilidad: lo que marques aquí se guardará en ella.</div>'}
+        <h3>¿Qué puede hacer cada día?</h3>
+        <div class="rgp-sub">Marca una o varias cosas por día y el tiempo que tiene. RunFlow solo pone carrera donde marques correr o trail, y fuerza donde marques fuerza. Bici y paseo quedan como propuesta.</div>
         <div class="rgp-days">${a.days.map(day => `<div class="rgp-day${day.minutes ? ' on' : ''}"><b>${P.DAYS[day.day]}</b>
-          <select data-rgp-day="${day.day}">${MINUTES.map(m => `<option value="${m}" ${Number(day.minutes) === m ? 'selected' : ''}>${m ? `${m} min` : 'No corre'}</option>`).join('')}</select>
-          ${day.minutes ? `<button type="button" class="rgp-long${Number(a.long_day) === day.day ? ' on' : ''}" data-rgp-long="${day.day}">${Number(a.long_day) === day.day ? '★ Tirada larga' : 'Tirada larga aquí'}</button>` : ''}</div>`).join('')}</div>
+          <div class="rgp-acts">${Object.entries(P.ACTIVITIES).map(([type, label]) => `<button type="button" class="rgp-act${P.canDo(day, type) ? ' on' : ''}" data-rgp-type="${type}" data-day="${day.day}" aria-pressed="${P.canDo(day, type)}">${label}</button>`).join('')}</div>
+          <select data-rgp-day="${day.day}" aria-label="Tiempo del ${P.DAYS[day.day].toLowerCase()}">${MINUTES.map(m => `<option value="${m}" ${Number(day.minutes) === m ? 'selected' : ''}>${m ? `${m} min` : 'Descansa'}</option>`).join('')}</select>
+          ${P.runsOn(day) ? `<button type="button" class="rgp-long${Number(a.long_day) === day.day ? ' on' : ''}" data-rgp-long="${day.day}">${Number(a.long_day) === day.day ? '★ Tirada larga' : 'Tirada larga aquí'}</button>` : ''}</div>`).join('')}</div>
         <h3>Fuerza</h3>
         <div class="rgp-sub">La fuerza va dentro del plan: cambia en cada bloque (aprender, ganar fuerza, potencia, mantener) y se coloca sola para no quitar piernas a las sesiones importantes.</div>
         <div class="rgp-opts rgp-opts3" style="margin-top:8px">${option('strength', 0, 'Ninguna', 'La hace por su cuenta. Corre más riesgo de lesión.', a.strength)}${option('strength', 1, '1 a la semana', 'Lo mínimo para prevenir lesiones.', a.strength)}${option('strength', 2, '2 a la semana', 'Lo ideal: mejora la economía de carrera.', a.strength, ' <span class="rgp-tag">Recomendado</span>')}</div>
+        ${a.strength && strengthDayCount(a) < a.strength ? `<div class="rgp-warn">${strengthDayCount(a) ? `Solo hay ${strengthDayCount(a)} ${strengthDayCount(a) === 1 ? 'día' : 'días'} con Fuerza marcada: RunFlow pondrá como mucho ${strengthDayCount(a) === 1 ? 'una sesión' : 'esas'}.` : 'Marca Fuerza en algún día para que RunFlow la pueda colocar.'}</div>` : ''}
         ${a.strength ? `<h3>¿Dónde la hace?</h3><div class="rgp-opts rgp-opts3">${Object.entries(P.EQUIPMENT).map(([key, item]) => option('equipment', key, item.label, item.hint, a.equipment)).join('')}</div>` : ''}
         <label class="rgp-f rgp-narrow">El plan empieza el lunes<input type="date" data-rgp-field="start_date" value="${esc(a.start_date)}" step="7"></label>`;
     } else body = renderSummary();
@@ -135,6 +138,7 @@
   function levelHint(key) {
     return ({ nuevo: 'Corre poco o lleva menos de 6 meses. Sesiones suaves y una sola de calidad.', regular: 'Corre 3-4 días por semana desde hace tiempo.', experto: 'Ha preparado carreras antes y aguanta 2 sesiones de calidad.' })[key] || '';
   }
+  const strengthDayCount = a => a.days.filter(day => P.canDo(day, 'strength')).length;
   function stepError() {
     const a = ui.a, key = STEPS[ui.step].key;
     if (key === 'race' && !a.race) return 'Elige una carrera.';
@@ -144,8 +148,9 @@
       if (a.goal_mode === 'marca' && a.target_time && !P.parseTime(a.target_time)) return 'Escribe el tiempo como 1:45:00 o 45:00.';
     }
     if (key === 'week') {
-      const days = a.days.filter(day => day.minutes > 0).length;
-      if (days < 2) return 'Marca al menos 2 días para correr.';
+      const days = a.days.filter(P.runsOn).length;
+      if (days < 2) return 'Marca correr o trail en al menos 2 días.';
+      if (a.strength && !strengthDayCount(a)) return 'Marca Fuerza en algún día, o elige "Ninguna" en fuerza.';
     }
     return '';
   }
@@ -159,7 +164,7 @@
     ui.preview = { structure, sessions };
     const seasons = (appState()?.seasons || []).filter(season => season.start_date <= structure.end && season.end_date >= structure.start);
     const total = structure.weeks.length;
-    const trainDays = a.days.filter(day => day.minutes > 0).map(day => P.DAYS_SHORT[day.day]).join(', ');
+    const trainDays = a.days.filter(P.runsOn).map(day => P.DAYS_SHORT[day.day]).join(', ');
     return `<div class="rgp-lead">${esc(structure.summary)}</div>
       ${structure.warnings.map(text => `<div class="rgp-warn">${esc(text)}</div>`).join('')}
       ${seasons.length ? `<div class="rgp-warn">Ya tiene ${seasons.length === 1 ? `la temporada “${esc(seasons[0].name)}”` : `${seasons.length} temporadas`} en esas fechas. Si alguna semana ya está planificada, RunFlow no la pisará y te avisará.</div>` : ''}
@@ -178,8 +183,8 @@
       <h3>Las ${SESSION_WEEKS} primeras semanas</h3>
       <div class="rgp-sub">Sesiones de la biblioteca RunFlow con la intensidad en RPE (del 1 al 10). El resto de semanas se preparan más adelante, según cómo vaya.</div>
       ${!ui.library ? '<div class="rgp-info">Cargando la biblioteca de sesiones…</div>' : sessions.map(({ week, items }) => `<div class="rgp-week"><div class="rgp-week-head"><b>Semana ${week.index} · ${esc(P.formatDate(week.start))} – ${esc(P.formatDate(week.end))}</b><span>${esc(week.label)} · ≈ ${week.minutes} min</span></div>
-        ${items.length ? `<table class="rgp-table"><tbody>${items.map(item => `<tr><td>${P.DAYS_SHORT[P.dayIndex(item.workout_date)]}</td><td><b>${esc(item.title)}</b><small>${esc(item.summary)}</small></td><td>${item.planned_duration_min || '—'} min</td></tr>`).join('')}</tbody></table>` : '<div class="rgp-sub">Sin sesiones: revisa los días disponibles.</div>'}</div>`).join('')}
-      <div class="rgp-info">Se guardará en su ficha que entrena ${esc(trainDays)}${a.strength ? `, con hasta ${a.strength} ${a.strength === 1 ? 'sesión' : 'sesiones'} de fuerza a la semana (${esc(P.EQUIPMENT[a.equipment]?.label.toLowerCase() || '')})` : ''}. Si pierde días o semanas, el plan se podrá recalcular desde ese punto sin mover la carrera.</div>`;
+        ${items.length ? `<table class="rgp-table"><tbody>${items.map(item => `<tr${item.optional ? ' class="rgp-optional"' : ''}><td>${P.DAYS_SHORT[P.dayIndex(item.workout_date)]}</td><td><b>${esc(item.title)}</b><small>${esc(item.summary)}</small></td><td>${item.planned_duration_min || '—'} min</td></tr>`).join('')}</tbody></table>` : '<div class="rgp-sub">Sin sesiones: revisa los días disponibles.</div>'}</div>`).join('')}
+      <div class="rgp-info">Se guardará en su ficha lo que puede hacer cada día: corre ${esc(trainDays)}${strengthDayCount(a) ? `, fuerza ${esc(a.days.filter(day => P.canDo(day, 'strength')).map(day => P.DAYS_SHORT[day.day]).join(', '))}` : ''}${a.strength ? `, con hasta ${a.strength} ${a.strength === 1 ? 'sesión' : 'sesiones'} de fuerza a la semana (${esc(P.EQUIPMENT[a.equipment]?.label.toLowerCase() || '')})` : ''}. Si pierde días o semanas, el plan se podrá recalcular desde ese punto sin mover la carrera.</div>`;
   }
 
   // ---------- Eventos ----------
@@ -193,7 +198,7 @@
     loadLibrary().then(() => { if (ui.open && STEPS[ui.step].key === 'summary') render(); }).catch(error => { ui.status = `Error: no se pudo cargar la biblioteca (${error.message}).`; render(); });
   }
   function onClick(event) {
-    const el = event.target.closest('[data-rgp-set],[data-rgp-act],[data-rgp-long]');
+    const el = event.target.closest('[data-rgp-set],[data-rgp-act],[data-rgp-long],[data-rgp-type]');
     if (!el || ui.busy) return;
     const a = ui.a;
     if (el.dataset.rgpSet) {
@@ -203,6 +208,14 @@
       render(); return;
     }
     if (el.dataset.rgpLong) { a.long_day = Number(el.dataset.rgpLong); render(); return; }
+    if (el.dataset.rgpType) {
+      const day = a.days.find(item => item.day === Number(el.dataset.day)), type = el.dataset.rgpType;
+      const types = P.dayTypes(day);
+      day.types = types.includes(type) && day.minutes ? types.filter(item => item !== type) : [...new Set([...(day.minutes ? types : []), type])];
+      if (day.types.length && !day.minutes) day.minutes = 60;
+      if (!day.types.length) day.minutes = 0;
+      fixLongDay(a); render(); return;
+    }
     const act = el.dataset.rgpAct;
     if (act === 'close') { ui.open = false; render(); return; }
     if (act === 'back') { ui.step = Math.max(0, ui.step - 1); ui.status = ''; render(); return; }
@@ -218,10 +231,16 @@
     if (el.dataset.rgpDay !== undefined) {
       const day = a.days.find(item => item.day === Number(el.dataset.rgpDay));
       day.minutes = Number(el.value);
-      if (!day.minutes && Number(a.long_day) === day.day) { const longest = a.days.slice().sort((x, y) => y.minutes - x.minutes)[0]; a.long_day = longest?.day ?? 6; }
-      render(); return;
+      if (!day.minutes) day.types = [];
+      else if (!P.dayTypes(day).length) day.types = ['run'];
+      fixLongDay(a); render(); return;
     }
     if (el.dataset.rgpOther !== undefined) { a.other_races[Number(el.dataset.rgpOther)][el.dataset.key] = el.value; render(); }
+  }
+  function fixLongDay(a) {
+    if (a.days.some(day => day.day === Number(a.long_day) && P.runsOn(day))) return;
+    const longest = a.days.filter(P.runsOn).sort((x, y) => y.minutes - x.minutes)[0];
+    a.long_day = longest ? longest.day : 6;
   }
   function onInput(event) {
     const el = event.target;
@@ -230,16 +249,20 @@
   }
 
   // ---------- Crear ----------
+  // Asistente → ficha. Mismo formato que la disponibilidad de la ficha (activity_types + banderas antiguas).
   function availabilityPayload(a) {
-    const stored = ui.profile?.availability?.days || [];
     const days = a.days.map(day => {
-      const previous = stored.find(item => Number(item.day) === day.day + 1);
-      if (!day.minutes) return { day: day.day + 1, activity_types: ['unavailable'], activity_type: 'unavailable', can_train: false, run: false, bike: false, strength: false, gym: false, mountain: false, max_minutes: null };
-      const prevRuns = previous && previous.can_train !== false && previous.run !== false;
-      if (prevRuns) return { ...previous, max_minutes: day.minutes };
-      return { day: day.day + 1, activity_types: ['flexible'], activity_type: 'flexible', can_train: true, run: true, bike: true, strength: true, gym: false, mountain: true, max_minutes: day.minutes };
+      const types = P.dayTypes(day).map(type => type === 'strength' && a.equipment === 'gimnasio_guiado' ? 'gym' : type);
+      if (!day.minutes || !types.length) return { day: day.day + 1, activity_types: ['unavailable'], activity_type: 'unavailable', can_train: false, run: false, bike: false, strength: false, gym: false, mountain: false, walk: false, max_minutes: null };
+      return {
+        day: day.day + 1, activity_types: types, activity_type: types.length > 1 ? 'flexible' : types[0], can_train: true,
+        run: types.some(type => ['run', 'trail'].includes(type)), bike: types.includes('bike'), strength: types.some(type => ['strength', 'gym'].includes(type)),
+        gym: types.includes('gym'), mountain: types.includes('trail'), walk: types.includes('walk'), max_minutes: day.minutes,
+      };
     });
-    return { availability: { ...(ui.profile?.availability || {}), configured: true, days } };
+    const external = days.filter(day => day.gym).map(day => day.day);
+    const strengthMode = external.length ? 'external' : 'runflow';
+    return { availability: { ...(ui.profile?.availability || {}), configured: true, days, strength_mode: strengthMode, external_strength_days: external }, strength_mode: strengthMode, external_strength_days: external };
   }
   async function takenWeeks(structure) {
     const seasons = (appState()?.seasons || []).filter(item => item.start_date <= structure.end && item.end_date >= structure.start);
