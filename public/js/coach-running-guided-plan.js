@@ -193,7 +193,6 @@
     loadLibrary().then(() => { if (ui.open && STEPS[ui.step].key === 'summary') render(); }).catch(error => { ui.status = `Error: no se pudo cargar la biblioteca (${error.message}).`; render(); });
   }
   function onClick(event) {
-    if (event.target.id === 'rgpModal' && !ui.busy) { ui.open = false; render(); return; }
     const el = event.target.closest('[data-rgp-set],[data-rgp-act],[data-rgp-long]');
     if (!el || ui.busy) return;
     const a = ui.a;
