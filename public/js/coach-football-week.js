@@ -18,6 +18,7 @@
     edit: null, // { day, index } en la semana tipo
     eventForm: { kind: 'match', date: '', time: '', rival: '', home: true, duration_min: 70, importance: 'league', cancel_kind: 'football_training', strength_id: '', note: '' },
     block: null, station: 0, newMenu: false, copyMenu: null, mode: null,
+    lib: { open: false, cat: 'all', q: '', mine: null }, // biblioteca de ejercicios de fuerza
   };
 
   async function api(url, options = {}) {
@@ -38,7 +39,7 @@
     if (!shell || !tabs || !athleteNav || typeof window.switchView !== 'function') return false;
     if (byId('footballView')) return true;
     if (!document.querySelector('link[href^="/css/coach-football-week.css"]')) {
-      const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = '/css/coach-football-week.css?v=1.0.0'; document.head.appendChild(link);
+      const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = '/css/coach-football-week.css?v=1.1.0'; document.head.appendChild(link);
     }
     const tab = document.createElement('button');
     tab.className = 'tab'; tab.dataset.view = VIEW; tab.type = 'button'; tab.textContent = 'Fútbol';
@@ -245,6 +246,56 @@
       <div class="fw-actions"><button class="fw-btn lime" data-act="ev-save">Guardar en el calendario</button></div></div>`;
   }
 
+  // ---------- Biblioteca de fuerza ----------
+  const ytId = url => (String(url || '').match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{6,})/) || [])[1] || null;
+  const catLabel = id => id === 'mine' ? 'Mis ejercicios' : id === 'programa' ? 'Entreno del programa' : (S.STRENGTH_CATEGORIES.find(c => c.id === id)?.label || 'Otros');
+  function libraryItems() {
+    const out = [], seen = new Set();
+    const add = (e, cat, mine) => { const key = e.name.toLowerCase(); if (!e.name || seen.has(key)) return; seen.add(key); out.push({ ...e, cat, mine }); };
+    (ui.lib.mine || []).forEach(e => add(e, e.cat, true));
+    S.STRENGTH_LIBRARY.forEach(e => add(e, e.cat, false));
+    ((window.RF_FOOTBALL_DEFAULT_PROGRAM?.exercises) || []).forEach(e => add({ name: e.name, work: e.detail, note: '', why: e.sub, steps: e.steps, video: e.video, img: e.img }, 'programa', false));
+    return out;
+  }
+  function filteredLibrary() {
+    const q = ui.lib.q.trim().toLowerCase();
+    return libraryItems().filter(e => (ui.lib.cat === 'all' || (ui.lib.cat === 'mine' ? e.mine : e.cat === ui.lib.cat && !e.mine))
+      && (!q || `${e.name} ${e.why || ''} ${e.note || ''}`.toLowerCase().includes(q)));
+  }
+  function renderLibraryList() {
+    const items = filteredLibrary();
+    if (!items.length) return `<div class="fw-sub" style="padding:8px">${ui.lib.cat === 'mine' ? 'Aún no has guardado ejercicios. Abre la ficha de una estación y pulsa “Guardar en mi biblioteca”.' : 'No hay ejercicios con esa búsqueda.'}</div>`;
+    return items.map(e => `<div class="fw-libitem"><div><b>${esc(e.name)}</b> <span class="fw-tag ${e.mine ? 'good' : 'muted'}">${esc(e.mine ? 'Mío' : catLabel(e.cat))}</span>
+        <div class="fw-sub">${esc(e.work || '')}${e.why ? ` · ${esc(e.why)}` : ''}</div>
+        <div class="fw-sub">${e.steps?.length ? `${e.steps.length} pasos` : 'Sin explicación'} · ${e.video ? (ytId(e.video) ? '▶ vídeo en la app' : '▶ vídeo (búsqueda)') : 'sin vídeo'}</div></div>
+      <span class="fw-tools">${e.mine ? `<button class="fw-btn small danger" data-act="lib-remove" data-name="${esc(e.name)}" title="Quitar de mi biblioteca">×</button>` : ''}<button class="fw-btn small dark" data-act="lib-add" data-name="${esc(e.name)}">＋ Añadir</button></span></div>`).join('');
+  }
+  function renderLibrary() {
+    if (!ui.lib.open) return '';
+    const cats = [['all', 'Todos'], ['mine', 'Mis ejercicios'], ...S.STRENGTH_CATEGORIES.map(c => [c.id, c.label])];
+    return `<div class="fw-lib"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b style="font-size:13px">Biblioteca de fuerza para fútbol</b><span style="flex:1"></span><input type="search" data-lib="q" value="${esc(ui.lib.q)}" placeholder="Buscar: isquios, salto, aductor…" style="max-width:260px"></div>
+      <div class="fw-libcats">${cats.map(([id, label]) => `<button class="fw-btn small${ui.lib.cat === id ? ' dark' : ''}" data-act="lib-cat" data-cat="${id}">${esc(label)}</button>`).join('')}</div>
+      <div id="fwLibList" class="fw-liblist">${renderLibraryList()}</div></div>`;
+  }
+  async function loadLibrary() {
+    if (ui.lib.mine) return;
+    try { ui.lib.mine = (await api('/api/coach/football-strength-library')).exercises || []; if (ui.lib.open) render(); }
+    catch (error) { ui.lib.mine = []; }
+  }
+  async function saveLibrary(list, message) {
+    const previous = ui.lib.mine;
+    ui.lib.mine = list; render();
+    try { ui.lib.mine = (await api('/api/coach/football-strength-library', { method: 'PUT', body: JSON.stringify({ exercises: list }) })).exercises; ui.status = message; ui.statusKind = 'ok'; }
+    catch (error) { ui.lib.mine = previous; ui.status = error.message; ui.statusKind = 'err'; }
+    render();
+  }
+  function videoHint(url) {
+    if (!url) return 'Sin vídeo: el deportista solo verá la explicación.';
+    if (ytId(url)) return 'Se reproduce dentro de la app del deportista.';
+    if (/youtube\.com\/results/.test(url)) return 'Es una búsqueda de YouTube: se abre en otra pestaña. Pega el enlace de un vídeo concreto para que se vea dentro de la app.';
+    return 'Se abre en otra pestaña.';
+  }
+
   // ---------- Fuerza ----------
   function renderStrength() {
     const blocks = ui.program.strength;
@@ -266,7 +317,6 @@
     const b = blockById(ui.block);
     if (!b) return '<div class="fw-card fw-empty">Crea un bloque nuevo o elige uno de la lista.</div>';
     const circuit = b.format === 'circuit';
-    const lib = [...S.STRENGTH_LIBRARY, ...((window.RF_FOOTBALL_DEFAULT_PROGRAM?.exercises) || []).map(e => ({ name: e.name, work: e.detail, note: e.sub, steps: e.steps, video: e.video, img: e.img }))];
     const st = b.stations[ui.station];
     const today = ui.data.today, monday = S.mondayOf(today), week = plan(monday, S.addDays(monday, 6));
     const days = blockDays(b.id);
@@ -285,14 +335,17 @@
       ${b.stations.map((s, i) => `<div class="fw-ex${i === ui.station ? ' sel' : ''}"><span class="num">${i + 1}</span><input type="text" data-st="name" data-index="${i}" value="${esc(s.name)}"><input type="text" data-st="work" data-index="${i}" value="${esc(s.work)}" placeholder="10 reps / 40 s"><input type="text" data-st="note" data-index="${i}" value="${esc(s.note)}">
         <button class="fw-vid ${s.video || s.steps.length ? 'ok' : 'no'}" data-act="pick-station" data-index="${i}">${s.video ? '▶ Vídeo ✓' : s.steps.length ? 'Explicación ✓' : '＋ Añadir'}</button>
         <span class="fw-tools"><button class="fw-btn small" data-act="st-move" data-index="${i}" data-dir="-1" title="Subir">↑</button><button class="fw-btn small" data-act="st-move" data-index="${i}" data-dir="1" title="Bajar">↓</button><button class="fw-btn small danger" data-act="st-delete" data-index="${i}" title="Quitar">×</button></span></div>`).join('') || '<div class="fw-sub" style="padding:10px 0">Añade la primera estación.</div>'}
-      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center"><select data-act-select="lib" style="max-width:280px"><option value="">＋ Ejercicio de la biblioteca…</option>${lib.map((e, i) => `<option value="${i}">${esc(e.name)}</option>`).join('')}</select><button class="fw-btn" data-act="st-new">＋ Ejercicio nuevo</button></div>
+      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center"><button class="fw-btn${ui.lib.open ? ' dark' : ''}" data-act="lib-toggle">${ui.lib.open ? 'Cerrar biblioteca' : '＋ Ejercicio de la biblioteca'}</button><button class="fw-btn" data-act="st-new">＋ Ejercicio nuevo</button></div>
+      ${renderLibrary()}
       ${st ? `<div class="fw-ficha">
         <div><a class="fw-thumb" ${st.video ? `href="${esc(st.video)}" target="_blank" rel="noopener"` : ''}>${st.img ? `<img src="${esc(st.img)}" alt="">` : ''}<span>${st.video ? '▶' : '—'}</span><small>${esc(st.name)}</small></a>
-          <div class="fw-f" style="margin-top:8px"><label>Vídeo (YouTube o enlace)</label><input type="url" data-st="video" data-index="${ui.station}" value="${esc(st.video)}" placeholder="https://…"></div>
+          <div class="fw-f" style="margin-top:8px"><label>Vídeo (YouTube o enlace)</label><input type="url" data-st="video" data-index="${ui.station}" value="${esc(st.video)}" placeholder="https://youtu.be/…"><div class="fw-sub" id="fwVideoHint">${esc(videoHint(st.video))}</div></div>
           <div class="fw-f" style="margin-top:8px"><label>Imagen (opcional)</label><input type="url" data-st="img" data-index="${ui.station}" value="${esc(st.img)}" placeholder="https://…"></div></div>
-        <div><b style="font-size:13px">Ficha de la estación ${ui.station + 1} · lo que verá el deportista</b><div class="fw-sub">Paso a paso y en qué fijarse. Si viene de la biblioteca puedes cambiar el texto.</div>
+        <div><b style="font-size:13px">Ficha de la estación ${ui.station + 1} · lo que verá el deportista</b><div class="fw-sub">Para qué sirve, paso a paso y en qué fijarse. Si viene de la biblioteca puedes cambiar el texto.</div>
+          <div class="fw-f" style="margin-top:8px"><label>Para qué sirve en el campo</label><input type="text" data-st="why" data-index="${ui.station}" value="${esc(st.why || '')}" placeholder="Protege los isquios en el sprint…"></div>
           <div class="fw-f" style="margin-top:8px"><label>Paso a paso (uno por línea)</label><textarea data-st="steps" data-index="${ui.station}">${esc(st.steps.join('\n'))}</textarea></div>
-          <div class="fw-f" style="margin-top:8px"><label>En qué fijarse</label><input type="text" data-st="cues" data-index="${ui.station}" value="${esc(st.cues)}"></div></div></div>` : ''}
+          <div class="fw-f" style="margin-top:8px"><label>En qué fijarse</label><input type="text" data-st="cues" data-index="${ui.station}" value="${esc(st.cues)}"></div>
+          <div class="fw-actions" style="margin-top:10px"><button class="fw-btn" data-act="lib-save">${(ui.lib.mine || []).some(e => e.name.toLowerCase() === st.name.trim().toLowerCase()) ? 'Actualizar en mi biblioteca' : 'Guardar en mi biblioteca'}</button><span class="fw-sub">Para usarlo con explicación y vídeo en cualquier deportista.</span></div></div></div>` : ''}
       <div style="margin-top:18px"><h3>¿Qué día de la semana?</h3><div class="fw-sub">Toca un día para ponerlo o quitarlo de la semana tipo. Las etiquetas MD son las de esta semana.</div></div>
       <div class="fw-ruler">${week.map((d, i) => {
         const on = days.includes(i); const isMatch = d.items.some(x => x.kind === 'match'); const foot = ui.program.schedule.week[i].some(x => x.kind === 'football_training');
@@ -447,7 +500,24 @@
         ui.block = ui.program.strength[0]?.id || null; changed(); break;
       case 'format': b.format = el.dataset.format; changed(); break;
       case 'pick-station': ui.station = Number(el.dataset.index); render(); break;
-      case 'st-new': b.stations.push({ name: 'Nuevo ejercicio', work: '10 reps', note: '', steps: [], cues: '', video: '', img: '' }); ui.station = b.stations.length - 1; changed(); break;
+      case 'lib-toggle': ui.lib.open = !ui.lib.open; if (ui.lib.open) loadLibrary(); render(); break;
+      case 'lib-cat': ui.lib.cat = el.dataset.cat; render(); break;
+      case 'lib-add': {
+        const e = libraryItems().find(x => x.name === el.dataset.name); if (!e) return;
+        b.stations.push({ name: e.name, work: e.work || '', note: e.note || '', why: e.why || '', steps: (e.steps || []).slice(), cues: e.cues || '', video: e.video || '', img: e.img || '' });
+        ui.station = b.stations.length - 1; changed(); break;
+      }
+      case 'lib-save': {
+        const st = b.stations[ui.station]; if (!st || !st.name.trim()) return;
+        const base = S.STRENGTH_LIBRARY.find(e => e.name.toLowerCase() === st.name.trim().toLowerCase());
+        const entry = { cat: base?.cat || 'otros', ...(ui.lib.mine || []).find(e => e.name.toLowerCase() === st.name.trim().toLowerCase()), ...clone(st), name: st.name.trim() };
+        const list = [entry, ...(ui.lib.mine || []).filter(e => e.name.toLowerCase() !== entry.name.toLowerCase())];
+        saveLibrary(list, `“${entry.name}” guardado en tu biblioteca.`); break;
+      }
+      case 'lib-remove':
+        if (!confirm(`¿Quitar “${el.dataset.name}” de tu biblioteca? Los bloques que ya lo usan no cambian.`)) return;
+        saveLibrary((ui.lib.mine || []).filter(e => e.name !== el.dataset.name), 'Quitado de tu biblioteca.'); break;
+      case 'st-new': b.stations.push({ name: 'Nuevo ejercicio', work: '10 reps', note: '', why: '', steps: [], cues: '', video: '', img: '' }); ui.station = b.stations.length - 1; changed(); break;
       case 'st-move': {
         const i = Number(el.dataset.index), j = i + Number(el.dataset.dir);
         if (j < 0 || j >= b.stations.length) return;
@@ -477,10 +547,13 @@
       b[key] = ['rounds', 'transition_sec', 'rest_sec'].includes(key) ? Number(el.value || 0) : el.value;
       const m = byId('fwBlockMin'); if (m) m.textContent = `≈ ${S.blockMinutes(b)} min`;
       changed(false);
+    } else if (el.dataset.lib === 'q') {
+      ui.lib.q = el.value; const list = byId('fwLibList'); if (list) list.innerHTML = renderLibraryList();
     } else if (el.dataset.st !== undefined) {
       const b = blockById(ui.block), s = b.stations[Number(el.dataset.index)], key = el.dataset.st;
       s[key] = key === 'steps' ? el.value.split('\n').map(x => x.trim()).filter(Boolean) : el.value;
       if (key === 'work') { const m = byId('fwBlockMin'); if (m) m.textContent = `≈ ${S.blockMinutes(b)} min`; }
+      if (key === 'video') { const h = byId('fwVideoHint'); if (h) h.textContent = videoHint(el.value); }
       changed(false);
     }
   }
@@ -497,12 +570,6 @@
       const s = blockById(ui.block).stations[Number(el.dataset.index)], chip = root().querySelector(`.fw-vid[data-index="${el.dataset.index}"]`);
       if (chip) { chip.className = `fw-vid ${s.video || s.steps.length ? 'ok' : 'no'}`; chip.textContent = s.video ? '▶ Vídeo ✓' : s.steps.length ? 'Explicación ✓' : '＋ Añadir'; }
       return;
-    }
-    if (el.dataset.actSelect === 'lib' && el.value !== '') {
-      const lib = [...S.STRENGTH_LIBRARY, ...((window.RF_FOOTBALL_DEFAULT_PROGRAM?.exercises) || []).map(e => ({ name: e.name, work: e.detail, note: e.sub, steps: e.steps, video: e.video, img: e.img }))];
-      const e = lib[Number(el.value)]; const b = blockById(ui.block);
-      b.stations.push({ name: e.name, work: e.work || '', note: e.note || '', steps: (e.steps || []).slice(), cues: e.cues || '', video: e.video || '', img: e.img || '' });
-      ui.station = b.stations.length - 1; changed(); return;
     }
     if (el.dataset.copy === 'athlete' && el.value) loadCopySource(el.value);
   }

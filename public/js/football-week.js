@@ -150,7 +150,7 @@
     const training = $('#fwkTraining');
     if (training) {
       const todayStrength = allItems().find(i => i.date === today && i.kind === 'strength' && blockOf(i));
-      training.innerHTML = todayStrength ? `<button class="fwk-pend" style="border-color:rgba(242,166,91,.6)" data-fwk-circuit="${esc(todayStrength.key)}"><span class="ic">🏋️</span><span><b>Hoy toca ${esc(todayStrength.title)}</b><small>Circuito · ${todayStrength.duration_min} min · toca para empezar</small></span><span class="go">›</span></button>` : '';
+      training.innerHTML = todayStrength ? `<button class="fwk-pend" style="border-color:rgba(242,166,91,.6)" data-fwk-circuit="${esc(todayStrength.key)}"><span class="ic">🏋️</span><span><b>Hoy toca ${esc(todayStrength.title)}</b><small>${blockOf(todayStrength).format === 'sets' ? 'Series' : 'Circuito'} · ${todayStrength.duration_min} min · toca para empezar</small></span><span class="go">›</span></button>` : '';
     }
   }
   function itemRow(i) {
@@ -262,9 +262,10 @@
     body.innerHTML = `${videoHtml(st)}
       <div class="eyebrow" style="margin-top:13px;color:#f2a65b">${c.block.format === 'sets' ? 'Ejercicio' : 'Estación'} ${index + 1}</div>
       <h1 style="font-size:23px;margin:4px 0 2px">${esc(st.name)}</h1><div class="muted">${esc(st.work)}${st.note ? ` · ${esc(st.note)}` : ''}</div>
+      ${st.why ? `<div class="card" style="padding:14px;margin-top:10px"><div class="eyebrow">Para qué te sirve en el campo</div><div style="margin-top:6px">⚽ ${esc(st.why)}</div></div>` : ''}
       ${st.steps.length ? `<div class="card" style="padding:14px;margin-top:10px"><div class="eyebrow" style="margin-bottom:9px">Paso a paso</div><div class="steps">${st.steps.map((s, j) => `<div class="step"><b>${j + 1}</b><span>${esc(s)}</span></div>`).join('')}</div></div>` : ''}
       ${st.cues || st.note ? `<div class="card" style="padding:14px;margin-top:10px"><div class="eyebrow">Fíjate en</div>${st.cues ? `<div class="fwk-cue">✅ ${esc(st.cues)}</div>` : ''}${st.note ? `<div class="fwk-cue">💬 Nota de tu entrenador: ${esc(st.note)}</div>` : ''}</div>` : ''}
-      <button class="primary" style="width:100%;margin-top:12px" data-fwk-back="fwkCircuit">Volver al circuito</button>`;
+      <button class="primary" style="width:100%;margin-top:12px" data-fwk-back="fwkCircuit">${c.block.format === 'sets' ? 'Volver a la sesión' : 'Volver al circuito'}</button>`;
     show('fwkExercise');
   }
   function youtubeId(url) {

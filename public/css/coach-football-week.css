@@ -105,3 +105,8 @@
 .fw-face{font-size:17px}
 @media (max-width:1100px){.fw-row2,.fw-side{grid-template-columns:1fr}.fw-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.fw-week{grid-template-columns:repeat(4,minmax(0,1fr))}.fw-ficha{grid-template-columns:1fr}}
 @media (max-width:640px){.fw-week{grid-template-columns:repeat(2,minmax(0,1fr))}.fw-circ{grid-template-columns:repeat(2,minmax(0,1fr))}.fw-ex{grid-template-columns:26px 1fr 1fr}.fw-ex>small,.fw-ex .fw-tools{grid-column:2/-1}}
+.fw-lib{margin-top:10px;background:#fff;border:1px solid var(--fw-line);border-radius:14px;padding:12px}
+.fw-libcats{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
+.fw-liblist{display:grid;gap:6px;max-height:380px;overflow:auto}
+.fw-libitem{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;border:1px solid var(--fw-line);border-radius:10px;padding:8px 10px}
+.fw-libitem b{font-size:13px}

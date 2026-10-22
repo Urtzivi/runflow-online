@@ -58,3 +58,26 @@ test('sanea la semana y los bloques',()=>{
   assert.equal(blocks[0].stations[0].video,'');
   assert.notEqual(blocks[0].id,blocks[1].id);
 });
+
+test('biblioteca de fuerza: cada ejercicio trae para qué sirve, explicación y vídeo',()=>{
+  const cats=S.STRENGTH_CATEGORIES.map(c=>c.id);
+  S.STRENGTH_LIBRARY.forEach(e=>{
+    assert.ok(cats.includes(e.cat),e.name);
+    assert.ok(e.why&&e.steps.length&&e.cues,e.name);
+    assert.match(e.video,/^https:\/\//,e.name);
+  });
+  S.TEMPLATES.forEach(t=>{
+    const block=S.fromTemplate(t.id);
+    assert.equal(block.stations.length,t.stations.length,t.id);
+    block.stations.forEach(st=>{assert.ok(st.why&&st.video,st.name);assert.equal(st.cat,undefined);});
+  });
+  assert.equal(S.sanitizeStation({name:'X',why:'<b>Isquios</b>'}).why,'bIsquios/b');
+});
+
+test('sanea la biblioteca propia del coach',()=>{
+  const lib=S.sanitizeLibrary([{name:'Mi nórdico',cat:'prevencion',video:'https://youtu.be/abcdefghijk'},{name:'mi nórdico'},{name:''},{name:'Raro',cat:'hack',video:'javascript:x'}]);
+  assert.deepEqual(lib.map(e=>e.name),['Mi nórdico','Raro']);
+  assert.equal(lib[0].cat,'prevencion');
+  assert.equal(lib[1].cat,'otros');
+  assert.equal(lib[1].video,'');
+});

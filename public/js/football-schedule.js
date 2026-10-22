@@ -33,20 +33,53 @@
   ];
 
   const yt = query => `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
-  // Biblioteca de ejercicios de fuerza para montar circuitos. El coach puede cambiar texto y vídeo en cada estación.
+  // Biblioteca de fuerza específica de fútbol. Cada ejercicio lleva para qué sirve en el campo, paso a paso,
+  // en qué fijarse y un vídeo. El coach puede cambiar texto y vídeo en cada estación o guardar los suyos.
+  const STRENGTH_CATEGORIES = [
+    { id: 'prevencion', label: 'Prevención de lesiones' },
+    { id: 'inferior', label: 'Fuerza tren inferior' },
+    { id: 'potencia', label: 'Potencia y saltos' },
+    { id: 'velocidad', label: 'Aceleración y cambio de dirección' },
+    { id: 'core', label: 'Core y duelos' },
+    { id: 'superior', label: 'Tren superior' },
+  ];
   const STRENGTH_LIBRARY = [
-    { name: 'Sentadilla goblet', work: '10 reps', note: 'Kettlebell o mancuerna, bajar controlado', steps: ['Sujeta la pesa pegada al pecho.', 'Pies a la anchura de los hombros.', 'Baja con la espalda recta hasta que la cadera pase la rodilla.', 'Sube empujando el suelo.'], cues: 'Las rodillas siguen la dirección de los pies.', video: yt('sentadilla goblet técnica') },
-    { name: 'Zancada atrás', work: '6 / pierna', note: 'Rodilla alineada con el pie', steps: ['De pie, pies a la anchura de la cadera.', 'Paso largo atrás y baja hasta que la rodilla casi toque el suelo.', 'Empuja con el talón de delante para volver.'], cues: 'El tronco se queda recto, sin irse hacia delante.', video: yt('zancada atrás reverse lunge técnica') },
-    { name: 'Puente de glúteo a 1 pierna', work: '40 s', note: 'Pausa de 2 s arriba', steps: ['Túmbate boca arriba, rodillas dobladas y pies apoyados.', 'Estira una pierna y deja la otra en el suelo.', 'Sube la cadera empujando con el talón hasta alinear rodilla, cadera y hombro.', 'Aguanta 2 s arriba y baja despacio.'], cues: 'La cadera no se cae hacia el lado de la pierna estirada.', video: yt('single leg glute bridge técnica') },
-    { name: 'Nórdico asistido', work: '5 reps', note: 'Prevención de isquios', steps: ['De rodillas, con alguien o algo sujetando los tobillos.', 'Déjate caer hacia delante lo más lento que puedas.', 'Frena con las manos al final y vuelve ayudándote.'], cues: 'Cuerpo recto de rodillas a cabeza, sin doblar la cadera.', video: yt('nordic hamstring curl asistido') },
-    { name: 'Salto al cajón', work: '5 reps', note: 'Máxima calidad, aterrizar suave', steps: ['De pie frente a un cajón estable.', 'Brazos atrás, flexiona y salta arriba.', 'Aterriza suave con las dos piernas.', 'Baja andando, no saltando.'], cues: 'Calidad antes que altura: si el aterrizaje es ruidoso, baja el cajón.', video: yt('box jump técnica futbol') },
-    { name: 'Plancha lateral', work: '30 s / lado', note: '', steps: ['Apoya el antebrazo bajo el hombro.', 'Sube la cadera hasta formar una línea recta.', 'Aguanta y cambia de lado.'], cues: 'No dejes caer la cadera.', video: yt('plancha lateral técnica') },
-    { name: 'Pogos reactivos', work: '2 × 10', note: 'Contacto corto con el suelo', steps: ['Saltos pequeños con las piernas casi rectas.', 'Rebota con la parte delantera del pie.', 'Brazos relajados.'], cues: 'Toca el suelo lo menos posible.', video: yt('pogo jumps futbol') },
-    { name: 'Peso muerto rumano', work: '8 reps', note: 'Espalda neutra', steps: ['Pesas delante de los muslos.', 'Lleva la cadera atrás con las rodillas un poco dobladas.', 'Baja hasta notar los isquios y sube apretando glúteo.'], cues: 'La pesa va pegada a las piernas.', video: yt('peso muerto rumano técnica') },
-    { name: 'Copenhague corto', work: '20 s / lado', note: 'Prevención de aductores', steps: ['Plancha lateral con la rodilla de arriba apoyada en un banco.', 'Sube la cadera y aguanta.', 'Cambia de lado.'], cues: 'Si molesta, apoya también la rodilla de abajo.', video: yt('copenhagen plank short lever') },
-    { name: 'Elevación de gemelos a 1 pierna', work: '12 / pierna', note: 'Lento al bajar', steps: ['De pie en un escalón, apoyando la punta.', 'Sube al máximo y baja en 3 s.'], cues: 'Sin rebotar abajo.', video: yt('single leg calf raise técnica') },
-    { name: 'Skipping', work: '20 s', note: 'Rodillas arriba, rápido', steps: ['Carrera en el sitio subiendo rodillas.', 'Brazos coordinados.'], cues: 'Apoyos rápidos y tronco alto.', video: yt('skipping futbol técnica') },
-    { name: 'Dead bug', work: '8 / lado', note: 'Zona lumbar pegada al suelo', steps: ['Boca arriba, brazos y piernas arriba.', 'Estira brazo y pierna contrarios sin despegar la zona lumbar.', 'Vuelve y cambia de lado.'], cues: 'Respira y no arquees la espalda.', video: yt('dead bug ejercicio core') },
+    // Prevención
+    { cat: 'prevencion', name: 'Nórdico asistido', work: '5 reps', note: 'Prevención de isquios', why: 'Los isquios frenan la pierna en cada sprint. Es el ejercicio que más reduce las roturas de isquios en fútbol.', steps: ['De rodillas, con alguien o algo sujetando los tobillos.', 'Déjate caer hacia delante lo más lento que puedas.', 'Frena con las manos al final y vuelve ayudándote.'], cues: 'Cuerpo recto de rodillas a cabeza, sin doblar la cadera.', video: yt('nordic hamstring curl asistido') },
+    { cat: 'prevencion', name: 'Copenhague corto', work: '20 s / lado', note: 'Prevención de aductores', why: 'Fortalece los aductores, que sufren en el golpeo, los cambios de dirección y las entradas. Menos pubalgias y roturas de aductor.', steps: ['Plancha lateral con la rodilla de arriba apoyada en un banco.', 'Sube la cadera y aguanta.', 'Cambia de lado.'], cues: 'Si molesta, apoya también la rodilla de abajo.', video: yt('copenhagen plank short lever') },
+    { cat: 'prevencion', name: 'Copenhague largo', work: '15 s / lado', note: 'Solo si el corto sale fácil', why: 'Versión más exigente para aductores: prepara para los apoyos largos y los cruces de pierna en el duelo.', steps: ['Plancha lateral con el tobillo o el pie de arriba apoyado en un banco.', 'Sube la cadera hasta quedar en línea.', 'Aguanta sin que la cadera caiga y cambia de lado.'], cues: 'Hombro encima del codo y cuerpo en línea recta.', video: yt('copenhagen adductor plank long lever') },
+    { cat: 'prevencion', name: 'Elevación de gemelos a 1 pierna', work: '12 / pierna', note: 'Lento al bajar', why: 'Gemelo y sóleo absorben cada carrera y salto. Protege tendón de Aquiles y tobillo.', steps: ['De pie en un escalón, apoyando la punta.', 'Sube al máximo y baja en 3 s.'], cues: 'Sin rebotar abajo.', video: yt('single leg calf raise técnica') },
+    { cat: 'prevencion', name: 'Equilibrio a 1 pierna con alcance', work: '6 / pierna', note: 'Descalzo si se puede', why: 'Entrena el tobillo y la rodilla para aguantar apoyos inestables. Menos esguinces.', steps: ['Apoyado en una pierna, rodilla un poco doblada.', 'Lleva la otra pierna lo más lejos posible hacia delante, al lado y atrás tocando el suelo con la punta.', 'Vuelve al centro sin apoyar.'], cues: 'La rodilla de apoyo no se va hacia dentro.', video: yt('y balance exercise futbol tobillo') },
+    { cat: 'prevencion', name: 'Aterrizaje a 1 pierna', work: '5 / pierna', note: 'Aguanta 2 s abajo', why: 'Aprender a caer bien tras un salto o un cabezazo protege la rodilla (cruzado).', steps: ['Salta suave desde dos piernas.', 'Cae sobre una pierna, rodilla y cadera dobladas.', 'Aguanta 2 s quieto y cambia de pierna.'], cues: 'Cae en silencio y con la rodilla mirando a la punta del pie.', video: yt('single leg landing drill knee acl prevention') },
+    { cat: 'prevencion', name: 'Puente de isquios a 1 pierna', work: '8 / pierna', note: 'Talón en un banco', why: 'Fuerza de isquios cerca de la extensión, como al final de la zancada del sprint.', steps: ['Boca arriba con un talón sobre un banco y la otra pierna arriba.', 'Sube la cadera empujando con el talón.', 'Baja despacio sin tocar el suelo.'], cues: 'Si da calambre, acerca el banco.', video: yt('single leg hamstring bridge bench') },
+    // Fuerza tren inferior
+    { cat: 'inferior', name: 'Sentadilla goblet', work: '10 reps', note: 'Kettlebell o mancuerna, bajar controlado', why: 'Fuerza básica de piernas para saltar, chutar y proteger rodillas.', steps: ['Sujeta la pesa pegada al pecho.', 'Pies a la anchura de los hombros.', 'Baja con la espalda recta hasta que la cadera pase la rodilla.', 'Sube empujando el suelo.'], cues: 'Las rodillas siguen la dirección de los pies.', video: yt('sentadilla goblet técnica') },
+    { cat: 'inferior', name: 'Zancada atrás', work: '6 / pierna', note: 'Rodilla alineada con el pie', why: 'Fuerza a una pierna, como se corre y se chuta en el campo.', steps: ['De pie, pies a la anchura de la cadera.', 'Paso largo atrás y baja hasta que la rodilla casi toque el suelo.', 'Empuja con el talón de delante para volver.'], cues: 'El tronco se queda recto, sin irse hacia delante.', video: yt('zancada atrás reverse lunge técnica') },
+    { cat: 'inferior', name: 'Sentadilla búlgara', work: '6 / pierna', note: 'Pie de atrás en un banco', why: 'La mejor fuerza a una pierna: aceleraciones y frenadas más potentes y más estabilidad de rodilla.', steps: ['Pie de atrás apoyado en un banco.', 'Baja recto hasta que la rodilla de atrás casi toque el suelo.', 'Sube empujando con el pie de delante.'], cues: 'Deja 2–3 repeticiones en reserva.', video: yt('bulgarian split squat proper form') },
+    { cat: 'inferior', name: 'Peso muerto rumano', work: '8 reps', note: 'Espalda neutra', why: 'Isquios y glúteo fuertes para el sprint y para prevenir lesiones de isquios.', steps: ['Pesas delante de los muslos.', 'Lleva la cadera atrás con las rodillas un poco dobladas.', 'Baja hasta notar los isquios y sube apretando glúteo.'], cues: 'La pesa va pegada a las piernas.', video: yt('peso muerto rumano técnica') },
+    { cat: 'inferior', name: 'Peso muerto a 1 pierna', work: '6 / pierna', note: 'Con o sin peso', why: 'Isquios, glúteo y equilibrio a la vez, como en el apoyo del golpeo.', steps: ['De pie sobre una pierna, rodilla un poco doblada.', 'Inclina el tronco mientras la otra pierna va atrás.', 'Baja hasta notar el isquio y vuelve arriba.'], cues: 'Cadera nivelada: el ombligo mira al suelo.', video: yt('single leg romanian deadlift técnica') },
+    { cat: 'inferior', name: 'Hip thrust', work: '10 reps', note: 'Pausa de 1 s arriba', why: 'Glúteo potente = más velocidad punta y menos carga en isquios.', steps: ['Espalda alta apoyada en un banco, pesa sobre la cadera.', 'Sube la cadera hasta alinear rodillas, cadera y hombros.', 'Baja controlado.'], cues: 'Barbilla recogida y costillas abajo, sin arquear la espalda.', video: yt('hip thrust técnica') },
+    { cat: 'inferior', name: 'Puente de glúteo a 1 pierna', work: '40 s', note: 'Pausa de 2 s arriba', why: 'Activa el glúteo para que no trabajen solos los isquios en la carrera.', steps: ['Túmbate boca arriba, rodillas dobladas y pies apoyados.', 'Estira una pierna y deja la otra en el suelo.', 'Sube la cadera empujando con el talón hasta alinear rodilla, cadera y hombro.', 'Aguanta 2 s arriba y baja despacio.'], cues: 'La cadera no se cae hacia el lado de la pierna estirada.', video: yt('single leg glute bridge técnica') },
+    { cat: 'inferior', name: 'Subida al cajón', work: '8 / pierna', note: 'Sin impulsarte con la de abajo', why: 'Fuerza de empuje a una pierna, como en el primer paso de la arrancada.', steps: ['Pie entero sobre un cajón a la altura de la rodilla.', 'Sube empujando solo con esa pierna.', 'Baja despacio y repite.'], cues: 'La rodilla de arriba no se va hacia dentro.', video: yt('step up exercise técnica') },
+    // Potencia
+    { cat: 'potencia', name: 'Salto al cajón', work: '5 reps', note: 'Máxima calidad, aterrizar suave', why: 'Potencia de piernas para saltar al cabezazo y arrancar más rápido.', steps: ['De pie frente a un cajón estable.', 'Brazos atrás, flexiona y salta arriba.', 'Aterriza suave con las dos piernas.', 'Baja andando, no saltando.'], cues: 'Calidad antes que altura: si el aterrizaje es ruidoso, baja el cajón.', video: yt('box jump técnica futbol') },
+    { cat: 'potencia', name: 'Pogos reactivos', work: '2 × 10', note: 'Contacto corto con el suelo', why: 'Tobillo reactivo: apoyos más rápidos en el sprint y en los cambios de ritmo.', steps: ['Saltos pequeños con las piernas casi rectas.', 'Rebota con la parte delantera del pie.', 'Brazos relajados.'], cues: 'Toca el suelo lo menos posible.', video: yt('pogo jumps futbol') },
+    { cat: 'potencia', name: 'Salto horizontal', work: '3 reps', note: 'Recupera entre saltos', why: 'Potencia hacia delante, la misma dirección que la aceleración.', steps: ['Carga rápida de cadera con los brazos atrás.', 'Salta lo más lejos posible.', 'Aterriza estable, aguanta y reinicia.'], cues: 'Aterriza con las dos piernas a la vez y sin caer hacia atrás.', video: yt('standing broad jump technique') },
+    { cat: 'potencia', name: 'Saltos laterales de patinador', work: '6 / lado', note: 'Aguanta 1 s en cada apoyo', why: 'Potencia lateral y frenada a una pierna para regates y cambios de dirección.', steps: ['De pie sobre una pierna.', 'Salta hacia el lado y cae sobre la otra pierna.', 'Frena, aguanta 1 s y salta de vuelta.'], cues: 'Cae con la rodilla flexionada y el pecho por delante.', video: yt('skater jumps técnica') },
+    { cat: 'potencia', name: 'Saltos a 1 pierna encadenados', work: '3 × 4 / pierna', note: 'Solo con buena técnica', why: 'Potencia y rigidez a una pierna, como en cada zancada del sprint.', steps: ['Sobre una pierna, salta hacia delante.', 'Encadena 4 saltos seguidos con contactos cortos.', 'Para y cambia de pierna.'], cues: 'Si la rodilla se va hacia dentro, para.', video: yt('single leg hops forward drill') },
+    // Velocidad
+    { cat: 'velocidad', name: 'Skipping', work: '20 s', note: 'Rodillas arriba, rápido', why: 'Coordinación y frecuencia de zancada.', steps: ['Carrera en el sitio subiendo rodillas.', 'Brazos coordinados.'], cues: 'Apoyos rápidos y tronco alto.', video: yt('skipping futbol técnica') },
+    { cat: 'velocidad', name: 'Arrancada en pared', work: '3 × 5 / pierna', note: 'Cuerpo inclinado', why: 'Enseña la postura de los primeros pasos de la aceleración.', steps: ['Manos en la pared, cuerpo inclinado unos 45°.', 'Sube una rodilla y cambia de pierna rápido.', 'Mantén la línea de tobillo a cabeza.'], cues: 'Empuja el suelo hacia atrás, no hacia abajo.', video: yt('wall drill acceleration sprint') },
+    { cat: 'velocidad', name: 'Frenada en 3 pasos', work: '5 reps', note: 'Desde carrera suave', why: 'Saber frenar es lo que permite cambiar de dirección rápido y sin lesionarse.', steps: ['Corre 10 m a ritmo medio.', 'Frena en 3 pasos bajando la cadera.', 'Termina parado y equilibrado.'], cues: 'Pasos cortos al final, pecho por encima de las rodillas.', video: yt('deceleration drill football') },
+    { cat: 'velocidad', name: 'Cambio de dirección a 45°', work: '4 / lado', note: 'Máxima calidad', why: 'Gesto de regate y desmarque: apoyo exterior fuerte y salida rápida.', steps: ['Corre 5 m.', 'Apoya fuera con la pierna contraria al cambio.', 'Sal a 45° acelerando 5 m.'], cues: 'Baja la cadera antes del apoyo y empuja fuera.', video: yt('45 degree cut change of direction drill') },
+    // Core
+    { cat: 'core', name: 'Plancha lateral', work: '30 s / lado', note: '', why: 'Tronco estable para el contacto y los cambios de dirección.', steps: ['Apoya el antebrazo bajo el hombro.', 'Sube la cadera hasta formar una línea recta.', 'Aguanta y cambia de lado.'], cues: 'No dejes caer la cadera.', video: yt('plancha lateral técnica') },
+    { cat: 'core', name: 'Dead bug', work: '8 / lado', note: 'Zona lumbar pegada al suelo', why: 'Control del tronco mientras se mueven brazos y piernas, como al correr.', steps: ['Boca arriba, brazos y piernas arriba.', 'Estira brazo y pierna contrarios sin despegar la zona lumbar.', 'Vuelve y cambia de lado.'], cues: 'Respira y no arquees la espalda.', video: yt('dead bug ejercicio core') },
+    { cat: 'core', name: 'Pallof press', work: '10 / lado', note: 'Goma elástica', why: 'Aguantar que te giren: tronco firme en los duelos y al proteger el balón.', steps: ['De lado a la goma, agárrala con las dos manos en el pecho.', 'Estira los brazos al frente sin dejar que te gire.', 'Aguanta 2 s y vuelve.'], cues: 'Cadera y hombros mirando al frente todo el rato.', video: yt('pallof press técnica') },
+    { cat: 'core', name: 'Paseo del granjero a 1 mano', work: '20 m / lado', note: 'Peso en una sola mano', why: 'Core, agarre y estabilidad frente al contacto.', steps: ['Sujeta una pesa en una sola mano.', 'Camina alto sin inclinarte hacia el peso.', 'Cambia de mano a la vuelta.'], cues: 'Hombros nivelados y pasos tranquilos.', video: yt('suitcase carry técnica') },
+    // Tren superior
+    { cat: 'superior', name: 'Flexiones', work: '8 reps', note: 'Para antes de perder técnica', why: 'Fuerza de empuje para proteger el balón y ganar el cuerpo a cuerpo.', steps: ['Cuerpo en línea de cabeza a talones.', 'Baja el pecho con los codos a unos 45°.', 'Empuja el suelo sin hundir la cadera.'], cues: 'Si no salen bien, apoya las rodillas.', video: yt('push up proper form') },
+    { cat: 'superior', name: 'Remo con mancuerna', work: '8 / lado', note: 'Sin girar el tronco', why: 'Espalda y hombros fuertes para el braceo en el sprint y el contacto.', steps: ['Una mano y una rodilla en un banco.', 'Lleva el codo atrás pegado al cuerpo.', 'Baja controlado.'], cues: 'Hombro lejos de la oreja.', video: yt('one arm dumbbell row proper form') },
   ];
 
   const TEMPLATES = [
@@ -54,6 +87,10 @@
       stations: ['Sentadilla goblet', 'Zancada atrás', 'Puente de glúteo a 1 pierna', 'Nórdico asistido', 'Salto al cajón', 'Plancha lateral'] },
     { id: 'tpl-prevencion', name: 'Fuerza B · Prevención', objective: 'Isquios, aductores y gemelos fuertes para prevenir lesiones', format: 'circuit', rounds: 2, transition_sec: 15, rest_sec: 90,
       stations: ['Nórdico asistido', 'Copenhague corto', 'Elevación de gemelos a 1 pierna', 'Dead bug', 'Plancha lateral'] },
+    { id: 'tpl-md4', name: 'Fuerza MD-4 · Fuerza y potencia', objective: 'La sesión fuerte de la semana: fuerza a una pierna y potencia', format: 'sets', rounds: 3, transition_sec: 90, rest_sec: 120,
+      stations: ['Salto horizontal', 'Sentadilla búlgara', 'Peso muerto rumano', 'Hip thrust', 'Pallof press'] },
+    { id: 'tpl-cod', name: 'Velocidad y cambio de dirección', objective: 'Frenar, cambiar de dirección y acelerar mejor', format: 'circuit', rounds: 2, transition_sec: 30, rest_sec: 120,
+      stations: ['Arrancada en pared', 'Saltos laterales de patinador', 'Frenada en 3 pasos', 'Cambio de dirección a 45°', 'Aterrizaje a 1 pierna'] },
     { id: 'tpl-activacion', name: 'Activación pre-partido', objective: 'Despertar el cuerpo el día antes, sin cansar', format: 'circuit', rounds: 2, transition_sec: 15, rest_sec: 60,
       stations: ['Skipping', 'Pogos reactivos', 'Puente de glúteo a 1 pierna', 'Dead bug'] },
   ];
@@ -84,9 +121,15 @@
   function sanitizeStation(item) {
     const s = item && typeof item === 'object' ? item : {};
     return {
-      name: text(s.name, 120), work: text(s.work, 40), note: text(s.note, 200), steps: steps(s.steps),
+      name: text(s.name, 120), work: text(s.work, 40), note: text(s.note, 200), why: text(s.why, 300), steps: steps(s.steps),
       cues: text(s.cues, 400), video: url(s.video), img: url(s.img),
     };
+  }
+  // Ejercicios propios del coach: se reutilizan en los bloques de todos sus deportistas.
+  function sanitizeLibrary(list) {
+    const cats = STRENGTH_CATEGORIES.map(c => c.id), seen = new Set();
+    return (Array.isArray(list) ? list : []).slice(0, 200).map(item => ({ ...sanitizeStation(item), cat: cats.includes(item?.cat) ? item.cat : 'otros' }))
+      .filter(e => e.name && !seen.has(e.name.toLowerCase()) && seen.add(e.name.toLowerCase()));
   }
   function sanitizeStrength(list) {
     const used = new Set();
@@ -167,7 +210,7 @@
     if (!tpl) return null;
     return {
       id: randomId('b'), name: tpl.name, objective: tpl.objective, format: tpl.format, rounds: tpl.rounds, transition_sec: tpl.transition_sec, rest_sec: tpl.rest_sec,
-      stations: tpl.stations.map(name => ({ ...STRENGTH_LIBRARY.find(e => e.name === name), img: '' })),
+      stations: tpl.stations.map(name => { const { cat, ...station } = STRENGTH_LIBRARY.find(e => e.name === name); return { ...station, img: '' }; }),
     };
   }
 
@@ -232,8 +275,8 @@
   }
 
   return {
-    DAYS, DAYS_SHORT, WEEK_KINDS, EVENT_KINDS, RATED_KINDS, KIND_LABEL, IMPORTANCE, BODY, MOOD, STRENGTH_LIBRARY, TEMPLATES,
-    sanitizeSchedule, sanitizeStrength, sanitizeStation, resolvePlan, attachRatings, blockMinutes, stationSeconds, timedSeconds, fromTemplate, mdLabel,
+    DAYS, DAYS_SHORT, WEEK_KINDS, EVENT_KINDS, RATED_KINDS, KIND_LABEL, IMPORTANCE, BODY, MOOD, STRENGTH_CATEGORIES, STRENGTH_LIBRARY, TEMPLATES,
+    sanitizeSchedule, sanitizeStrength, sanitizeStation, sanitizeLibrary, resolvePlan, attachRatings, blockMinutes, stationSeconds, timedSeconds, fromTemplate, mdLabel,
     addDays, dayIndex, mondayOf, daysBetween, todayMadrid, randomId, MATCH_LOAD_FACTOR, sessionLoad,
   };
 }));
