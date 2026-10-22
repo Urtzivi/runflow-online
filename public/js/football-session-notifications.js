@@ -1,4 +1,6 @@
-// RunFlow Fútbol · avisos en el móvil para valorar los entrenos de fútbol y la fuerza en el gimnasio.
+// RunFlow Fútbol · avisos en el móvil para valorar los entrenos de fútbol, la fuerza y el partido.
+// Entrenos y fuerza: a media tarde (o 30 min después de acabar si terminan más tarde). Partido: 1 h después de terminar.
+// El "¿Cómo te encuentras hoy?" de antes de entrenar lo programa athlete-native-readiness-notifications.js (10:00).
 // Igual que el aviso de readiness (athlete-native-readiness-notifications.js): notificaciones locales de la app nativa.
 // Se reprograman cada vez que la app carga la semana (evento runflow:football-week) y quitan las sesiones ya valoradas.
 (() => {
@@ -8,13 +10,14 @@
   window.__runflowFootballSessionNotificationsInstalled = true;
 
   const ACTION = 'football_feedback';
-  const KINDS = ['football_training', 'strength'];
-  const AFTER_MIN = 30;            // minutos después de terminar la sesión
-  const DEFAULT_TIME = '20:30';    // si la sesión no tiene hora
-  const DEFAULT_MIN = { football_training: 75, strength: 45 };
+  const KINDS = ['football_training', 'strength', 'match'];
+  const MID_AFTERNOON = '18:30';   // aviso de media tarde para valorar los entrenos del día
+  const AFTER_MIN = { football_training: 30, strength: 30, match: 60 }; // minutos después de terminar
+  const DEFAULT_MIN = { football_training: 75, strength: 45, match: 70 };
   const COPY = {
     football_training: { title: 'RunFlow · ¿Qué tal el entreno de fútbol?', body: 'Valora el entreno: esfuerzo, cómo tienes el cuerpo y cómo te sientes. Tu entrenador lo verá.' },
     strength: { title: 'RunFlow · ¿Qué tal la fuerza en el gimnasio?', body: 'Valora la sesión de fuerza: esfuerzo, cuerpo y ánimo. Son unos segundos.' },
+    match: { title: 'RunFlow · ¿Qué tal el partido?', body: 'Rellena “Mi partido por dentro”: minutos, esfuerzo y cómo lo has vivido. Tu entrenador lo verá.' },
   };
 
   const plugin = () => window.Capacitor?.Plugins?.LocalNotifications || null;
@@ -30,12 +33,20 @@
     return 1000000000 + (h % 1000000000);
   }
 
-  function reminderAt(item) {
-    const [h, m] = (item.time || DEFAULT_TIME).split(':').map(Number);
-    const at = new Date(`${item.date}T00:00:00`);
+  function timeOn(date, hhmm) {
+    const [h, m] = hhmm.split(':').map(Number);
+    const at = new Date(`${date}T00:00:00`);
     at.setHours(h, m, 0, 0);
-    if (item.time) at.setMinutes(at.getMinutes() + (Number(item.duration_min) || DEFAULT_MIN[item.kind]) + AFTER_MIN);
     return at;
+  }
+  // Partido: 1 h después de terminar. Entrenos y fuerza: a media tarde, pero nunca antes de que acabe la sesión.
+  function reminderAt(item) {
+    const afternoon = timeOn(item.date, MID_AFTERNOON);
+    if (!item.time) return afternoon;
+    const end = timeOn(item.date, item.time);
+    end.setMinutes(end.getMinutes() + (Number(item.duration_min) || DEFAULT_MIN[item.kind]) + AFTER_MIN[item.kind]);
+    if (item.kind === 'match') return end;
+    return end > afternoon ? end : afternoon;
   }
 
   async function ensurePermission(LocalNotifications) {
@@ -62,7 +73,7 @@
       .map(({ item, at }) => ({
         id: notificationId(item.key),
         title: COPY[item.kind].title,
-        body: item.title && item.kind === 'strength' ? `${item.title}. ${COPY[item.kind].body}` : COPY[item.kind].body,
+        body: item.title && item.kind !== 'football_training' ? `${item.title}. ${COPY[item.kind].body}` : COPY[item.kind].body,
         schedule: { at, allowWhileIdle: true },
         extra: { runflow_action: ACTION, key: item.key, kind: item.kind, day: item.date },
       }));

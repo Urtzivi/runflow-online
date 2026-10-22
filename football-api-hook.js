@@ -10,6 +10,7 @@ const SUPABASE_SERVICE_ROLE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY |
 const APP_ENCRYPTION_KEY = String(process.env.APP_ENCRYPTION_KEY || '');
 const PREFIX = 'RF_FOOTBALL|';
 const PROGRAM_CATEGORY = '__runflow_football_program__';
+const LIBRARY_CATEGORY = '__runflow_football_strength_library__';
 const DEMO_MODE = process.env.DEMO_MODE === '1';
 const Schedule = require('./public/js/football-schedule.js');
 
@@ -128,7 +129,7 @@ async function athleteIdentity(req) {
   return { athleteId: athletes[0].id, email: athletes[0].email || user.email };
 }
 
-async function coachIdentity(req, athleteId) {
+async function coachUser(req) {
   if (DEMO_MODE) {
     const user = demoUser(req);
     if (!user || !(user.roles || []).includes('coach')) throw Object.assign(new Error('Acceso Coach requerido.'), { status: 403 });
@@ -139,6 +140,11 @@ async function coachIdentity(req, athleteId) {
   if (!user?.id) throw Object.assign(new Error('Acceso no válido.'), { status: 401 });
   const roles = await rows('user_roles', `user_id=eq.${encodeURIComponent(user.id)}&role=eq.coach&select=role&limit=1`).catch(() => []);
   if (!roles.length) throw Object.assign(new Error('Acceso Coach requerido.'), { status: 403 });
+  return user;
+}
+async function coachIdentity(req, athleteId) {
+  const user = await coachUser(req);
+  if (DEMO_MODE) return user;
   const links = await rows('coach_athletes', `coach_user_id=eq.${encodeURIComponent(user.id)}&athlete_id=eq.${encodeURIComponent(athleteId)}&select=athlete_id&limit=1`).catch(() => []);
   if (!links.length) throw Object.assign(new Error('No tienes acceso a este deportista.'), { status: 403 });
   return user;
@@ -153,7 +159,7 @@ function sendJson(res, status, payload) {
 function readJson(req) {
   return new Promise((resolve, reject) => {
     let body = '';
-    req.on('data', chunk => { body += chunk; if (body.length > 400000) reject(Object.assign(new Error('Petición demasiado grande.'), { status: 413 })); });
+    req.on('data', chunk => { body += chunk; if (body.length > 1500000) reject(Object.assign(new Error('Petición demasiado grande.'), { status: 413 })); });
     req.on('end', () => { try { resolve(body ? JSON.parse(body) : {}); } catch { reject(Object.assign(new Error('JSON no válido.'), { status: 400 })); } });
     req.on('error', reject);
   });
@@ -243,6 +249,7 @@ function sanitizeProgram(body) {
   // Semana del deportista (entrenos, partidos, cambios) y circuitos de fuerza.
   if (source.schedule !== undefined) program.schedule = Schedule.sanitizeSchedule(source.schedule);
   if (source.strength !== undefined) program.strength = Schedule.sanitizeStrength(source.strength);
+  if (source.strength_plan !== undefined) program.strength_plan = Schedule.sanitizeStrengthPlan(source.strength_plan);
   if (!Object.keys(program).length) throw Object.assign(new Error('El programa está vacío.'), { status: 400 });
   return program;
 }
@@ -268,6 +275,26 @@ async function saveProgram(user, athleteId, body) {
   };
   const created = await rows('workout_templates', '', { method: 'POST', body: row, prefer: 'return=representation' });
   return publicProgram(created[0] || row);
+}
+
+// Biblioteca de fuerza propia del coach (sin deportista): una fila interna de workout_templates.
+async function libraryRow(coachId) {
+  const found = await rows('workout_templates', `coach_user_id=eq.${encodeURIComponent(coachId)}&category=eq.${encodeURIComponent(LIBRARY_CATEGORY)}&select=id,template_data,updated_at&order=updated_at.desc&limit=1`);
+  return found[0] || null;
+}
+async function saveLibrary(user, body) {
+  const now = new Date().toISOString(), existing = await libraryRow(user.id);
+  const data = { exercises: Schedule.sanitizeLibrary(body?.exercises) };
+  if (existing) {
+    const updated = await rows('workout_templates', `id=eq.${encodeURIComponent(existing.id)}`, { method: 'PATCH', body: { template_data: data, updated_at: now }, prefer: 'return=representation' });
+    return { exercises: (updated[0] || { template_data: data }).template_data.exercises, updated_at: now };
+  }
+  const row = {
+    id: crypto.randomUUID(), coach_user_id: user.id, athlete_id: null, name: 'Biblioteca de fuerza RunFlow Fútbol',
+    category: LIBRARY_CATEGORY, sport: 'Internal', stimulus: 'football-strength-library', template_data: data, created_at: now, updated_at: now,
+  };
+  await rows('workout_templates', '', { method: 'POST', body: row, prefer: 'return=representation' });
+  return { exercises: data.exercises, updated_at: now };
 }
 
 async function profileForAthlete(athleteId) {
@@ -391,7 +418,7 @@ async function footballWeek(athleteId, from, to) {
   const activity = logs.filter(log => Schedule.RATED_KINDS.includes(log.football?.kind)).map(publicLog);
   const days = Schedule.attachRatings(Schedule.resolvePlan(program, from, to), activity, today);
   const pending = days.filter(day => day.date >= Schedule.addDays(today, -7)).flatMap(day => day.items.filter(item => item.pending)).reverse();
-  return { today, from, to, days, pending, strength: program.strength || [], schedule: program.schedule || null, logs: activity, updated_at: row?.updated_at || null };
+  return { today, from, to, days, pending, strength: program.strength || [], strength_plan: program.strength_plan || null, schedule: program.schedule || null, logs: activity, updated_at: row?.updated_at || null };
 }
 function footballStats(week) {
   const today = week.today, logs = week.logs;
@@ -469,6 +496,12 @@ async function handleFootballApi(req, res, url) {
     const identity = await athleteIdentity(req);
     return sendJson(res, 200, publicProgram(await programRow(identity.athleteId)));
   }
+  if (url.pathname === '/api/coach/football-strength-library' && ['GET', 'PUT'].includes(method)) {
+    const user = await coachUser(req);
+    if (method === 'PUT') return sendJson(res, 200, await saveLibrary(user, await readJson(req)));
+    const row = await libraryRow(user.id);
+    return sendJson(res, 200, { exercises: row?.template_data?.exercises || [], updated_at: row?.updated_at || null });
+  }
   const programMatch = url.pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/football-program$/);
   if (programMatch && ['GET', 'PUT', 'DELETE'].includes(method)) {
     const athleteId = decodeURIComponent(programMatch[1]), user = await coachIdentity(req, athleteId);
@@ -498,7 +531,7 @@ http.createServer = function footballApiCreateServer(listener) {
   return previousCreateServer.call(http, async (req, res) => {
     try {
       const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-      const relevant = url.pathname.startsWith('/api/athlete/football/') || /^\/api\/coach\/athletes\/[^/]+\/football-(mode|summary|program|week)$/.test(url.pathname);
+      const relevant = url.pathname.startsWith('/api/athlete/football/') || url.pathname === '/api/coach/football-strength-library' || /^\/api\/coach\/athletes\/[^/]+\/football-(mode|summary|program|week)$/.test(url.pathname);
       if (relevant) {
         const handled = await handleFootballApi(req, res, url);
         if (handled !== false) return;

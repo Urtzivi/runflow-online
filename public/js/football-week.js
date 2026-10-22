@@ -63,6 +63,8 @@
 .fwk-btns{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
 .fwk-st{display:grid;grid-template-columns:28px 1fr auto;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid #1a2e45}
 .fwk-st:last-child{border-bottom:0}
+.fwk-sec{font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#f2a65b;padding:12px 0 2px}
+.fwk-effort{font-size:12px;color:#f2c48f;margin-top:4px}
 .fwk-st .n{width:28px;height:28px;border-radius:9px;background:rgba(242,166,91,.18);color:#f2a65b;display:grid;place-items:center;font-weight:900;font-size:12px}
 .fwk-st.now{background:rgba(242,166,91,.08);margin:0 -8px;padding:8px;border-radius:12px;border-bottom:0}
 .fwk-st.now .n{background:#f2a65b;color:#06111c}.fwk-st.ok{opacity:.55}
@@ -150,7 +152,7 @@
     const training = $('#fwkTraining');
     if (training) {
       const todayStrength = allItems().find(i => i.date === today && i.kind === 'strength' && blockOf(i));
-      training.innerHTML = todayStrength ? `<button class="fwk-pend" style="border-color:rgba(242,166,91,.6)" data-fwk-circuit="${esc(todayStrength.key)}"><span class="ic">🏋️</span><span><b>Hoy toca ${esc(todayStrength.title)}</b><small>Circuito · ${todayStrength.duration_min} min · toca para empezar</small></span><span class="go">›</span></button>` : '';
+      training.innerHTML = todayStrength ? `<button class="fwk-pend" style="border-color:rgba(242,166,91,.6)" data-fwk-circuit="${esc(todayStrength.key)}"><span class="ic">🏋️</span><span><b>Hoy toca ${esc(todayStrength.title)}</b><small>${blockOf(todayStrength).format === 'sets' ? 'Series' : 'Circuito'} · ${todayStrength.duration_min} min · toca para empezar</small></span><span class="go">›</span></button>` : '';
     }
   }
   function itemRow(i) {
@@ -169,10 +171,12 @@
   function buildSteps(block) {
     const steps = [], n = block.stations.length, R = block.rounds || 1;
     if (block.format === 'sets') {
-      block.stations.forEach((_, s) => {
-        for (let r = 0; r < R; r++) {
+      block.stations.forEach((st, s) => {
+        // Cada ejercicio puede tener sus series y su descanso (programa guiado).
+        const sets = st.sets || R, rest = st.rest_sec ?? block.transition_sec;
+        for (let r = 0; r < sets; r++) {
           steps.push({ type: 'work', station: s, round: r });
-          if (r < R - 1 && block.transition_sec) steps.push({ type: 'rest', sec: block.transition_sec, label: 'Descanso entre series' });
+          if (r < sets - 1 && rest) steps.push({ type: 'rest', sec: rest, label: 'Descanso entre series' });
         }
         if (s < n - 1 && block.rest_sec) steps.push({ type: 'rest', sec: block.rest_sec, label: 'Descanso, cambia de ejercicio' });
       });
@@ -203,7 +207,7 @@
     const { block } = c, circuit = block.format !== 'sets';
     $('#fwkCircuitTitle').textContent = block.name;
     if (c.finished) {
-      body.innerHTML = `<div class="card fwk-done"><div style="font-size:40px">💪</div><b>¡${circuit ? 'Circuito' : 'Fuerza'} terminado!</b><div class="muted">${block.stations.length} ejercicios × ${block.rounds} ${circuit ? 'vueltas' : 'series'} · ${c.item.duration_min} min</div>
+      body.innerHTML = `<div class="card fwk-done"><div style="font-size:40px">💪</div><b>¡${circuit ? 'Circuito' : 'Fuerza'} terminado!</b><div class="muted">${block.stations.length} ejercicios${circuit || !block.stations.some(st => st.sets) ? ` × ${block.rounds} ${circuit ? 'vueltas' : 'series'}` : ''} · ${c.item.duration_min} min</div>
         ${c.item.rating ? '<div class="muted" style="margin-top:10px">✓ Ya lo has valorado.</div>' : `<button class="primary" style="width:100%;margin-top:14px" data-fwk-rate="${esc(c.key)}">Valorar la sesión</button>`}
         <button class="secondary" style="width:100%;margin-top:8px" data-fwk-act="restart">Empezar de nuevo</button></div>`;
       return;
@@ -222,20 +226,22 @@
     } else {
       const st = block.stations[step.station], timed = S.timedSeconds(st.work);
       if (c.left === null && timed) c.left = timed;
-      const label = circuit ? `Vuelta ${step.round + 1} de ${block.rounds} · estación ${step.station + 1} de ${block.stations.length}` : `${st.name.split(' ')[0]} · serie ${step.round + 1} de ${block.rounds}`;
+      const label = circuit ? `Vuelta ${step.round + 1} de ${block.rounds} · estación ${step.station + 1} de ${block.stations.length}` : `${st.section ? `${st.section} · ` : ''}serie ${step.round + 1} de ${st.sets || block.rounds}`;
       top = `<div class="card fwk-card"><div class="eyebrow">${esc(label)}</div>
         <div class="fwk-round">${Array.from({ length: circuit ? block.rounds : block.stations.length }, (_, i) => { const idx = circuit ? step.round : step.station; return `<i class="${i < idx ? 'on' : i === idx ? 'half' : ''}"></i>`; }).join('')}</div>
-        <div class="fwk-timer"><div><h3>${esc(st.name)}</h3><p>${esc(st.note || '')}</p></div><b>${timed ? fmtClock(c.left ?? timed) : esc(st.work)}</b></div>
+        <div class="fwk-timer"><div><h3>${esc(st.name)}</h3><p>${esc(st.note || '')}</p>${st.effort ? `<p class="fwk-effort">🎯 ${esc(st.effort)}</p>` : ''}</div><b>${timed ? fmtClock(c.left ?? timed) : esc(st.work)}</b></div>
         ${timed ? `<div class="fwk-btns"><button class="secondary" data-fwk-ex="${step.station}">ⓘ Cómo se hace</button><button class="primary" data-fwk-act="${c.running ? 'pause' : 'start'}">${c.running ? '❚❚ Pausa' : '▶ Empezar'}</button></div><button class="secondary" style="width:100%;margin-top:8px" data-fwk-act="next">Siguiente ›</button>`
           : `<div class="fwk-btns"><button class="secondary" data-fwk-ex="${step.station}">ⓘ Cómo se hace</button><button class="primary" data-fwk-act="next">Hecho ›</button></div>`}</div>`;
     }
     const list = block.stations.map((st, i) => {
-      const doneThisRound = circuit ? c.steps.slice(0, c.step).some(s => s.type === 'work' && s.station === i && s.round === round) : c.steps.slice(0, c.step).filter(s => s.type === 'work' && s.station === i).length >= block.rounds;
+      const doneThisRound = circuit ? c.steps.slice(0, c.step).some(s => s.type === 'work' && s.station === i && s.round === round) : c.steps.slice(0, c.step).filter(s => s.type === 'work' && s.station === i).length >= (st.sets || block.rounds);
       const now = current && current.station === i;
-      return `<div class="fwk-st${now ? ' now' : doneThisRound ? ' ok' : ''}"><div class="n">${doneThisRound && !now ? '✓' : i + 1}</div><div><b>${esc(st.name)}</b><small>${esc(st.work)}${now ? ' · ahora' : ''}</small></div><button data-fwk-ex="${i}" aria-label="Ver cómo se hace">▶</button></div>`;
+      const head = st.section && st.section !== block.stations[i - 1]?.section ? `<div class="fwk-sec">${esc(st.section)}</div>` : '';
+      return `${head}<div class="fwk-st${now ? ' now' : doneThisRound ? ' ok' : ''}"><div class="n">${doneThisRound && !now ? '✓' : i + 1}</div><div><b>${esc(st.name)}</b><small>${st.sets && !circuit ? `${st.sets} × ` : ''}${esc(st.work)}${now ? ' · ahora' : ''}</small></div><button data-fwk-ex="${i}" aria-label="Ver cómo se hace">▶</button></div>`;
     }).join('');
     const transition = circuit ? `${block.transition_sec} s para cambiar de estación · ${fmtClock(block.rest_sec)} de descanso al acabar la vuelta` : `${block.transition_sec} s entre series · ${fmtClock(block.rest_sec)} entre ejercicios`;
-    body.innerHTML = `${top}<div class="card fwk-card">${list}</div><p class="muted" style="text-align:center">${transition} · ${doneWork}/${workSteps.length} hechos</p>
+    const effort = block.effort ? `<div class="card fwk-card"><div class="eyebrow">Cuánto esfuerzo</div><div class="fwk-cue">🎯 ${esc(block.effort)}</div></div>` : '';
+    body.innerHTML = `${top}${effort}<div class="card fwk-card">${list}</div><p class="muted" style="text-align:center">${transition} · ${doneWork}/${workSteps.length} hechos</p>
       <button class="secondary" style="width:100%" data-fwk-act="finish">Terminar y valorar</button>`;
   }
   function startTimer() {
@@ -261,10 +267,12 @@
     const st = c.block.stations[index], body = $('#fwkExerciseBody'); if (!st || !body) return;
     body.innerHTML = `${videoHtml(st)}
       <div class="eyebrow" style="margin-top:13px;color:#f2a65b">${c.block.format === 'sets' ? 'Ejercicio' : 'Estación'} ${index + 1}</div>
-      <h1 style="font-size:23px;margin:4px 0 2px">${esc(st.name)}</h1><div class="muted">${esc(st.work)}${st.note ? ` · ${esc(st.note)}` : ''}</div>
+      <h1 style="font-size:23px;margin:4px 0 2px">${esc(st.name)}</h1><div class="muted">${st.sets && c.block.format === 'sets' ? `${st.sets} series × ` : ''}${esc(st.work)}${st.note ? ` · ${esc(st.note)}` : ''}</div>
+      ${st.effort ? `<div class="card" style="padding:14px;margin-top:10px"><div class="eyebrow">Esfuerzo y peso</div><div style="margin-top:6px">🎯 ${esc(st.effort)}</div></div>` : ''}
+      ${st.why ? `<div class="card" style="padding:14px;margin-top:10px"><div class="eyebrow">Para qué te sirve en el campo</div><div style="margin-top:6px">⚽ ${esc(st.why)}</div></div>` : ''}
       ${st.steps.length ? `<div class="card" style="padding:14px;margin-top:10px"><div class="eyebrow" style="margin-bottom:9px">Paso a paso</div><div class="steps">${st.steps.map((s, j) => `<div class="step"><b>${j + 1}</b><span>${esc(s)}</span></div>`).join('')}</div></div>` : ''}
       ${st.cues || st.note ? `<div class="card" style="padding:14px;margin-top:10px"><div class="eyebrow">Fíjate en</div>${st.cues ? `<div class="fwk-cue">✅ ${esc(st.cues)}</div>` : ''}${st.note ? `<div class="fwk-cue">💬 Nota de tu entrenador: ${esc(st.note)}</div>` : ''}</div>` : ''}
-      <button class="primary" style="width:100%;margin-top:12px" data-fwk-back="fwkCircuit">Volver al circuito</button>`;
+      <button class="primary" style="width:100%;margin-top:12px" data-fwk-back="fwkCircuit">${c.block.format === 'sets' ? 'Volver a la sesión' : 'Volver al circuito'}</button>`;
     show('fwkExercise');
   }
   function youtubeId(url) {
