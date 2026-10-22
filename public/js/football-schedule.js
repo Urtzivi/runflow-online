@@ -46,6 +46,28 @@
     { id: 'superior', label: 'Tren superior' },
   ];
   const STRENGTH_LIBRARY = [
+    // Programa guiado: ejercicios que usan las sesiones A/B
+    { cat: 'movilidad', name: 'Puente de glúteo', work: '8 reps', note: 'Activación de glúteo', why: 'Enciende el glúteo antes de cargar, para que empuje él y no la zona lumbar.', steps: ['Boca arriba, rodillas dobladas y pies apoyados.', 'Sube la cadera apretando glúteos.', 'Aguanta 2 s arriba y baja despacio.'], cues: 'Costillas abajo: no arquees la espalda.', video: yt('glute bridge técnica') },
+    { cat: 'movilidad', name: 'Balanceo de aductor', work: '8 / lado', note: 'Adductor rockback', why: 'Moviliza aductor y cadera, zonas que sufren en el golpeo y los cambios de dirección.', steps: ['A cuatro patas, estira una pierna hacia el lado.', 'Lleva la cadera hacia atrás, hacia los talones.', 'Vuelve adelante y repite.'], cues: 'Espalda recta; nota el estiramiento por dentro del muslo.', video: yt('adductor rockback mobility') },
+    { cat: 'movilidad', name: 'Oso (bear crawl)', work: '2 × 10 m', note: 'Core y coordinación', why: 'Core, hombros y coordinación de brazos y piernas a la vez.', steps: ['A cuatro patas con las rodillas a un palmo del suelo.', 'Avanza moviendo mano y pie contrarios.', 'Pasos cortos y lentos.'], cues: 'Espalda plana, como una mesa.', video: yt('bear crawl técnica') },
+    { cat: 'preparacion', name: 'Snap down', work: '2 × 5', note: 'Técnica de aterrizaje', why: 'Enseña a caer rápido en posición atlética: la base de toda la pliometría.', steps: ['De puntillas con los brazos arriba.', 'Baja de golpe los brazos y cae en media sentadilla.', 'Quédate quieto 2 s.'], cues: 'Pies a la anchura de la cadera, rodillas hacia fuera y pecho delante.', video: yt('snap down drill landing') },
+    { cat: 'inferior', name: 'Split squat', work: '6 / pierna', note: 'Zancada estática', why: 'Fuerza a una pierna estable y fácil de aprender: base de la aceleración.', steps: ['Un pie delante y otro detrás, separados como una zancada larga.', 'Baja recto hasta que la rodilla de atrás casi toque el suelo.', 'Sube empujando con el pie de delante.'], cues: 'El tronco va recto y la rodilla de delante apunta al pie.', video: yt('split squat proper form') },
+    { cat: 'inferior', name: 'Sentadilla frontal', work: '6 reps', note: 'Barra delante, nivel avanzado', why: 'Fuerza de piernas con el tronco recto, como en los saltos y los apoyos.', steps: ['Barra apoyada delante de los hombros, codos altos.', 'Baja con el pecho alto hasta pasar la cadera por debajo de la rodilla.', 'Sube empujando el suelo.'], cues: 'Codos arriba todo el rato; si caen, baja el peso.', video: yt('front squat technique') },
+    { cat: 'inferior', name: 'Sentadilla al cajón', work: '8 reps', note: 'Peso corporal o con mochila', why: 'Aprende la sentadilla con un tope que da seguridad.', steps: ['De espaldas a un banco o cajón.', 'Baja hasta rozarlo con los glúteos, sin sentarte del todo.', 'Sube empujando el suelo.'], cues: 'Rodillas hacia fuera y talones apoyados.', video: yt('box squat bodyweight') },
+    { cat: 'inferior', name: 'Peso muerto con trap bar', work: '5 reps', note: 'Nivel avanzado', why: 'Fuerza de cadera y piernas con poca carga en la espalda: potencia para saltar y arrancar.', steps: ['Dentro de la barra hexagonal, pies a la anchura de la cadera.', 'Agarra las asas con la espalda recta.', 'Empuja el suelo y sube hasta estar de pie.', 'Baja controlado.'], cues: 'La barra sube recta y la espalda no se redondea.', video: yt('trap bar deadlift technique') },
+    { cat: 'prevencion', name: 'Elevación de sóleo sentado', work: '12 reps', note: 'Rodilla flexionada', why: 'El sóleo absorbe la mayor parte de la carga al correr; protege Aquiles y gemelo.', steps: ['Sentado, con una pesa sobre las rodillas.', 'Sube los talones lo máximo posible.', 'Baja en 3 s.'], cues: 'Rango completo, sin rebotar.', video: yt('seated soleus calf raise') },
+    { cat: 'prevencion', name: 'Elevación de tibial', work: '12 reps', note: 'Espalda contra la pared', why: 'Equilibra el tobillo y protege la parte delantera de la pierna (periostitis).', steps: ['Espalda apoyada en la pared, pies un poco adelantados.', 'Sube las puntas de los pies lo máximo posible.', 'Baja despacio.'], cues: 'Los talones no se despegan.', video: yt('tibialis raise wall') },
+    { cat: 'prevencion', name: 'Curl de isquios deslizante', work: '8 reps', note: 'Toallas o deslizadores', why: 'Isquios fuertes al alargarse: complemento del nórdico para prevenir roturas.', steps: ['Boca arriba con los talones sobre toallas en un suelo liso.', 'Sube la cadera.', 'Aleja los pies despacio y vuelve a traerlos sin bajar la cadera.'], cues: 'Si se cae la cadera, haz solo la parte de alejar.', video: yt('sliding hamstring curl') },
+    { cat: 'superior', name: 'Remo invertido', work: '8 reps', note: 'TRX, anillas o barra baja', why: 'Tirón con el peso del cuerpo: espalda fuerte para el braceo y el contacto.', steps: ['Cuelga de un TRX o barra con el cuerpo recto.', 'Tira llevando el pecho hacia las manos.', 'Baja controlado.'], cues: 'Cuerpo en tabla; cuanto más vertical, más fácil.', video: yt('inverted row técnica') },
+    { cat: 'superior', name: 'Dominada asistida', work: '5 reps', note: 'Con goma o con ayuda', why: 'Tirón vertical para hombros sanos y un tronco fuerte en los duelos.', steps: ['Cuelga de la barra con una goma bajo los pies o rodillas.', 'Tira hasta pasar la barbilla por encima.', 'Baja del todo controlado.'], cues: 'Hombros abajo antes de tirar.', video: yt('assisted pull up band') },
+    { cat: 'superior', name: 'Press de pecho con mancuerna', work: '8 reps', note: 'En banco o en el suelo', why: 'Empuje horizontal: ganar el cuerpo a cuerpo y proteger el balón.', steps: ['Tumbado con una mancuerna en cada mano a la altura del pecho.', 'Empuja hacia arriba hasta estirar los brazos.', 'Baja controlado.'], cues: 'Codos a unos 45°, no abiertos del todo.', video: yt('dumbbell bench press form') },
+    { cat: 'superior', name: 'Press de hombro con mancuerna', work: '8 reps', note: 'De pie o de rodillas', why: 'Empuje vertical y tronco estable para el juego aéreo.', steps: ['Mancuernas a la altura de los hombros.', 'Empuja hacia arriba sin arquear la espalda.', 'Baja controlado.'], cues: 'Aprieta glúteos y abdomen.', video: yt('dumbbell shoulder press standing') },
+    { cat: 'superior', name: 'Flexión explosiva', work: '5 reps', note: 'Rápido arriba', why: 'Empuje rápido, como al apartar a un rival.', steps: ['Posición de flexión.', 'Baja controlado y empuja lo más rápido posible.', 'Las manos pueden despegarse un poco.'], cues: 'Cuerpo en línea; si se hunde la cadera, haz flexión normal rápida.', video: yt('explosive push up') },
+    { cat: 'core', name: 'Paseo del granjero', work: '20 m', note: 'Una pesa en cada mano', why: 'Agarre, core y hombros estables: transmitir fuerza en los duelos.', steps: ['Una pesa pesada en cada mano.', 'Camina alto con pasos cortos.', 'Deja las pesas con la espalda recta.'], cues: 'Hombros atrás y abajo, sin balancearte.', video: yt('farmer carry técnica') },
+    { cat: 'velocidad', name: 'Aceleraciones cortas', work: '3 × 10 m', note: 'Recupera andando (60–90 s)', why: 'Transferir la fuerza al gesto que más se repite en un partido: arrancar.', steps: ['Salida de pie con un pie adelantado.', 'Empuja el suelo hacia atrás con pasos potentes.', 'Termina la distancia y vuelve andando.'], cues: 'Cuerpo inclinado los primeros pasos y brazos fuertes. Cada sprint al 100 % y con descanso completo.', video: yt('acceleration sprint technique football') },
+    { cat: 'velocidad', name: 'Cambio de dirección a 90°', work: '3 / lado', note: 'Máxima calidad', why: 'Frenar y salir en ángulo recto, como al perfilarse o desmarcarse.', steps: ['Corre 5 m.', 'Frena con pasos cortos y apoya fuera.', 'Sal a 90° acelerando 5 m.'], cues: 'Baja la cadera antes del giro.', video: yt('90 degree cut drill') },
+    { cat: 'velocidad', name: 'Reacción + cambio de dirección', work: '3 / lado', note: 'A la señal del compañero', why: 'Une decidir y moverse: en el campo nunca sabes antes hacia dónde vas.', steps: ['En posición atlética.', 'Un compañero señala derecha o izquierda.', 'Reacciona y acelera 5 m hacia ese lado.'], cues: 'Primer paso rápido y bajo.', video: yt('reaction agility drill football') },
+    { cat: 'velocidad', name: 'Salto + sprint', work: '3 reps', note: 'Recupera completo', why: 'Conecta la potencia del salto con la aceleración.', steps: ['Salto horizontal.', 'Al aterrizar, sal esprintando 5–10 m.'], cues: 'Aterriza estable y sal sin pausa.', video: yt('broad jump to sprint drill') },
     // Movilidad: tobillo, cadera, glúteo y core
     { cat: 'movilidad', name: 'Rodilla a la pared', work: '10 / pierna', note: 'Tobillo', why: 'Un tobillo que flexiona bien absorbe mejor los apoyos y quita carga a rodilla y Aquiles.', steps: ['De pie frente a una pared, un pie a un palmo de ella.', 'Lleva la rodilla hacia la pared sin levantar el talón.', 'Vuelve y repite; aleja el pie si tocas fácil.'], cues: 'El talón no se despega y la rodilla va por encima del dedo gordo.', video: yt('knee to wall ankle mobility') },
     { cat: 'movilidad', name: 'Marcha de puntas y talones', work: '2 × 15 m', note: 'Tobillo', why: 'Despierta tobillo y pie antes de correr, saltar y cambiar de dirección.', steps: ['Camina 15 m de puntillas, alto.', 'Vuelve caminando sobre los talones con las puntas arriba.'], cues: 'Pasos cortos y tronco alto.', video: yt('toe walk heel walk warm up') },
@@ -152,6 +174,22 @@
     return {
       name: text(s.name, 120), work: text(s.work, 40), note: text(s.note, 200), why: text(s.why, 300), steps: steps(s.steps),
       cues: text(s.cues, 400), video: url(s.video), img: url(s.img),
+      // Opcionales (programa guiado): parte de la sesión, series propias, descanso entre series y guía de esfuerzo.
+      section: text(s.section, 60), sets: num(s.sets, 1, 10, null), rest_sec: num(s.rest_sec, 0, 600, null), effort: text(s.effort, 200),
+    };
+  }
+  // Respuestas del asistente de programa de fuerza guiado (para mostrar el estado y poder regenerarlo).
+  function sanitizeStrengthPlan(value) {
+    const v = value && typeof value === 'object' ? value : null;
+    if (!v) return null;
+    const pick = (x, list, fallback) => list.includes(x) ? x : fallback;
+    const days = list => (Array.isArray(list) ? list : []).map(Number).filter(d => Number.isInteger(d) && d >= 0 && d <= 6).filter((d, i, a) => a.indexOf(d) === i).sort().slice(0, 7);
+    return {
+      weeks: num(v.weeks, 1, 16, 8), days_per_week: num(v.days_per_week, 1, 3, 2), start: isoDate(v.start),
+      season: pick(v.season, ['pre', 'inicio', 'media', 'final'], 'inicio'), focus: pick(v.focus, ['equilibrado', 'aceleracion', 'salto', 'cod', 'prevencion'], 'equilibrado'),
+      level: pick(v.level, ['inicial', 'intermedio', 'avanzado'], 'intermedio'), material: pick(v.material, ['corporal', 'mancuernas', 'gimnasio'], 'mancuernas'),
+      match_day: v.match_day === null || v.match_day === undefined || v.match_day === '' ? null : num(v.match_day, 0, 6, null),
+      football_days: days(v.football_days), strength_days: days(v.strength_days), created_at: text(v.created_at, 40),
     };
   }
   // Ejercicios propios del coach: se reutilizan en los bloques de todos sus deportistas.
@@ -162,7 +200,7 @@
   }
   function sanitizeStrength(list) {
     const used = new Set();
-    return (Array.isArray(list) ? list : []).filter(b => b && typeof b === 'object').slice(0, 20).map((b, index) => {
+    return (Array.isArray(list) ? list : []).filter(b => b && typeof b === 'object').slice(0, 60).map((b, index) => {
       let blockId = id(b.id, `b${index + 1}`);
       while (used.has(blockId)) blockId = `${blockId}-${index + 1}`;
       used.add(blockId);
@@ -170,7 +208,8 @@
         id: blockId, name: text(b.name, 120) || `Bloque ${index + 1}`, objective: text(b.objective, 200),
         format: b.format === 'sets' ? 'sets' : 'circuit',
         rounds: num(b.rounds, 1, 10, 3), transition_sec: num(b.transition_sec, 0, 300, 15), rest_sec: num(b.rest_sec, 0, 900, 120),
-        stations: (Array.isArray(b.stations) ? b.stations : []).slice(0, 15).map(sanitizeStation).filter(s => s.name),
+        stations: (Array.isArray(b.stations) ? b.stations : []).slice(0, 24).map(sanitizeStation).filter(s => s.name),
+        effort: text(b.effort, 400), plan: text(b.plan, 40),
       };
     });
   }
@@ -231,6 +270,13 @@
   function blockMinutes(block) {
     if (!block || !Array.isArray(block.stations) || !block.stations.length) return 0;
     const rounds = Number(block.rounds || 1);
+    if (block.format === 'sets') {
+      const secs = block.stations.reduce((sum, s) => {
+        const sets = Number(s.sets || rounds);
+        return sum + stationSeconds(s.work) * sets + Number(s.rest_sec ?? block.transition_sec ?? 0) * (sets - 1);
+      }, 0) + Number(block.rest_sec || 0) * (block.stations.length - 1);
+      return Math.max(1, Math.round(secs / 60));
+    }
     const perRound = block.stations.reduce((sum, s) => sum + stationSeconds(s.work), 0) + Number(block.transition_sec || 0) * block.stations.length;
     return Math.max(1, Math.round((perRound * rounds + Number(block.rest_sec || 0) * Math.max(0, rounds - 1)) / 60));
   }
@@ -305,7 +351,7 @@
 
   return {
     DAYS, DAYS_SHORT, WEEK_KINDS, EVENT_KINDS, RATED_KINDS, KIND_LABEL, IMPORTANCE, BODY, MOOD, STRENGTH_CATEGORIES, STRENGTH_LIBRARY, TEMPLATES,
-    sanitizeSchedule, sanitizeStrength, sanitizeStation, sanitizeLibrary, resolvePlan, attachRatings, blockMinutes, stationSeconds, timedSeconds, fromTemplate, mdLabel,
+    sanitizeSchedule, sanitizeStrength, sanitizeStation, sanitizeLibrary, sanitizeStrengthPlan, resolvePlan, attachRatings, blockMinutes, stationSeconds, timedSeconds, fromTemplate, mdLabel,
     addDays, dayIndex, mondayOf, daysBetween, todayMadrid, randomId, MATCH_LOAD_FACTOR, sessionLoad,
   };
 }));

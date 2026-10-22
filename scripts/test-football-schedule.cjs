@@ -81,3 +81,33 @@ test('sanea la biblioteca propia del coach',()=>{
   assert.equal(lib[1].cat,'otros');
   assert.equal(lib[1].video,'');
 });
+
+const P=require('../public/js/football-strength-program.js');
+test('programa guiado: elige días lejos del partido con 48 h o más',()=>{
+  assert.deepEqual(P.chooseDays({days_per_week:2,match_day:5}),[1,3]); // sábado: martes (MD-4) y jueves (MD-2)
+  assert.deepEqual(P.chooseDays({days_per_week:1,match_day:5}),[1]);
+  P.chooseDays({days_per_week:2,match_day:6}).forEach(d=>assert.ok(![6,5,0].includes(d)));
+});
+test('programa guiado: 8 semanas = 16 sesiones de 6 partes con fases y esfuerzo',()=>{
+  const g=P.generate({weeks:8,days_per_week:2,match_day:5,start:'2026-10-26'});
+  assert.equal(g.blocks.length,16);
+  assert.equal(g.events.length,16);
+  assert.deepEqual(g.phases.map(p=>p.key),['aprender','fuerza','potencia','explosivo','cierre']);
+  assert.equal(g.events[0].date,'2026-10-27');
+  g.blocks.forEach(b=>{
+    assert.equal(new Set(b.stations.map(s=>s.section)).size,6,b.name);
+    assert.ok(b.effort);
+    b.stations.forEach(s=>{assert.ok(s.why&&s.steps.length&&s.video&&s.effort&&s.sets,`${b.name} ${s.name}`);});
+  });
+  const clean=S.sanitizeStrength(g.blocks);
+  assert.equal(clean.length,16);
+  assert.equal(clean[0].stations[0].sets,g.blocks[0].stations[0].sets);
+});
+test('programa guiado: regresiones por nivel y material, menos series a mitad de liga',()=>{
+  const names=a=>P.generate({weeks:8,days_per_week:2,match_day:5,...a}).blocks.flatMap(b=>b.stations.map(s=>s.name));
+  assert.ok(names({level:'avanzado',material:'gimnasio'}).includes('Sentadilla frontal'));
+  assert.ok(!names({level:'inicial',material:'mancuernas'}).includes('Sentadilla frontal'));
+  assert.ok(names({material:'corporal'}).includes('Sentadilla al cajón'));
+  const sets=season=>P.generate({weeks:8,days_per_week:2,match_day:5,season}).blocks[2].stations.find(s=>s.section==='Fuerza principal').sets;
+  assert.ok(sets('media')<sets('inicio'));
+});

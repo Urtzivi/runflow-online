@@ -159,7 +159,7 @@ function sendJson(res, status, payload) {
 function readJson(req) {
   return new Promise((resolve, reject) => {
     let body = '';
-    req.on('data', chunk => { body += chunk; if (body.length > 400000) reject(Object.assign(new Error('Petición demasiado grande.'), { status: 413 })); });
+    req.on('data', chunk => { body += chunk; if (body.length > 1500000) reject(Object.assign(new Error('Petición demasiado grande.'), { status: 413 })); });
     req.on('end', () => { try { resolve(body ? JSON.parse(body) : {}); } catch { reject(Object.assign(new Error('JSON no válido.'), { status: 400 })); } });
     req.on('error', reject);
   });
@@ -249,6 +249,7 @@ function sanitizeProgram(body) {
   // Semana del deportista (entrenos, partidos, cambios) y circuitos de fuerza.
   if (source.schedule !== undefined) program.schedule = Schedule.sanitizeSchedule(source.schedule);
   if (source.strength !== undefined) program.strength = Schedule.sanitizeStrength(source.strength);
+  if (source.strength_plan !== undefined) program.strength_plan = Schedule.sanitizeStrengthPlan(source.strength_plan);
   if (!Object.keys(program).length) throw Object.assign(new Error('El programa está vacío.'), { status: 400 });
   return program;
 }
@@ -417,7 +418,7 @@ async function footballWeek(athleteId, from, to) {
   const activity = logs.filter(log => Schedule.RATED_KINDS.includes(log.football?.kind)).map(publicLog);
   const days = Schedule.attachRatings(Schedule.resolvePlan(program, from, to), activity, today);
   const pending = days.filter(day => day.date >= Schedule.addDays(today, -7)).flatMap(day => day.items.filter(item => item.pending)).reverse();
-  return { today, from, to, days, pending, strength: program.strength || [], schedule: program.schedule || null, logs: activity, updated_at: row?.updated_at || null };
+  return { today, from, to, days, pending, strength: program.strength || [], strength_plan: program.strength_plan || null, schedule: program.schedule || null, logs: activity, updated_at: row?.updated_at || null };
 }
 function footballStats(week) {
   const today = week.today, logs = week.logs;
