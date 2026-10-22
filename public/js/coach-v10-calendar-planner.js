@@ -36,6 +36,17 @@
 
   function appState() { try { return state; } catch { return null; } }
   function athleteId() { return appState()?.athlete?.id || ''; }
+  async function deleteSeason() {
+    const season = plan()?.season;
+    if (!season?.id) return;
+    if (!window.confirm(`¿Borrar la temporada «${season.name}»?\n\nSe borran sus objetivos, macrociclos, mesociclos, microciclos y sesiones planificadas. Las actividades que el atleta ya ha hecho se conservan. No se puede deshacer.`)) return;
+    try {
+      await apiCall(`/api/coach/athletes/${encodeURIComponent(athleteId())}/seasons/${encodeURIComponent(season.id)}`, { method: 'DELETE' });
+      try { localStorage.removeItem(`runflow_plan_season_${athleteId()}`); } catch {}
+      await loadPlan(null); planner.level = 'season'; planner.macrocycleId = null; renderPlanner();
+      notify('Temporada borrada. Lo realizado por el atleta se conserva.', 'success');
+    } catch (error) { notify(error.message, 'error'); }
+  }
   function plan() { return appState()?.plan || null; }
   function macros() { return plan()?.macrocycles || []; }
   function mesocycles() {
@@ -185,7 +196,7 @@
     const goals = currentPlan.goals || [];
     return `<header class="v10-planner-head">
       <div><p class="eyebrow">Paso 2 · Calendario mensual de temporada</p><h2>${esc(season.name)}</h2><p>${formatDate(season.start_date)} – ${formatDate(season.end_date)} · ${mesos.length} mesociclo${mesos.length === 1 ? '' : 's'}</p></div>
-      <div class="actions"><label class="v10-season-select">Temporada<select id="v10SeasonSelect">${(appState()?.seasons || []).map(item => `<option value="${esc(item.id)}" ${String(item.id) === String(season.id) ? 'selected' : ''}>${esc(item.name)}</option>`).join('')}</select></label><button class="btn soft" data-v10-action="open-profile">Temporada y objetivos</button><button class="btn soft" data-v10-action="legacy-view" title="Acceso a funciones antiguas que siguen conservadas">Vista técnica</button><button class="btn secondary" data-v10-action="new-macro">+ Macrociclo</button><button class="btn primary" data-v10-action="new-meso">+ Mesociclo</button></div>
+      <div class="actions"><label class="v10-season-select">Temporada<select id="v10SeasonSelect">${(appState()?.seasons || []).map(item => `<option value="${esc(item.id)}" ${String(item.id) === String(season.id) ? 'selected' : ''}>${esc(item.name)}</option>`).join('')}</select></label><button class="btn soft" data-v10-action="open-profile">Temporada y objetivos</button><button class="btn soft" data-v10-action="legacy-view" title="Acceso a funciones antiguas que siguen conservadas">Vista técnica</button><button class="btn danger" data-v10-action="delete-season" title="Borra la planificación de esta temporada. Lo que el atleta ya ha hecho se conserva.">Borrar temporada</button><button class="btn secondary" data-v10-action="new-macro">+ Macrociclo</button><button class="btn primary" data-v10-action="new-meso">+ Mesociclo</button></div>
     </header>
     <section class="v10-objective-card"><strong>Planificar ciclos; decidir las sesiones semana a semana</strong><p>Definimos objetivos de macro, meso y microciclo. Las sesiones se preparan con el entrenador según la evolución, recuperación, sensaciones y disponibilidad del atleta. Crear un ciclo no genera ni publica sesiones.</p></section>
     <section><h3>Macrociclos</h3>
@@ -521,6 +532,7 @@
     }
     if (action === 'open-planner') { switchView('plan'); planner.level = 'season'; renderPlanner(); return; }
     if (action === 'legacy-view') { q('#planView')?.classList.remove('v10-mode'); q('#v10SeasonPlanner')?.classList.add('hidden'); return; }
+    if (action === 'delete-season') return deleteSeason();
     if (action === 'return-planner') { q('#planView')?.classList.add('v10-mode'); q('#v10SeasonPlanner')?.classList.remove('hidden'); planner.level = 'season'; renderPlanner(); return; }
     if(action==='weekly-review'){switchView('activities');return;}
     if(action==='weekly-recovery'){switchView('recovery');return;}
