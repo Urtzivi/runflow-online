@@ -50,7 +50,8 @@ async function coachAthlete(coachId,athleteId){const rows=await sb('coach_athlet
 
 function signToken(payload){const encoded=Buffer.from(JSON.stringify(payload)).toString('base64url');const signature=crypto.createHmac('sha256',secret()).update(encoded).digest('base64url');return `rfa1.${encoded}.${signature}`}
 function decodeToken(token){const parts=String(token||'').split('.');if(parts.length!==3||parts[0]!=='rfa1')return null;const expected=crypto.createHmac('sha256',secret()).update(parts[1]).digest(),received=Buffer.from(parts[2],'base64url');if(received.length!==expected.length||!crypto.timingSafeEqual(received,expected))return null;try{const data=JSON.parse(Buffer.from(parts[1],'base64url').toString('utf8'));if(!data.id||!data.coach_user_id||Number(data.exp)<=Math.floor(Date.now()/1000))return null;return data}catch{return null}}
-async function assistantSession(req,scope='read'){const header=String(req.headers.authorization||'');const raw=header.startsWith('Bearer ')?header.slice(7).trim():'';const payload=decodeToken(raw);if(!payload)throw Object.assign(new Error('Credencial Asistente RunFlow no válida o caducada.'),{status:401});const rows=await sb('workout_templates',`id=eq.${encodeURIComponent(payload.id)}&coach_user_id=eq.${encodeURIComponent(payload.coach_user_id)}&category=eq.${encodeURIComponent(CREDENTIAL)}&select=id,template_data&limit=1`);const record=rows[0]?.template_data||{};if(!rows.length||record.status!=='active'||record.token_hash!==sha(raw))throw Object.assign(new Error('Credencial Asistente RunFlow revocada.'),{status:401});const scopes=Array.isArray(record.scopes)?record.scopes:[];if(!scopes.includes(scope))throw Object.assign(new Error(`La credencial no tiene permiso ${scope}.`),{status:403});return{coach_user_id:payload.coach_user_id,credential_id:payload.id,scopes}}
+// ChatGPT connectors cannot send an Authorization header, so /mcp also accepts the credential as ?key=.
+async function assistantSession(req,scope='read',queryKey=''){const header=String(req.headers.authorization||'');const raw=header.startsWith('Bearer ')?header.slice(7).trim():String(queryKey||'').trim();const payload=decodeToken(raw);if(!payload)throw Object.assign(new Error('Credencial Asistente RunFlow no válida o caducada.'),{status:401});const rows=await sb('workout_templates',`id=eq.${encodeURIComponent(payload.id)}&coach_user_id=eq.${encodeURIComponent(payload.coach_user_id)}&category=eq.${encodeURIComponent(CREDENTIAL)}&select=id,template_data&limit=1`);const record=rows[0]?.template_data||{};if(!rows.length||record.status!=='active'||record.token_hash!==sha(raw))throw Object.assign(new Error('Credencial Asistente RunFlow revocada.'),{status:401});const scopes=Array.isArray(record.scopes)?record.scopes:[];if(!scopes.includes(scope))throw Object.assign(new Error(`La credencial no tiene permiso ${scope}.`),{status:403});return{coach_user_id:payload.coach_user_id,credential_id:payload.id,scopes}}
 async function internalRow(coachId,category,name,data,athleteId=null){const row={id:crypto.randomUUID(),coach_user_id:coachId,athlete_id:athleteId,name:safe(name,160)||'RunFlow Assistant',category,sport:'Internal',stimulus:'assistant',template_data:data,created_at:new Date().toISOString(),updated_at:new Date().toISOString()};const rows=await sb('workout_templates','',{method:'POST',body:row,prefer:'return=representation'});return rows[0]||row}
 async function audit(session,action,detail={}){try{await internalRow(session.coach_user_id,AUDIT,action,{action,credential_id:session.credential_id,detail,recorded_at:new Date().toISOString()})}catch(error){console.error('[assistant-api] audit',error.message)}}
 
@@ -71,16 +72,16 @@ const MCP_TOOLS=[
   {name:'create_week_proposal',description:'Crea una propuesta semanal para revisión del entrenador. Nunca publica ni modifica directamente el calendario.',inputSchema:{type:'object',properties:{athlete_id:{type:'string'},week_start:{type:'string'},title:{type:'string'},reason:{type:'string'},week_type:{type:'string'},coach_comment:{type:'string'},target_load:{type:'number'},workouts:{type:'array',items:{type:'object'}}},required:['athlete_id','week_start','title','reason','workouts'],additionalProperties:false},annotations:{readOnlyHint:false,destructiveHint:false}}
 ];
 function mcpResult(id,value){return{jsonrpc:'2.0',id,result:{content:[{type:'text',text:JSON.stringify(value)}],structuredContent:value,isError:false}}}
-async function handleMcp(req,res){
+async function handleMcp(req,res,url){const key=url.searchParams.get('key')||'';
   if(req.method!=='POST')throw Object.assign(new Error('MCP requiere POST.'),{status:405});
   const message=await readJson(req),id=message.id??null;
   if(message.method==='initialize'){sendJson(res,200,{jsonrpc:'2.0',id,result:{protocolVersion:'2025-06-18',capabilities:{tools:{listChanged:false}},serverInfo:{name:'runflow-assistant',version:'1.0.0'}}});return true}
   if(message.method==='notifications/initialized'){res.writeHead(202,{'Cache-Control':'no-store'});res.end();return true}
   if(message.method==='ping'){sendJson(res,200,{jsonrpc:'2.0',id,result:{}});return true}
-  if(message.method==='tools/list'){await assistantSession(req,'read');sendJson(res,200,{jsonrpc:'2.0',id,result:{tools:MCP_TOOLS}});return true}
+  if(message.method==='tools/list'){await assistantSession(req,'read',key);sendJson(res,200,{jsonrpc:'2.0',id,result:{tools:MCP_TOOLS}});return true}
   if(message.method==='tools/call'){
     const name=message.params?.name,args=message.params?.arguments||{},scope=name==='create_week_proposal'?'draft':'read';
-    const session=await assistantSession(req,scope);
+    const session=await assistantSession(req,scope,key);
     if(name==='list_athletes'){const rows=await athletes(session.coach_user_id);await audit(session,'mcp_athletes_read',{count:rows.length});sendJson(res,200,mcpResult(id,{athletes:rows}));return true}
     if(name==='get_daily_report'){const report=await dailyReport(session.coach_user_id,safe(args.athlete_id,80),args.date);await audit(session,'mcp_daily_report_read',{athlete_id:args.athlete_id,date:report.date});sendJson(res,200,mcpResult(id,report));return true}
     if(name==='create_week_proposal'){const athleteId=safe(args.athlete_id,80);const proposal=await createProposal(session,athleteId,args);sendJson(res,200,mcpResult(id,{proposal}));return true}
@@ -89,7 +90,7 @@ async function handleMcp(req,res){
   sendJson(res,200,{jsonrpc:'2.0',id,error:{code:-32601,message:'Método MCP no encontrado.'}});return true
 }
 
-async function handle(req,res,url){const path=url.pathname,method=req.method||'GET';if(path==='/mcp')return handleMcp(req,res);if(!path.startsWith('/api/assistant/')&&!path.startsWith('/api/coach/assistant'))return false;
+async function handle(req,res,url){const path=url.pathname,method=req.method||'GET';if(path==='/mcp')return handleMcp(req,res,url);if(!path.startsWith('/api/assistant/')&&!path.startsWith('/api/coach/assistant'))return false;
   if(path==='/api/coach/assistant-access'){const session=await coachSession(req,res);if(method==='GET'){sendJson(res,200,{credentials:await listCredentials(session.user.id)});return true}if(method==='POST'){sendJson(res,201,await createCredential(session,await readJson(req)));return true}}
   let match=path.match(/^\/api\/coach\/assistant-access\/([^/]+)$/);if(match&&method==='DELETE'){const session=await coachSession(req,res);await revokeCredential(session.user.id,decodeURIComponent(match[1]));sendJson(res,200,{ok:true});return true}
   if(path==='/api/coach/assistant-proposals'&&method==='GET'){const session=await coachSession(req,res);sendJson(res,200,{proposals:await proposals(session.user.id,url.searchParams.get('status'))});return true}
