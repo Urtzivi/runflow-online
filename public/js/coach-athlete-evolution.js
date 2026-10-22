@@ -37,7 +37,11 @@
   const isRest = workout => /rest|descanso/i.test(`${workout.sport || ''}`) || /^descanso/i.test(workout.title || '');
   const manualValidationKey = (athleteId, workout) => `rf_v8_manual_validation:${athleteId}:${workout.id}:${workout.manual_log?.created_at || ''}`;
 
-  const ui = { weeks: Number(localStorageGet('rf_evolution_weeks')) || 8, data: null, loadingFor: '', reviewCache: new Map() };
+  // Valoraciones de RunFlow Fútbol (partido, entreno, fuerza): carga = minutos × RPE (× 1,3 en partido).
+  const FOOTBALL_KINDS = { match: 'Partido', football_training: 'Entreno fútbol', strength: 'Fuerza' };
+  const FOOTBALL_COLORS = { match: '#c2413b', football_training: '#2f6fb0', strength: '#b8661a' };
+
+  const ui = { weeks: Number(localStorageGet('rf_evolution_weeks')) || 8, data: null, loadingFor: '', reviewCache: new Map(), week: '' };
   if (!PERIODS.includes(ui.weeks)) ui.weeks = 8;
   function localStorageGet(key) { try { return localStorage.getItem(key); } catch { return null; } }
   function localStorageSet(key, value) { try { localStorage.setItem(key, value); } catch {} }
@@ -109,14 +113,16 @@
     const recoveryDays = Math.max(ui.weeks * 7, 28) + 21;
     const id = encodeURIComponent(athleteId);
     const syncParam = sync ? '&sync=1' : '';
-    const [athleteRes, calendarRes, recoveryRes, performanceRes] = await Promise.allSettled([
+    const [athleteRes, calendarRes, recoveryRes, performanceRes, footballRes] = await Promise.allSettled([
       api(`/api/coach/athletes/${id}?week_start=${monday}`),
       api(`/api/coach/athletes/${id}/calendar?oldest=${firstWeek}&newest=${addDays(monday, 6)}${syncParam}`),
       api(`/api/coach/athletes/${id}/recovery?oldest=${addDays(now, -recoveryDays)}&newest=${now}${syncParam}`),
       api(`/api/coach/athletes/${id}/performance?days=${Math.max(84, ui.weeks * 7)}`),
+      api(`/api/coach/athletes/${id}/football-week?from=${firstWeek}&to=${now}&logs_from=${firstWeek}`),
     ]);
     if (ui.loadingFor !== key) return;
     ui.loadingFor = '';
+    if (!ui.data || ui.data.athleteId !== athleteId) ui.week = '';
     if (athleteRes.status !== 'fulfilled') throw athleteRes.reason;
     const errors = [calendarRes, recoveryRes, performanceRes].filter(r => r.status === 'rejected').map(r => r.reason?.message).filter(Boolean);
     ui.data = {
@@ -125,6 +131,7 @@
       weeks: calendarRes.status === 'fulfilled' ? calendarRes.value.weeks || [] : [],
       recovery: recoveryRes.status === 'fulfilled' ? (recoveryRes.value.rows || []).slice().sort((a, b) => String(a.metric_date).localeCompare(String(b.metric_date))) : [],
       performance: performanceRes.status === 'fulfilled' ? performanceRes.value || {} : {},
+      footballLogs: footballRes.status === 'fulfilled' ? footballRes.value.logs || [] : [],
       errors: [...new Set(errors)],
     };
     ui.data.model = buildModel(ui.data);
@@ -137,6 +144,7 @@
     const model = training();
     const result = { athlete, weeks };
     const records = model ? model.records(result).filter(r => r.date && r.date <= now) : [];
+    records.push(...footballRecords(data));
     const published = weeks.filter(w => (w.publication_status || w.status) === 'published');
     const plannedWorkouts = published.flatMap(w => w.workouts || []).filter(w => !isRest(w));
     const done = w => ['completed', 'partial'].includes(w.execution_status) && !(w.activities || []).some(a => model?.mismatch(w.sport, a.sport));
@@ -198,6 +206,22 @@
     };
   }
 
+  // Las valoraciones de fútbol sin sesión de RunFlow vinculada (los partidos siempre) no llegan por el calendario:
+  // se añaden como sesiones realizadas con su carga para que cuenten en el gráfico y en las sesiones.
+  function footballRecords(data) {
+    const linked = new Set(data.weeks.flatMap(w => w.workouts || []).filter(w => w.manual_log).map(w => String(w.id)));
+    return (data.footballLogs || [])
+      .filter(log => FOOTBALL_KINDS[log.kind] && log.date && log.date >= data.firstWeek && log.date <= data.now && !(log.workout_id && linked.has(String(log.workout_id))))
+      .map(log => {
+        const minutes = log.kind === 'match' ? num(log.minutes_played) : num(log.duration_min);
+        const workout = {
+          title: log.title || FOOTBALL_KINDS[log.kind], sport: FOOTBALL_KINDS[log.kind], workout_date: log.date,
+          manual_log: { status: 'completed', actual_duration_min: minutes, rpe: log.rpe, feeling: log.feeling, pain: log.pain, pain_area: log.pain_area, comment: log.note, created_at: log.created_at },
+        };
+        return { athlete: data.athlete, workout, football: log, type: 'football', date: log.date, load: num(log.load), estimated: false };
+      });
+  }
+
   async function loadReviewStates(data) {
     const pending = data.model.sessions.slice(0, 8).filter(s => s.type === 'intervals' && s.activity?.intervals_activity_id);
     await Promise.all(pending.map(async s => {
@@ -239,8 +263,10 @@
       <div class="evo-grid evo-row2">
         <section class="evo-card"><div class="evo-card-head"><div><h3>Últimas semanas</h3><p class="evo-sub">Carga planificada frente a realizada y evolución de la aptitud</p></div>
           <div class="evo-legend"><span><i style="background:#dfe3db"></i>Planificada</span><span><i style="background:var(--v8-lime)"></i>Realizada</span><span><i class="line"></i>Aptitud</span></div></div>
-          <svg id="evoWeeksChart" class="evo-chart" height="200" role="img" aria-label="Carga semanal planificada y realizada"></svg>
+          <svg id="evoWeeksChart" class="evo-chart" height="200" role="img" aria-label="Carga semanal planificada y realizada. Pulsa una semana para ver sus sesiones."></svg>
           <div class="evo-table-wrap">${weeksTable(data)}</div>
+          <p class="evo-note evo-week-hint">Pulsa una semana del gráfico para ver sus sesiones.</p>
+          <div id="evoWeekDetail"></div>
         </section>
         <section class="evo-card"><div class="evo-card-head"><div><h3>Readiness y recuperación</h3><p class="evo-sub">Últimos 28 días · línea discontinua = su media de 21 días</p></div></div>
           ${recoveryBlock(data)}
@@ -261,7 +287,73 @@
       if (nav) nav.click(); else window.switchView('activities');
     });
     drawGauge(data); drawWeeksChart(data); drawReadiness(data); drawSparks(data);
-    renderSessions();
+    renderSessions(); renderWeekDetail();
+  }
+
+  // ---------- Sesiones de una semana del gráfico ----------
+  function selectWeek(start) {
+    ui.week = ui.week === start ? '' : start;
+    drawWeeksChart(ui.data); renderWeekDetail();
+    if (ui.week) byId('evoWeekDetail')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function openSession(s) {
+    const item = { athlete: ui.data.athlete, ...s };
+    if (window.RunFlowCoachRecord) window.RunFlowCoachRecord.open(item);
+  }
+
+  function sourcePill(s) {
+    if (s.type === 'intervals' && s.activity?.intervals_activity_id) return `<a class="evo-src intervals" target="_blank" rel="noopener" href="https://intervals.icu/activities/${encodeURIComponent(s.activity.intervals_activity_id)}" title="Abrir la actividad en Intervals.icu">Intervals.icu ↗</a>`;
+    const label = s.type === 'football' ? 'RunFlow Fútbol' : s.type === 'manual' ? 'RunFlow manual' : 'Plan RunFlow';
+    return `<button type="button" class="evo-src" data-evo-source title="Ver el origen de los datos">${label}</button>`;
+  }
+
+  function renderWeekDetail() {
+    const target = byId('evoWeekDetail'); const data = ui.data;
+    if (!target || !data) return;
+    const week = data.model.weekRows.find(w => w.start === ui.week);
+    target.closest('.evo-card')?.querySelector('.evo-week-hint')?.classList.toggle('hidden', !!week);
+    if (!week) { target.innerHTML = ''; return; }
+    // Realizadas y no realizadas de la semana, más lo que queda programado si es la semana en curso.
+    const list = data.model.sessions.filter(s => s.date >= week.start && s.date <= week.end);
+    const upcoming = data.weeks.filter(w => (w.publication_status || w.status) === 'published').flatMap(w => w.workouts || [])
+      .filter(w => !isRest(w) && w.workout_date > data.now && w.workout_date >= week.start && w.workout_date <= week.end)
+      .map(w => ({ type: 'planned', workout: w, date: w.workout_date, status: 'planned' }));
+    const rows = [...list, ...upcoming].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    target.innerHTML = `<div class="evo-week-detail">
+      <div class="evo-week-detail-head"><div><b>Semana del ${shortDate(week.start)} al ${shortDate(week.end)}</b><small>${fmtNum(Math.round(week.doneLoad))} realizada / ${fmtNum(Math.round(week.plannedLoad))} planificada · ${rows.filter(r => r.status === 'done').length} sesiones hechas</small></div><button type="button" class="evo-btn small" data-evo-week-close>Cerrar</button></div>
+      ${rows.length ? `<table class="evo-sessions evo-week-sessions"><thead><tr><th>Fecha</th><th>Sesión</th><th>Origen</th><th class="n">Carga</th><th>Estado</th></tr></thead><tbody>${rows.map((s, i) => {
+        const w = s.workout || {}, a = s.activity || null;
+        const title = a?.name || w.title || 'Sesión';
+        const status = s.status === 'planned' ? '<span class="evo-pill n">Programada</span>' : sessionStatus(data, s);
+        const load = s.status === 'done' ? (s.load !== null && s.load !== undefined ? fmtNum(Math.round(s.load)) : '—') : num(w.planned_load) !== null ? `<span class="evo-muted">plan ${fmtNum(num(w.planned_load))}</span>` : '—';
+        return `<tr data-evo-week-row="${i}" tabindex="0"><td class="d">${esc(dayDate(s.date))}</td>
+          <td><div class="evo-sname"><i style="background:${sessionColor(s)}"></i><div><b>${esc(title)}</b><small>${esc(sessionSubtitle(s))}</small></div></div></td>
+          <td>${sourcePill(s)}</td><td class="n"><b>${load}</b>${s.estimated ? '<small title="Carga estimada a partir de la duración registrada">*</small>' : ''}</td><td>${status}</td></tr>`;
+      }).join('')}</tbody></table>` : '<div class="evo-empty">No hay sesiones en esta semana.</div>'}
+    </div>`;
+    target.querySelector('[data-evo-week-close]')?.addEventListener('click', () => selectWeek(week.start));
+    target.querySelectorAll('[data-evo-week-row]').forEach(row => {
+      const s = rows[Number(row.dataset.evoWeekRow)];
+      row.addEventListener('click', event => { if (event.target.closest('a')) return; openSession(s); });
+      row.addEventListener('keydown', event => { if (event.key === 'Enter') openSession(s); });
+    });
+  }
+
+  function sessionColor(s) {
+    if (s.type === 'football') return FOOTBALL_COLORS[s.football?.kind] || 'var(--v8-rest)';
+    const w = s.workout || {}, a = s.activity || null;
+    return intensityColor(`${w.title || ''} ${w.summary || ''} ${w.session_objective || ''} ${w.sport || ''} ${a?.name || ''} ${a?.sport || ''}`);
+  }
+
+  function sessionSubtitle(s) {
+    const w = s.workout || {}, a = s.activity || null;
+    if (s.type === 'football') {
+      const f = s.football || {};
+      const minutes = f.kind === 'match' ? num(f.minutes_played) : num(f.duration_min);
+      return [FOOTBALL_KINDS[f.kind], minutes !== null ? `${fmtNum(minutes)} min${f.kind === 'match' ? ' jugados' : ''}` : '', num(f.rpe) !== null ? `RPE ${fmtNum(num(f.rpe))}` : ''].filter(Boolean).join(' · ');
+    }
+    return w.id ? [w.title && a?.name && a.name !== w.title ? w.title : '', num(w.planned_duration_min) ? `${fmtNum(num(w.planned_duration_min))} min` : '', num(w.planned_load) !== null ? `plan ${fmtNum(num(w.planned_load))}` : ''].filter(Boolean).join(' · ') : 'Sin sesión planificada';
   }
 
   function athleteStrip(data) {
@@ -411,6 +503,7 @@
   function sessionStatus(data, s) {
     if (s.status === 'missed') return '<span class="evo-pill bad">No realizada</span>';
     if (s.status === 'skipped') return '<span class="evo-pill bad">Saltada</span>';
+    if (s.type === 'football') return '<span class="evo-pill ok">Valorada</span>';
     if (s.type === 'manual') return localStorageGet(manualValidationKey(data.athleteId, s.workout)) === '1' ? '<span class="evo-pill ok">Validada</span>' : '<span class="evo-pill mid">Por validar</span>';
     const state = ui.reviewCache.get(`${data.athleteId}:${s.activity?.intervals_activity_id}`);
     if (state === 'validated') return '<span class="evo-pill ok">Validada</span>';
@@ -429,16 +522,16 @@
     if (!target || !data) return;
     const list = data.model.sessions.slice(0, 8);
     if (!list.length) { target.innerHTML = '<div class="evo-empty">No hay sesiones registradas en este periodo.</div>'; return; }
-    target.innerHTML = `<table class="evo-sessions"><thead><tr><th>Fecha</th><th>Sesión</th><th class="n">Duración</th><th class="n">Distancia</th><th class="n">Ritmo</th><th class="n">FC media</th><th class="n">Carga</th><th>Sensaciones</th><th>Estado</th></tr></thead><tbody>${list.map(s => {
+    target.innerHTML = `<table class="evo-sessions"><thead><tr><th>Fecha</th><th>Sesión</th><th class="n">Duración</th><th class="n">Distancia</th><th class="n">Ritmo</th><th class="n">FC media</th><th class="n">Carga</th><th>Sensaciones</th><th>Estado</th></tr></thead><tbody>${list.map((s, index) => {
       const w = s.workout || {}, a = s.activity || null, log = w.manual_log || null;
       const title = a?.name || w.title || 'Sesión';
-      const planned = w.id ? [w.title && a?.name && a.name !== w.title ? w.title : '', num(w.planned_duration_min) ? `${fmtNum(num(w.planned_duration_min))} min` : '', num(w.planned_load) !== null ? `plan ${fmtNum(num(w.planned_load))}` : ''].filter(Boolean).join(' · ') : 'Sin sesión planificada';
+      const planned = sessionSubtitle(s);
       const isRun = /run|trail/i.test(a?.sport || w.sport || '');
-      const duration = a ? fmtDuration(a.duration_sec) : s.type === 'manual' && num(log?.actual_duration_min) ? fmtDuration(num(log.actual_duration_min) * 60) : '—';
+      const duration = a ? fmtDuration(a.duration_sec) : ['manual', 'football'].includes(s.type) && num(log?.actual_duration_min) ? fmtDuration(num(log.actual_duration_min) * 60) : '—';
       const feel = log ? [num(log.rpe) !== null ? `RPE ${fmtNum(num(log.rpe))}` : '', feelingLabel(log.feeling), num(log.pain) ? `${log.pain_area ? esc(log.pain_area) + ' ' : 'dolor '}${fmtNum(num(log.pain))}/10` : ''].filter(Boolean).join(' · ') : '—';
       const doneRow = s.status === 'done';
-      return `<tr><td class="d">${esc(dayDate(s.date))}</td>
-        <td><div class="evo-sname"><i style="background:${intensityColor(`${w.title || ''} ${w.summary || ''} ${w.session_objective || ''} ${w.sport || ''} ${a?.name || ''} ${a?.sport || ''}`)}"></i><div><b>${esc(title)}</b><small>${esc(planned)}</small></div>${s.type === 'intervals' && a?.intervals_activity_id && window.RunflowSessionBlocks && looksStructured(w, a) ? `<button type="button" class="sb-blocks-btn" data-blocks="${esc(a.intervals_activity_id)}" data-title="${esc(title)}">Ver bloques</button>` : ''}</div></td>
+      return `<tr data-evo-session="${index}" tabindex="0"><td class="d">${esc(dayDate(s.date))}</td>
+        <td><div class="evo-sname"><i style="background:${sessionColor(s)}"></i><div><b>${esc(title)}</b><small>${esc(planned)}</small></div>${s.type === 'intervals' && a?.intervals_activity_id && window.RunflowSessionBlocks && looksStructured(w, a) ? `<button type="button" class="sb-blocks-btn" data-blocks="${esc(a.intervals_activity_id)}" data-title="${esc(title)}">Ver bloques</button>` : ''}</div></td>
         <td class="n">${doneRow ? duration : '—'}</td>
         <td class="n">${a && num(a.distance_m) ? `${fmtNum(num(a.distance_m) / 1000, 1)} km` : '—'}</td>
         <td class="n">${a && isRun ? fmtPace(a.avg_pace_sec_per_km) : '—'}</td>
@@ -447,7 +540,12 @@
         <td class="feel">${feel}</td><td>${sessionStatus(data, s)}</td></tr>`;
     }).join('')}</tbody></table>`;
     target.querySelectorAll('[data-blocks]').forEach(button => {
-      button.onclick = () => window.RunflowSessionBlocks.open({ athleteId: data.athleteId, activityId: button.dataset.blocks, title: button.dataset.title });
+      button.onclick = event => { event.stopPropagation(); window.RunflowSessionBlocks.open({ athleteId: data.athleteId, activityId: button.dataset.blocks, title: button.dataset.title }); };
+    });
+    target.querySelectorAll('[data-evo-session]').forEach(row => {
+      const s = list[Number(row.dataset.evoSession)];
+      row.addEventListener('click', () => openSession(s));
+      row.addEventListener('keydown', event => { if (event.key === 'Enter') openSession(s); });
     });
   }
 
@@ -474,9 +572,11 @@
     const step = maxLoad > 600 ? 200 : maxLoad > 300 ? 100 : 50;
     const max = Math.ceil(maxLoad / step) * step;
     for (let v = 0; v <= max; v += step) { const y = pt + ih - ih * v / max; el('line', { x1: pl, x2: W - pr, y1: y, y2: y, stroke: '#e6e9e3' }, svg); el('text', { x: pl - 6, y: y + 3, 'text-anchor': 'end', 'font-size': 9, fill: '#9aa19a' }, svg, String(v)); }
+    svg.replaceChildren();
     const bw = iw / weeks.length, b = Math.min(28, bw * .3);
     weeks.forEach((w, i) => {
       const cx = pl + i * bw + bw / 2;
+      if (w.start === ui.week) el('rect', { x: pl + i * bw + 2, y: pt, width: bw - 4, height: ih + pb - 4, rx: 8, fill: '#f1f8e3', stroke: '#b9f34d' }, svg);
       const hp = ih * w.plannedLoad / max, hd = ih * w.doneLoad / max;
       el('rect', { x: cx - b - 1.5, y: pt + ih - hp, width: b, height: hp, rx: 4, fill: '#dfe3db' }, svg);
       el('rect', { x: cx + 1.5, y: pt + ih - hd, width: b, height: hd, rx: 4, fill: w.current ? '#d6f59a' : '#b9f34d', stroke: w.current ? '#9ccf3c' : 'none', 'stroke-dasharray': w.current ? '3 2' : '' }, svg);
@@ -491,6 +591,13 @@
       ctl.forEach(p => { const c = el('circle', { cx: p.x, cy: y(p.v), r: 3.2, fill: '#fff', stroke: '#181d19', 'stroke-width': 2 }, svg); el('title', {}, c, `Aptitud ${fmtNum(p.v)}`); });
       [lo, (lo + hi) / 2, hi].forEach(v => el('text', { x: W - pr + 6, y: y(v) + 3, 'font-size': 9, fill: '#9aa19a' }, svg, fmtNum(v)));
     }
+    // Zonas clicables por semana (encima de todo) para abrir sus sesiones.
+    weeks.forEach((w, i) => {
+      const hit = el('rect', { x: pl + i * bw, y: 0, width: bw, height: H, fill: 'transparent', class: 'evo-week-hit', tabindex: 0, role: 'button', 'aria-label': `Ver sesiones de la semana del ${shortDate(w.start)}` }, svg);
+      el('title', {}, hit, `Semana del ${shortDate(w.start)}: ${Math.round(w.doneLoad)} realizada / ${Math.round(w.plannedLoad)} planificada · pulsa para ver sus sesiones`);
+      hit.addEventListener('click', () => selectWeek(w.start));
+      hit.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectWeek(w.start); } });
+    });
   }
 
   function drawReadiness(data) {

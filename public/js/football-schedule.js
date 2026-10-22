@@ -12,6 +12,14 @@
   const WEEK_KINDS = ['football_training', 'strength', 'rest'];
   const EVENT_KINDS = ['match', 'football_training', 'strength', 'rest', 'cancel'];
   const RATED_KINDS = ['football_training', 'strength', 'match'];
+  // Carga de sesión = minutos × RPE. El partido pesa un 30 % más: contactos, sprints y tensión competitiva
+  // que el RPE solo no recoge (90 min de entreno a RPE 7 = 630; 90 min de partido a RPE 7 = 819).
+  const MATCH_LOAD_FACTOR = 1.3;
+  const sessionLoad = (kind, minutes, rpe) => {
+    const m = Number(minutes), r = Number(rpe);
+    if (!(m > 0) || !(r > 0)) return null;
+    return Math.round(m * r * (kind === 'match' ? MATCH_LOAD_FACTOR : 1));
+  };
   const KIND_LABEL = { football_training: 'Entreno fútbol', strength: 'Fuerza', match: 'Partido', rest: 'Descanso', cancel: 'Cancelado' };
   const IMPORTANCE = { friendly: 'Amistoso', league: 'Liga', tournament: 'Torneo' };
   const BODY = [
@@ -226,6 +234,6 @@
   return {
     DAYS, DAYS_SHORT, WEEK_KINDS, EVENT_KINDS, RATED_KINDS, KIND_LABEL, IMPORTANCE, BODY, MOOD, STRENGTH_LIBRARY, TEMPLATES,
     sanitizeSchedule, sanitizeStrength, sanitizeStation, resolvePlan, attachRatings, blockMinutes, stationSeconds, timedSeconds, fromTemplate, mdLabel,
-    addDays, dayIndex, mondayOf, daysBetween, todayMadrid, randomId,
+    addDays, dayIndex, mondayOf, daysBetween, todayMadrid, randomId, MATCH_LOAD_FACTOR, sessionLoad,
   };
 }));

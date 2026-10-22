@@ -532,8 +532,8 @@
     catch (error) { ui.status = error.message; ui.statusKind = 'err'; paintStatus(); }
   }
   function openContentEditor() {
-    const nav = document.querySelector('#v8AthleteNav [data-v8="summary"]');
-    if (nav) nav.click(); else window.switchView('summary');
+    // El editor de contenido está en el panel de fútbol, debajo de esta misma sección.
+    if (!isActive()) byId('v8FootballNav')?.click();
     setTimeout(() => {
       const toggle = byId('footballProgramToggle'), body = byId('footballProgramBody');
       if (toggle && body?.hidden) toggle.click();

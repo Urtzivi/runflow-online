@@ -4,11 +4,12 @@
   function selectedAthleteId(){return byId('athleteSelect')?.value||'';}
   function ensurePanel(){
     if(byId('footballCoachPanel'))return;
-    const summary=document.getElementById('summaryView');
-    if(!summary)return;
+    // El Resumen del coach solo muestra la visión del equipo: el panel de fútbol vive en la sección Fútbol del atleta.
+    const host=document.getElementById('footballView');
+    if(!host)return;
     const panel=document.createElement('section');panel.id='footballCoachPanel';panel.className='card';panel.style.marginTop='18px';
     panel.innerHTML=`<div class="card-head"><div><p class="eyebrow">Módulo específico</p><h2>Fútbol</h2><p>Bienestar, carga, RPE, partidos y fuerza del deportista.</p></div><div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end"><a id="footballAthleteLink" class="btn soft hidden" href="/football" target="_blank" rel="noopener">Abrir Athlete Fútbol</a><button id="footballModeButton" class="btn secondary" type="button">Activar Fútbol</button></div></div><div class="card-body"><div class="grid grid-4"><article class="metric"><span>Carga 7 días</span><strong id="footballCoachLoad">—</strong><small>min × RPE</small></article><article class="metric"><span>RPE medio</span><strong id="footballCoachRpe">—</strong><small>7 días</small></article><article class="metric"><span>Fútbol</span><strong id="footballCoachSessions">—</strong><small>sesiones</small></article><article class="metric"><span>Partidos</span><strong id="footballCoachMatches">—</strong><small>7 días</small></article></div><p id="footballCoachStatus" class="muted small" style="margin:12px 0 0">Selecciona un deportista.</p></div>`;
-    summary.appendChild(panel);
+    host.appendChild(panel);
     byId('footballModeButton').addEventListener('click',toggleMode);
   }
   async function load(){
@@ -30,6 +31,6 @@
     const currently=byId('footballModeButton').textContent.includes('activado');
     try{await api(`/api/coach/athletes/${encodeURIComponent(athleteId)}/football-mode`,{method:'POST',body:JSON.stringify({enabled:!currently})});await load();}catch(error){byId('footballCoachStatus').textContent=error.message;}
   }
-  const start=()=>{ensurePanel();const select=byId('athleteSelect');if(select){select.addEventListener('change',()=>setTimeout(load,250));load();}else setTimeout(start,300);};
+  const start=()=>{ensurePanel();const select=byId('athleteSelect');if(select&&byId('footballCoachPanel')){select.addEventListener('change',()=>setTimeout(load,250));load();}else setTimeout(start,300);};
   start();
 })();
