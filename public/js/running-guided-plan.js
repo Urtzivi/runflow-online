@@ -87,6 +87,46 @@
     },
   };
 
+  // Fuerza: qué se busca en cada bloque de carrera (en palabras sencillas) y qué familias de la biblioteca usa.
+  const STRENGTH = {
+    prep: { name: 'Aprender', goal: 'Aprender la técnica de los ejercicios básicos y fortalecer gemelos y tronco.', families: ['General Strength', 'Core', 'Calf/Soleus'], effort: 'RPE 5-7: terminar cada serie con 3-4 repeticiones de sobra.' },
+    base: { name: 'Ganar fuerza', goal: 'Ganar fuerza con poco volumen y bastante peso: es cuando más se puede mejorar.', families: ['Max Strength', 'Calf/Soleus', 'Unilateral'], effort: 'RPE 7-8: pesado pero con 1-3 repeticiones de sobra, nunca al fallo.' },
+    umbral: { name: 'Fuerza a una pierna', goal: 'Pasar la fuerza a una pierna y a la zancada, con menos peso.', families: ['Unilateral', 'Plyometric'], effort: 'RPE 6-8: técnica limpia; los saltos, pocos y de calidad.' },
+    vo2: { name: 'Potencia', goal: 'Convertir la fuerza en potencia: saltos y movimientos rápidos.', families: ['Power', 'Plyometric'], effort: 'Rápido y con poca carga; parar antes de perder velocidad.' },
+    resistencia: { name: 'Fuerza-resistencia', goal: 'Que las piernas aguanten la fatiga del final de carrera.', families: ['Strength Endurance', 'Unilateral'], effort: 'RPE 6-8: cargas moderadas y más repeticiones.' },
+    terreno: { name: 'Fuerza para montaña', goal: 'Bajadas: fuerza excéntrica (frenar) y saltos para proteger cuádriceps y tobillos.', families: ['Trail Eccentric', 'Plyometric'], effort: 'RPE 6-8: bajar lento (2-4 segundos).' },
+    especifico: { name: 'Mantener', goal: 'Mantener lo ganado sin cansar: poco volumen.', families: ['Maintenance', 'Plyometric'], effort: 'RPE 5-7: pocas series, lejos del fallo.', max: 1 },
+    taper: { name: 'Activar', goal: 'Una sesión corta para mantener la chispa; la semana de carrera, nada.', families: ['Maintenance', 'Core'], effort: 'RPE 5-6: muy poco volumen.', max: 1 },
+  };
+  const EQUIPMENT = {
+    gimnasio: { label: 'Gimnasio', hint: 'Barra, mancuernas y máquinas.' },
+    casa: { label: 'En casa con mancuernas', hint: 'Mancuernas o kettlebell, gomas y un cajón o escalón.' },
+    sin_material: { label: 'Sin material', hint: 'Peso corporal, un escalón y el suelo.' },
+  };
+  function equipmentOk(row, equipment) {
+    const mat = norm(row.material);
+    if (equipment === 'casa') return !mat.startsWith('gimnasio;');
+    if (equipment === 'sin_material') return /^(peso corporal|gomas|escalon|suelo)/.test(mat);
+    return true;
+  }
+  const STRENGTH_RULES = [
+    'Nunca el día antes de una sesión de calidad o de la tirada larga.',
+    'Mejor en un día de rodaje fácil. Si no hay, el mismo día de la calidad, después de correr.',
+    'Al menos un día entre dos sesiones de fuerza.',
+    'En semanas de descarga, una sola sesión y más ligera. La semana de la carrera, nada.',
+  ];
+  function strengthPlanFor(answers, race, phaseKey, weekType) {
+    const chosen = Number(answers.strength) || 0;
+    const base = STRENGTH[phaseKey] || STRENGTH.base;
+    let families = race.trail && ['umbral', 'vo2', 'resistencia'].includes(phaseKey) ? ['Trail Eccentric', ...base.families] : base.families;
+    if (answers.level === 'nuevo' && ['base', 'vo2'].includes(phaseKey)) families = ['General Strength', 'Unilateral', 'Calf/Soleus'];
+    let perWeek = Math.min(chosen, base.max || 2);
+    if (weekType === 'deload') perWeek = Math.min(perWeek, 1);
+    if (weekType === 'recovery') { perWeek = answers.strength ? 1 : 0; families = ['Core', 'General Strength']; }
+    if (weekType === 'competition') perWeek = 0;
+    return { ...base, families, perWeek };
+  }
+
   const RACES = {
     '5K': { label: '5K', article: 'el 5K', distance_km: 5, lib: '5K', taper: 1, route: [['prep', 1], ['base', 3], ['umbral', 2], ['vo2', 3], ['especifico', 2]], zone: 'Z5' },
     '10K': { label: '10K', article: 'el 10K', distance_km: 10, lib: '10K', taper: 1, route: [['prep', 1], ['base', 3], ['umbral', 3], ['vo2', 2], ['especifico', 2]], zone: 'Z4-Z5' },
@@ -234,6 +274,7 @@
       week.hours = Math.round(week.minutes / 6) / 10;
       week.load = Math.round(week.minutes * info.rpe);
       week.label = info.label;
+      week.strength_sessions = strengthPlanFor(answers, race, week.phase, week.type).perWeek;
       week.why = week.reason ? `${REASONS[week.reason] ? `${REASONS[week.reason]}. ` : ''}${info.why}` : info.why;
       const race2 = (answers.other_races || []).find(item => item.date >= week.start && item.date <= week.end);
       if (race2) week.b_race = race2;
@@ -243,7 +284,7 @@
     phases.forEach(phase => {
       const own = weeks.filter(week => week.phase === phase.key);
       if (!own.length) return;
-      mesos.push({ key: phase.key, ...PHASES[phase.key], start: own[0].start, end: own[own.length - 1].end, weeks: own });
+      mesos.push({ key: phase.key, ...PHASES[phase.key], start: own[0].start, end: own[own.length - 1].end, weeks: own, strength: strengthPlanFor(answers, race, phase.key, 'load') });
     });
     // Las semanas de vuelta van dentro del primer mesociclo.
     if (lead.length && mesos.length) {
@@ -304,7 +345,7 @@
       level: Number(r.Nivel_1_5 || r.lv) || 3, minutes: Number(r.Tiempo_total_min || r.tm) || 0,
       warmup: Number(r.Calentamiento || r.wu) || 0, main: r.Bloque_principal || r.bp || '', cooldown: Number(r.Vuelta_calma || r.cd) || 0,
       intensity: r.Intensidad_prescrita || r.int || '', terrain: r.Terreno || r.ter || '', ok: r.Criterio_exito || r.ok || '',
-      adjust: r.Regla_ajuste || r.adj || '', avoid: r.No_usar_si || r.no || '', load: Number(r.Carga_sRPE_est || r.l) || 0,
+      adjust: r.Regla_ajuste || r.adj || '', material: r.Material || r.mat || '', avoid: r.No_usar_si || r.no || '', load: Number(r.Carga_sRPE_est || r.l) || 0,
     };
   }
   const isStrengthRow = row => /fuerza|strength/.test(norm(row.discipline));
@@ -459,16 +500,34 @@
       }));
     });
 
-    // 4) Fuerza (no en semana de carrera ni de vuelta)
-    const strengthCount = ['competition', 'recovery'].includes(week.type) ? 0 : week.phase === 'taper' ? Math.min(1, Number(answers.strength) || 0) : Number(answers.strength) || 0;
-    if (strengthCount) {
-      const strengthDays = trainDays.filter(day => day.strength !== false && !qualityDays.some(q => q.day === day.day) && day.day !== longDay?.day && (raceDay < 0 || day.day < raceDay - 2));
-      const families = week.phase === 'prep' || answers.level === 'nuevo' ? ['General Strength', 'Core'] : week.phase === 'base' ? ['Max Strength', 'Unilateral'] : week.phase === 'taper' ? ['Maintenance'] : race.trail ? ['Trail Eccentric', 'Plyometric'] : ['Power', 'Plyometric', 'Maintenance'];
-      strengthDays.filter((day, i) => i % 2 === 0 || strengthDays.length <= strengthCount).slice(0, strengthCount).forEach((day, i) => {
-        const fam = families[i % families.length];
-        const row = pickRow(rows, r => isStrengthRow(r) && r.family === fam, progress, Math.max(2, level.maxLib), 45, used)
-          || pickRow(rows, r => isStrengthRow(r) && ['General Strength', 'Maintenance'].includes(r.family), 0, 5, 45, used);
-        if (row) { used.add(row.id); sessions.push(sessionFromRow(row, dateOf(day.day), { priority: 'B', role: 'Fuerza', objective: 'Piernas y tronco más fuertes para correr mejor y lesionarse menos.' })); }
+    // 4) Fuerza, periodizada con los bloques de carrera
+    const sp = strengthPlanFor(answers, race, week.phase, week.type);
+    if (sp.perWeek) {
+      const hard = new Set([...qualityDays.map(d => d.day), longDay?.day].filter(d => d !== undefined));
+      const eligible = trainDays.filter(day => day.strength !== false && (raceDay < 0 || day.day < raceDay - 2));
+      // Regla: nunca el día antes de una sesión de calidad o de la tirada larga.
+      // Primero un día fácil; si no hay, el mismo día de la calidad (después de correr) salvo en atletas que empiezan.
+      const dayBeforeHard = day => hard.has(day.day + 1);
+      const easy = eligible.filter(day => !hard.has(day.day) && !dayBeforeHard(day));
+      const onQuality = answers.level === 'nuevo' ? [] : eligible.filter(day => qualityDays.some(q => q.day === day.day) && !dayBeforeHard(day));
+      const chosen = [];
+      for (const day of [...easy, ...onQuality, ...eligible.filter(day => !hard.has(day.day))]) {
+        if (chosen.length >= sp.perWeek) break;
+        if (chosen.some(other => other.day === day.day || Math.abs(other.day - day.day) < 2)) continue;
+        chosen.push(day);
+      }
+      chosen.sort((a, b) => a.day - b.day).forEach((day, i) => {
+        const fam = sp.families[i % sp.families.length];
+        const maxLevel = week.type === 'deload' ? Math.max(1, level.maxLib - 1) : Math.max(2, level.maxLib);
+        const row = pickRow(rows, r => isStrengthRow(r) && r.family === fam && equipmentOk(r, answers.equipment), progress, maxLevel, 50, used)
+          || pickRow(rows, r => isStrengthRow(r) && sp.families.includes(r.family) && equipmentOk(r, answers.equipment), progress, 5, 50, used)
+          || pickRow(rows, r => isStrengthRow(r) && ['General Strength', 'Core'].includes(r.family), progress, 5, 50, used);
+        if (row) {
+          used.add(row.id);
+          const session = sessionFromRow(row, dateOf(day.day), { priority: 'B', role: `Fuerza · ${sp.name}`, objective: sp.goal });
+          if (qualityDays.some(q => q.day === day.day)) session.summary += ' · Después de correr, no antes';
+          sessions.push(session);
+        }
       });
     }
     return sessions.sort((a, b) => a.workout_date.localeCompare(b.workout_date) || (a.is_strength ? 1 : -1));
@@ -509,16 +568,19 @@
   function mesoPayload(meso) {
     return {
       name: meso.name, start_date: meso.start, end_date: meso.end, duration_weeks: meso.weeks.length, status: 'planned',
-      primary_adaptation: meso.goal.slice(0, 200), secondary_adaptations: [], success_criteria: meso.success,
+      primary_adaptation: meso.goal.slice(0, 200),
+      secondary_adaptations: meso.strength.perWeek ? [`Fuerza: ${meso.strength.name.toLowerCase()} (${meso.strength.perWeek}/semana)`] : [],
+      success_criteria: meso.strength.perWeek ? `${meso.success} Fuerza: ${meso.strength.goal}` : meso.success,
+      planned_strength_sessions: meso.weeks.reduce((sum, w) => sum + (w.strength_sessions || 0), 0),
       planned_hours: Math.round(meso.weeks.reduce((s, w) => s + w.hours, 0) * 10) / 10,
       planned_load: meso.weeks.reduce((s, w) => s + w.load, 0),
       progression_pattern: meso.weeks.map(w => w.label),
-      notes: `${MESO_TYPE_PREFIX}${meso.type}\n${PHASE_PREFIX}${meso.key}\nPor qué: ${meso.why}`,
+      notes: `${MESO_TYPE_PREFIX}${meso.type}\n${PHASE_PREFIX}${meso.key}\nPor qué: ${meso.why}${meso.strength.perWeek ? `\nFuerza (${meso.strength.name}): ${meso.strength.goal} ${meso.strength.effort}` : ''}`,
     };
   }
   function microPayload(meso, week, workouts, answers) {
     const position = meso.weeks.indexOf(week) + 1;
-    const strength = (workouts || []).filter(w => w.is_strength).length || (['competition', 'recovery'].includes(week.type) ? 0 : Number(answers.strength) || 0);
+    const strength = workouts ? workouts.filter(w => w.is_strength).length : week.strength_sessions || 0;
     return {
       name: `${meso.name} · semana ${position}`, start_date: week.start, end_date: week.end, type: week.type,
       primary_objective: week.b_race ? `${meso.goal} Esta semana hay carrera de preparación (${week.b_race.name || 'objetivo B'}): úsala como sesión de calidad.` : meso.goal,
@@ -533,7 +595,7 @@
   function compactAnswers(a) {
     return {
       v: 1, race: a.race, race_date: a.race_date, race_name: a.race_name || '', goal_mode: a.goal_mode, target_time: a.target_time || '',
-      level: a.level, injuries: a.injuries || '', long_day: a.long_day, strength: a.strength, start_date: a.start_date,
+      level: a.level, injuries: a.injuries || '', long_day: a.long_day, strength: a.strength, equipment: a.equipment || 'gimnasio', start_date: a.start_date,
       days: (a.days || []).map(d => ({ day: d.day, minutes: d.minutes })), other_races: a.other_races || [],
     };
   }
@@ -556,7 +618,8 @@
   }
 
   return {
-    DAYS, DAYS_SHORT, PHASES, RACES, LEVELS, WEEK_TYPES, REASONS, MARKER,
+    DAYS, DAYS_SHORT, PHASES, RACES, LEVELS, WEEK_TYPES, REASONS, MARKER, STRENGTH, EQUIPMENT, STRENGTH_RULES,
+    strengthPlanFor, equipmentOk,
     addDays, mondayOf, nextMonday, dayIndex, formatDate, rpeExplain, parseMain, parseTime,
     distribute, buildStructure, replan, buildWeekSessions, libRow,
     seasonPayload, goalPayloads, macroPayload, mesoPayload, microPayload, compactAnswers, readAnswers,

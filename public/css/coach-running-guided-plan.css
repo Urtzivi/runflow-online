@@ -60,6 +60,12 @@
 .rgp-table td{padding:6px 4px;border-top:1px solid #f0f2ee;vertical-align:top}
 .rgp-table td:first-child{width:44px;font-weight:800;color:#5d6b6e}.rgp-table td:last-child{width:70px;text-align:right;white-space:nowrap;color:#5d6b6e}
 .rgp-table small{display:block;color:#7b827c;font-size:11.5px}
+.rgp-tag{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;background:#e4f4cc;color:#2e4d0d;font-size:10.5px;font-weight:800;vertical-align:middle}
+.rgp-str{display:block;margin-top:2px;color:#b8661a !important;font-weight:700}
+.rgp-strength{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-top:8px}
+.rgp-strength div{background:#fcefdf;border:1px solid #f1d7b4;border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:3px}
+.rgp-strength span{font-size:12px;line-height:1.4}.rgp-strength small{color:#8a5a20;font-size:11.5px}
+.rgp-rules{margin:8px 0 0;padding-left:18px;color:#424a43;font-size:12px;line-height:1.55}
 @media (max-width:760px){
   .rgp-entry{flex-direction:column;align-items:flex-start}
   .rgp-days{grid-template-columns:repeat(2,minmax(0,1fr))}

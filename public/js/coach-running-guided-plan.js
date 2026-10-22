@@ -67,7 +67,7 @@
     const longest = days.slice().sort((a, b) => b.minutes - a.minutes)[0];
     return {
       race: '', race_date: '', race_name: '', goal_mode: 'terminar', target_time: '', other_races: [],
-      level: 'regular', injuries: '', days, long_day: longest?.minutes ? longest.day : 6, strength: 1,
+      level: 'regular', injuries: '', days, long_day: longest?.minutes ? longest.day : 6, strength: 2, equipment: 'gimnasio',
       start_date: P.nextMonday(P.addDays(today(), 1)), from_profile: Boolean(fromProfile),
     };
   }
@@ -114,8 +114,10 @@
         <div class="rgp-days">${a.days.map(day => `<div class="rgp-day${day.minutes ? ' on' : ''}"><b>${P.DAYS[day.day]}</b>
           <select data-rgp-day="${day.day}">${MINUTES.map(m => `<option value="${m}" ${Number(day.minutes) === m ? 'selected' : ''}>${m ? `${m} min` : 'No corre'}</option>`).join('')}</select>
           ${day.minutes ? `<button type="button" class="rgp-long${Number(a.long_day) === day.day ? ' on' : ''}" data-rgp-long="${day.day}">${Number(a.long_day) === day.day ? '★ Tirada larga' : 'Tirada larga aquí'}</button>` : ''}</div>`).join('')}</div>
-        <h3>Sesiones de fuerza por semana</h3>
-        <div class="rgp-opts rgp-opts3">${option('strength', 0, 'Ninguna', 'Hace fuerza por su cuenta o no quiere.', a.strength)}${option('strength', 1, '1 a la semana', 'Lo mínimo para prevenir lesiones.', a.strength)}${option('strength', 2, '2 a la semana', 'Lo ideal si tiene tiempo.', a.strength)}</div>
+        <h3>Fuerza</h3>
+        <div class="rgp-sub">La fuerza va dentro del plan: cambia en cada bloque (aprender, ganar fuerza, potencia, mantener) y se coloca sola para no quitar piernas a las sesiones importantes.</div>
+        <div class="rgp-opts rgp-opts3" style="margin-top:8px">${option('strength', 0, 'Ninguna', 'La hace por su cuenta. Corre más riesgo de lesión.', a.strength)}${option('strength', 1, '1 a la semana', 'Lo mínimo para prevenir lesiones.', a.strength)}${option('strength', 2, '2 a la semana', 'Lo ideal: mejora la economía de carrera.', a.strength, ' <span class="rgp-tag">Recomendado</span>')}</div>
+        ${a.strength ? `<h3>¿Dónde la hace?</h3><div class="rgp-opts rgp-opts3">${Object.entries(P.EQUIPMENT).map(([key, item]) => option('equipment', key, item.label, item.hint, a.equipment)).join('')}</div>` : ''}
         <label class="rgp-f rgp-narrow">El plan empieza el lunes<input type="date" data-rgp-field="start_date" value="${esc(a.start_date)}" step="7"></label>`;
     } else body = renderSummary();
     const last = ui.step === STEPS.length - 1;
@@ -165,16 +167,19 @@
       <div class="rgp-sub">Cada fila es un bloque (mesociclo) y cada cuadro una semana (microciclo). Pasa el ratón por un cuadro para ver por qué es así.</div>
       <div class="rgp-map" style="--weeks:${total}">
         <div class="rgp-map-head"><span></span><div class="rgp-map-weeks">${structure.weeks.map(week => `<i>${week.index}</i>`).join('')}</div></div>
-        ${structure.mesos.map(meso => `<div class="rgp-map-row"><div><b>${esc(meso.name)} · ${meso.weeks.length} ${meso.weeks.length === 1 ? 'semana' : 'semanas'}</b><small>${esc(meso.goal)}</small></div>
-          <div class="rgp-map-weeks">${structure.weeks.map(week => meso.weeks.includes(week) ? `<span class="rgp-wk t-${week.type}" title="Semana ${week.index} · ${esc(P.formatDate(week.start))} · ${esc(week.label)} · ${week.minutes} min. ${esc(week.why)}"></span>` : '<span></span>').join('')}</div></div>`).join('')}
+        ${structure.mesos.map(meso => `<div class="rgp-map-row"><div><b>${esc(meso.name)} · ${meso.weeks.length} ${meso.weeks.length === 1 ? 'semana' : 'semanas'}</b><small>${esc(meso.goal)}</small>${a.strength && meso.strength.perWeek ? `<small class="rgp-str">Fuerza: ${esc(meso.strength.name.toLowerCase())} · ${meso.strength.perWeek}/semana</small>` : ''}</div>
+          <div class="rgp-map-weeks">${structure.weeks.map(week => meso.weeks.includes(week) ? `<span class="rgp-wk t-${week.type}" title="Semana ${week.index} · ${esc(P.formatDate(week.start))} · ${esc(week.label)} · ${week.minutes} min${week.strength_sessions ? ` + ${week.strength_sessions} de fuerza` : ''}. ${esc(week.why)}"></span>` : '<span></span>').join('')}</div></div>`).join('')}
         <div class="rgp-legend"><span><i class="t-load"></i>Carga</span><span><i class="t-overload"></i>Semana más exigente</span><span><i class="t-deload"></i>Descarga</span><span><i class="t-competition"></i>Puesta a punto y carrera</span></div>
       </div>
+      ${a.strength ? `<h3>Fuerza a lo largo de la temporada</h3>
+      <div class="rgp-strength">${structure.mesos.filter(meso => meso.strength.perWeek).map(meso => `<div><b>${esc(meso.name)} → ${esc(meso.strength.name)}</b><span>${esc(meso.strength.goal)}</span><small>${esc(meso.strength.effort)}</small></div>`).join('')}</div>
+      <ul class="rgp-rules">${P.STRENGTH_RULES.map(rule => `<li>${esc(rule)}</li>`).join('')}</ul>` : '<div class="rgp-warn">Sin fuerza en el plan. Si la hace por su cuenta, que no sea el día antes de las sesiones de calidad ni de la tirada larga.</div>'}
       <details class="rgp-why"><summary>¿Por qué este orden?</summary>${structure.mesos.map(meso => `<p><b>${esc(meso.name)}.</b> ${esc(meso.why)} <em>Ha funcionado si: ${esc(meso.success.charAt(0).toLowerCase() + meso.success.slice(1))}</em></p>`).join('')}</details>
       <h3>Las ${SESSION_WEEKS} primeras semanas</h3>
       <div class="rgp-sub">Sesiones de la biblioteca RunFlow con la intensidad en RPE (del 1 al 10). El resto de semanas se preparan más adelante, según cómo vaya.</div>
       ${!ui.library ? '<div class="rgp-info">Cargando la biblioteca de sesiones…</div>' : sessions.map(({ week, items }) => `<div class="rgp-week"><div class="rgp-week-head"><b>Semana ${week.index} · ${esc(P.formatDate(week.start))} – ${esc(P.formatDate(week.end))}</b><span>${esc(week.label)} · ≈ ${week.minutes} min</span></div>
         ${items.length ? `<table class="rgp-table"><tbody>${items.map(item => `<tr><td>${P.DAYS_SHORT[P.dayIndex(item.workout_date)]}</td><td><b>${esc(item.title)}</b><small>${esc(item.summary)}</small></td><td>${item.planned_duration_min || '—'} min</td></tr>`).join('')}</tbody></table>` : '<div class="rgp-sub">Sin sesiones: revisa los días disponibles.</div>'}</div>`).join('')}
-      <div class="rgp-info">Se guardará en su ficha que entrena ${esc(trainDays)}${a.strength ? ` y ${a.strength} ${a.strength === 1 ? 'sesión' : 'sesiones'} de fuerza` : ''}. Si pierde días o semanas, el plan se podrá recalcular desde ese punto sin mover la carrera.</div>`;
+      <div class="rgp-info">Se guardará en su ficha que entrena ${esc(trainDays)}${a.strength ? `, con hasta ${a.strength} ${a.strength === 1 ? 'sesión' : 'sesiones'} de fuerza a la semana (${esc(P.EQUIPMENT[a.equipment]?.label.toLowerCase() || '')})` : ''}. Si pierde días o semanas, el plan se podrá recalcular desde ese punto sin mover la carrera.</div>`;
   }
 
   // ---------- Eventos ----------
@@ -237,12 +242,33 @@
     });
     return { availability: { ...(ui.profile?.availability || {}), configured: true, days } };
   }
+  async function takenWeeks(structure) {
+    const seasons = (appState()?.seasons || []).filter(item => item.start_date <= structure.end && item.end_date >= structure.start);
+    const starts = new Set(structure.weeks.map(week => week.start));
+    const taken = [];
+    for (const item of seasons) {
+      const plan = await apiCall(`${base()}/plan?season_id=${encodeURIComponent(item.id)}`);
+      (plan.macrocycles || []).forEach(macro => (macro.mesocycles || []).forEach(meso => (meso.microcycles || []).forEach(micro => {
+        if (starts.has(micro.start_date)) taken.push({ start: micro.start_date, season: item.name });
+      })));
+    }
+    return taken.sort((a, b) => a.start.localeCompare(b.start));
+  }
   async function create() {
     const a = ui.a, preview = ui.preview;
     if (!preview?.structure || !ui.library) return;
     const structure = preview.structure;
-    ui.busy = true; ui.status = 'Guardando la disponibilidad…'; render();
+    ui.busy = true; ui.status = 'Comprobando que no pisa semanas ya planificadas…'; render();
     let season = null;
+    try {
+      const taken = await takenWeeks(structure);
+      if (taken.length) {
+        ui.busy = false;
+        ui.status = `Error: ${taken.length === 1 ? 'la semana' : 'las semanas'} del ${taken.slice(0, 3).map(item => P.formatDate(item.start)).join(', ')} ya ${taken.length === 1 ? 'está planificada' : 'están planificadas'} en “${taken[0].season}”. Borra esa temporada o empieza el plan después.`;
+        render(); return;
+      }
+    } catch { /* si no se puede comprobar, el servidor lo impedirá igualmente */ }
+    ui.status = 'Guardando la disponibilidad…'; render();
     const step = text => { ui.status = text; const status = q('#rgpBody .rgp-status'); if (status) status.textContent = text; };
     try {
       await apiCall(`/api/v9/coach/athletes/${encodeURIComponent(athleteId())}/dynamic-profile`, { method: 'PUT', body: JSON.stringify(availabilityPayload(a)) });

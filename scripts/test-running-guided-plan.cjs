@@ -82,6 +82,34 @@ test('con la biblioteca filtrada de producción (máx. 60 min salvo tiradas larg
   }
 });
 
+test('la fuerza va periodizada y colocada lejos de las sesiones duras',()=>{
+  const a={...answers,strength:2,equipment:'gimnasio',days:[{day:1,minutes:60},{day:2,minutes:45},{day:3,minutes:60},{day:4,minutes:45},{day:6,minutes:120}],other_races:[]};
+  const st=P.buildStructure(a);
+  const lib=Object.fromEntries(library.map(r=>[r.i,r]));
+  const families={};
+  for(const week of st.weeks){
+    const sessions=P.buildWeekSessions(a,st,week,library);
+    const strength=sessions.filter(s=>s.is_strength);
+    const hardDays=sessions.filter(s=>/Sesión de calidad|Tirada larga/.test(s.summary)).map(s=>P.dayIndex(s.workout_date));
+    strength.forEach(s=>{
+      assert.ok(!hardDays.includes(P.dayIndex(s.workout_date)+1),`semana ${week.index}: ${s.title} no va el día antes de una sesión dura`);
+      (families[week.phase]=families[week.phase]||new Set()).add(lib[s.runflow_library_id].f);
+    });
+    if(week.type==='competition') assert.equal(strength.length,0,'semana de carrera sin fuerza');
+    if(week.type==='deload'||week.phase==='especifico') assert.ok(strength.length<=1);
+    else if(week.phase!=='taper') assert.equal(strength.length,2,`semana ${week.index} con 2 de fuerza`);
+    const days=strength.map(s=>P.dayIndex(s.workout_date)).sort();
+    if(days.length===2) assert.ok(days[1]-days[0]>=2,'un día entre sesiones de fuerza');
+    assert.equal(P.microPayload(st.mesos.find(m=>m.weeks.includes(week)),week,null,a).planned.strength_sessions,week.strength_sessions);
+  }
+  assert.ok(families.base.has('Max Strength'),'en base se gana fuerza');
+  assert.ok([...families.especifico].every(f=>['Maintenance','Plyometric'].includes(f)),'en el específico se mantiene');
+  assert.match(P.mesoPayload(st.mesos[1]).notes,/Fuerza \(Ganar fuerza\)/);
+  const home=P.buildStructure({...a,equipment:'sin_material'});
+  for(const week of home.weeks.slice(0,6)) P.buildWeekSessions({...a,equipment:'sin_material'},home,week,library).filter(s=>s.is_strength)
+    .forEach(s=>assert.match(lib[s.runflow_library_id].mat,/^(Peso corporal|Gomas|Escalon|Suelo)/,`${s.title} sin material`));
+});
+
 test('traduce el bloque principal de la biblioteca a pasos para Intervals',()=>{
   assert.deepEqual(P.parseMain("3x8' a umbral, rec 2'"),{repetitions:3,work_value:8,work_unit:'m',recovery_value:2,recovery_unit:'m'});
   assert.deepEqual(P.parseMain('6x800m @ ritmo 5K, rec 2\''),{repetitions:6,work_value:0.8,work_unit:'km',recovery_value:2,recovery_unit:'m'});
