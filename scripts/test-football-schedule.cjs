@@ -111,3 +111,29 @@ test('programa guiado: regresiones por nivel y material, menos series a mitad de
   const sets=season=>P.generate({weeks:8,days_per_week:2,match_day:5,season}).blocks[2].stations.find(s=>s.section==='Fuerza principal').sets;
   assert.ok(sets('media')<sets('inicio'));
 });
+
+test('disponibilidad del deportista: entrenos de fútbol a la semana tipo y tiempo para fuerza',()=>{
+  const a=S.sanitizeAvailability({strength_min:40,football:[{day:3,time:'19:30',duration_min:75},{day:9},{day:1,time:'25:00'}]});
+  assert.equal(a.strength_min,45);
+  assert.deepEqual(a.football.map(f=>[f.day,f.time,f.duration_min]),[[1,'',90],[3,'19:30',75]]);
+  const week=[[],[{kind:'football_training',time:'18:00'}],[{kind:'rest'}],[{kind:'rest'}],[{kind:'strength',strength_id:'b1'}],[],[]];
+  const sched=S.applyFootballAvailability({week,events:[{date:'2026-10-31',kind:'match'}]},a.football);
+  assert.equal(sched.week[1].filter(i=>i.kind==='football_training').length,1);
+  assert.equal(sched.week[3][0].time,'19:30');
+  assert.ok(!sched.week[3].some(i=>i.kind==='rest'));
+  assert.equal(sched.week[4][0].kind,'strength');
+  assert.equal(sched.events.length,1);
+  assert.deepEqual(S.footballFromSchedule(sched).map(f=>f.day),[1,3]);
+});
+test('programa guiado: sesiones de 45 y 30 minutos mantienen lo esencial',()=>{
+  const g45=P.generate({weeks:8,days_per_week:2,match_day:5,minutes:45});
+  assert.equal(g45.events[0].duration_min,45);
+  g45.blocks.forEach(b=>{assert.ok(!b.stations.some(s=>s.section==='Transferencia'));assert.ok(b.stations.some(s=>s.section==='Fuerza principal'));});
+  const g30=P.generate({weeks:8,days_per_week:2,match_day:5,minutes:30});
+  g30.blocks.forEach(b=>{
+    assert.ok(b.stations.length<=9,b.name);
+    assert.ok(b.stations.some(s=>s.section==='Fuerza específica y core'));
+    assert.ok(!b.stations.some(s=>s.section==='Tren superior y core'));
+  });
+  assert.ok(g30.blocks[4].stations.some(s=>s.name==='Nórdico asistido'));
+});

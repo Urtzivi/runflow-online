@@ -21,6 +21,11 @@
       { value: 'media', label: 'Mitad de liga', hint: 'Una serie menos en la fuerza para llegar frescos.' },
       { value: 'final', label: 'Final de temporada', hint: 'Mantener lo ganado con poco volumen.' },
     ],
+    minutes: [
+      { value: 30, label: '30 minutos', hint: 'Lo esencial: preparación, saltos, fuerza principal y específico con core.' },
+      { value: 45, label: '45 minutos', hint: 'Casi todo: la transferencia se junta con los saltos y hay algo menos de volumen.' },
+      { value: 60, label: '60 minutos', hint: 'La sesión completa de 6 partes.', recommended: true },
+    ],
     weeks: [
       { value: 4, label: '4 semanas' }, { value: 6, label: '6 semanas' }, { value: 8, label: '8 semanas', recommended: true, hint: '16 sesiones con 2 días.' },
       { value: 10, label: '10 semanas' }, { value: 12, label: '12 semanas' },
@@ -66,6 +71,21 @@
     cierre: { label: 'Cierre y test', goal: 'Volumen un 25 % menor, medir progresos y acabar con buena sensación.', rpe: '6', rir: '3',
       effort: 'RPE 6: nada de máximos. Calidad y velocidad; los test, con descanso completo entre intentos.' },
   };
+
+  // Sesiones según el tiempo que tiene el deportista: minutos por parte y cuántos ejercicios entran.
+  // 45 min: la transferencia se junta con la pliometría. 30 min: lo esencial de fuerza + específico con core; el tren superior queda para el otro día.
+  const DURATION = {
+    60: { minutes: { prep: 8, plyo: 10, main: 18, comp: 10, upper: 9, transfer: 5 }, max: {} },
+    45: { minutes: { prep: 6, plyo: 7, main: 15, comp: 8, upper: 7, transfer: 0 }, max: { prep: 3, plyo: 3, comp: 2, upper: 2, transfer: 0 } },
+    30: { minutes: { prep: 5, plyo: 5, main: 12, comp: 8, upper: 0, transfer: 0 }, max: { prep: 2, plyo: 2, main: 2, comp: 1, upper: 0, transfer: 0 } },
+  };
+  const CORE_SLOTS = ['pallof', 'sideplank', 'deadbug'];
+  const SPRINT_SLOTS = ['accel', 'cod45', 'cod90', 'react', 'decel', 'jumpsprint'];
+  const PREVENT_SLOTS = ['nordic', 'copen', 'curl'];
+  function sectionPlan(minutes) {
+    const d = DURATION[minutes] || DURATION[60];
+    return ORDER.filter(k => d.minutes[k] > 0).map(k => ({ key: k, name: k === 'comp' && Number(minutes) === 30 ? 'Fuerza específica y core' : SECTIONS[k].name, minutes: d.minutes[k] }));
+  }
 
   const SECTIONS = {
     prep: { name: 'Preparación y movilidad', minutes: 8, rest: 15, effort: () => 'Suave y controlado: preparar posiciones, no cansarse.' },
@@ -239,9 +259,24 @@
     const phase = PHASES[phaseKey];
     const extra = FOCUS_EXTRA[ctx.focus]?.[letter === 'C' ? 'A' : letter] || {};
     const used = new Set(), stations = [];
+    const duration = DURATION[ctx.minutes] || DURATION[60];
     ORDER.forEach(sectionKey => {
       const section = SECTIONS[sectionKey];
-      [...(spec[sectionKey] || []), ...(extra[sectionKey] || [])].forEach(([slot, setsSpec, workSpec, note]) => {
+      const max = duration.max[sectionKey] ?? Infinity;
+      let items = [...(spec[sectionKey] || []), ...(extra[sectionKey] || [])].filter(([, setsSpec]) => pickAt(setsSpec, ctx.inPhase));
+      const minutes = Number(ctx.minutes) || 60;
+      if (minutes === 45 && sectionKey === 'plyo') {
+        // La transferencia (sprint o cambio de dirección) se junta con los saltos.
+        const sprint = [...(spec.transfer || []), ...(extra.transfer || []), ...items].find(([slot, setsSpec]) => SPRINT_SLOTS.includes(slot) && pickAt(setsSpec, ctx.inPhase));
+        items = [...items.filter(([slot]) => !SPRINT_SLOTS.includes(slot)).slice(0, max - (sprint ? 1 : 0)), ...(sprint ? [sprint] : [])];
+      } else if (minutes === 30 && sectionKey === 'comp') {
+        // Con 30 min: un ejercicio preventivo (nórdico, Copenhague…) y el core del tren superior.
+        const prevent = items.find(([slot]) => PREVENT_SLOTS.includes(slot)) || items[0];
+        const core = (spec.upper || []).find(([slot]) => CORE_SLOTS.includes(slot)) || ['pallof', 2, '8 / lado'];
+        items = [...(prevent ? [prevent] : []), core];
+      } else items = items.slice(0, max);
+      const sectionName = sectionKey === 'comp' && Number(ctx.minutes) === 30 ? 'Fuerza específica y core' : section.name;
+      items.forEach(([slot, setsSpec, workSpec, note]) => {
         let sets = pickAt(setsSpec, ctx.inPhase);
         if (!sets) return;
         const strength = sectionKey === 'main' || sectionKey === 'comp';
@@ -257,7 +292,7 @@
         const notes = [note, ctx.level === 'inicial' ? BEGINNER_NOTES[slot] : ''].filter(Boolean).join(' ');
         stations.push({
           name: lib.name, work: pickAt(workSpec, ctx.inPhase), note: notes || lib.note || '', why: lib.why || '', steps: (lib.steps || []).slice(), cues: lib.cues || '',
-          video: lib.video || '', img: '', section: section.name, sets, rest_sec: section.rest, effort: section.effort(phase),
+          video: lib.video || '', img: '', section: sectionName, sets, rest_sec: section.rest, effort: section.effort(phase),
         });
       });
     });
@@ -291,7 +326,7 @@
         };
         blocks.push(block);
         // Duración real de la sesión (incluye montaje y cambios), no la suma de repeticiones.
-        const minutes = letter === 'C' || w.key === 'cierre' ? 45 : 60;
+        const minutes = letter === 'C' || w.key === 'cierre' ? Math.min(45, a.minutes || 60) : (a.minutes || 60);
         if (date) events.push({ id: `gp${w.week + 1}${letter.toLowerCase()}`, date, kind: 'strength', strength_id: id, time: '', duration_min: minutes, place: '', note: `Semana ${w.week + 1} de ${weeks} · ${phase.label}` });
         sessions.push({ week: w.week + 1, phase: w.key, letter, date, name, minutes, exercises: stations.length });
       });
@@ -303,5 +338,5 @@
   function nextMonday(today) { return S.dayIndex(today) === 0 ? today : S.addDays(S.mondayOf(today), 7); }
   const isGuided = id => String(id || '').startsWith('gp-');
 
-  return { OPTIONS, RULES, PHASES, SECTIONS, label, phasePlan, chooseDays, mdText, generate, nextMonday, isGuided };
+  return { OPTIONS, RULES, PHASES, SECTIONS, DURATION, sectionPlan, label, phasePlan, chooseDays, mdText, generate, nextMonday, isGuided };
 }));
