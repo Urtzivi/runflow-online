@@ -24,6 +24,10 @@ on:
       - 'public/js/coach-football-week.js'
       - 'public/css/coach-football-week.css'
       - 'scripts/test-football-schedule.cjs'
+      - 'public/js/running-guided-plan.js'
+      - 'public/js/coach-running-guided-plan.js'
+      - 'public/css/coach-running-guided-plan.css'
+      - 'scripts/test-running-guided-plan.cjs'
       - 'public/css/football.css'
       - 'public/js/coach-assistant.js'
       - 'plan-delete-hook.js'
@@ -80,6 +84,10 @@ jobs:
           node --check public/js/football-week.js
           node --check public/js/coach-football-week.js
           node --test scripts/test-football-schedule.cjs
+      - name: Test guided running plan
+        run: |
+          node --check public/js/coach-running-guided-plan.js
+          node --test scripts/test-running-guided-plan.cjs
       - name: Validate V9/V2 batch
         run: node scripts/validate-v9-batch.mjs
       - name: Check season calendar planner syntax
