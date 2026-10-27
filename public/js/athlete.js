@@ -557,7 +557,7 @@ $('logDuration').addEventListener('input',updateSrpePreview);
 
 document.querySelectorAll('[data-athlete-nav]').forEach(button=>button.addEventListener('click',()=>switchView(button.dataset.athleteNav)));
 $('athleteAvatar').addEventListener('click',()=>switchView('profile'));
-$('logout').addEventListener('click',async()=>{await api('/api/auth/logout',{method:'POST'});location.href=localStorage.getItem('runflow_client')==='athlete'?'/login?mode=athlete':'/login';});
+$('logout').addEventListener('click',async()=>{await window.RunFlowNotificationOwner?.clearAll();await api('/api/auth/logout',{method:'POST'});location.href=localStorage.getItem('runflow_client')==='athlete'?'/login?mode=athlete':'/login';});
 $('coachButton').addEventListener('click',()=>location.href='/coach');
 $('athletePreviousWeek').addEventListener('click',()=>loadDashboard(addDays(state.selectedWeekStart,-7)).catch(error=>message(error.message,'error')));
 $('athleteCurrentWeek').addEventListener('click',()=>loadDashboard(isoMonday()).catch(error=>message(error.message,'error')));

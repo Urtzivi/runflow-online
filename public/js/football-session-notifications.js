@@ -64,6 +64,8 @@
   async function reschedule(week) {
     const LocalNotifications = plugin();
     if (!LocalNotifications || !isNative() || !week?.days) return;
+    // Si los avisos del móvil eran de otro deportista se borran antes (runflow-notification-owner.js).
+    if (window.RunFlowNotificationOwner && !(await window.RunFlowNotificationOwner.ensure())) return;
     if (!(await ensurePermission(LocalNotifications))) return;
     const now = new Date();
     const notifications = week.days.flatMap(day => day.items || [])

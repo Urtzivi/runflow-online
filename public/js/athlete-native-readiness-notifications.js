@@ -65,9 +65,16 @@
     }
   }
 
+  // Antes de programar se comprueba que los avisos del móvil son de este deportista (runflow-notification-owner.js).
+  async function ownedByCurrentAthlete() {
+    const owner = window.RunFlowNotificationOwner;
+    return owner ? owner.ensure() : true;
+  }
+
   async function scheduleRollingReminders(todayCompleted = false) {
     const LocalNotifications = plugin();
     if (!LocalNotifications || !isNative()) return;
+    if (!(await ownedByCurrentAthlete())) return;
     if (!(await ensurePermission())) return;
 
     const now = new Date();

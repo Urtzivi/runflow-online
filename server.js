@@ -275,6 +275,12 @@ function authCookies(accessToken, refreshToken, expiresIn = 3600) {
   ];
 }
 
+// Al entrar con usuario y contraseña se borra la sesión por correo (rf_athlete) que quedase de otro deportista:
+// rf_athlete tiene prioridad en todas las APIs y haría que se vieran sus datos y avisos.
+function loginCookies(accessToken, refreshToken, expiresIn) {
+  return [...authCookies(accessToken, refreshToken, expiresIn), cookie('rf_athlete', '', { maxAge: 0 })];
+}
+
 function clearAuthCookies() {
   return [cookie('rf_access', '', { maxAge: 0 }), cookie('rf_refresh', '', { maxAge: 0 }), cookie('rf_athlete', '', { maxAge: 0 })];
 }
@@ -5046,7 +5052,7 @@ async function api(req, res, url) {
       return sendJson(res, 200, { ok: true, user: { id: user.id, email: user.email, display_name: user.display_name, roles: user.roles, athlete_id: user.athlete_id } });
     }
     const data = await authLogin(email, password);
-    res.setHeader('Set-Cookie', authCookies(data.access_token, data.refresh_token, data.expires_in));
+    res.setHeader('Set-Cookie', loginCookies(data.access_token, data.refresh_token, data.expires_in));
     const context = await prodUserContext(data.user.id);
     return sendJson(res, 200, { ok: true, user: { id: data.user.id, email: data.user.email, display_name: data.user.user_metadata && data.user.user_metadata.display_name, ...context } });
   }
@@ -5088,7 +5094,7 @@ async function api(req, res, url) {
     const user = await authUser(accessToken);
     const context = await prodUserContext(user.id);
     if (!context.roles.includes('athlete') || !context.athlete_id) throw Object.assign(new Error('Esta cuenta no está vinculada a un deportista activo.'), { status: 403 });
-    res.setHeader('Set-Cookie', authCookies(accessToken, refreshToken, body.expires_in));
+    res.setHeader('Set-Cookie', loginCookies(accessToken, refreshToken, body.expires_in));
     return sendJson(res, 200, { ok: true, user: { id: user.id, email: user.email, display_name: user.user_metadata && user.user_metadata.display_name, ...context } });
   }
 
