@@ -51,6 +51,8 @@ async function routeUser(user) {
       throw new Error('Este usuario no tiene acceso como deportista.');
     }
     localStorage.setItem('runflow_client', 'athlete');
+    // Los avisos del móvil que quedasen de otro deportista se borran al entrar con este.
+    await window.RunFlowNotificationOwner?.claim(user.athlete_id);
     markSessionChosen();
     location.href = '/athlete';
     return;
@@ -111,6 +113,7 @@ function showSessionChooser(user) {
   switchButton.addEventListener('click', async () => {
     switchButton.disabled = true;
     await json('/api/auth/logout', { method: 'POST' }).catch(() => {});
+    await window.RunFlowNotificationOwner?.clearAll();
     try { sessionStorage.removeItem('runflow_session_chosen'); } catch {}
     card.remove();
     $('email').value = '';

@@ -127,6 +127,6 @@
   $('completeChallenge').addEventListener('click',completeChallenge);
   $('openToday').addEventListener('click',()=>view('training'));
   $('videoPlaceholder').addEventListener('click',()=>toast('Aquí conectaremos el vídeo explicativo de la sesión.'));
-  $('logout').addEventListener('click',async()=>{try{await api('/api/auth/logout',{method:'POST'});}catch{}location.href='/login?mode=athlete';});
+  $('logout').addEventListener('click',async()=>{await window.RunFlowNotificationOwner?.clearAll();try{await api('/api/auth/logout',{method:'POST'});}catch{}location.href='/login?mode=athlete';});
   init();
 })();
