@@ -762,6 +762,7 @@ function workoutAvailabilityKind(workout) {
   const declaredSport = String(workout && (workout.sport || workout.type) || '').toLowerCase();
   const title = String(workout && workout.title || '').toLowerCase();
   if (workout && workout.is_strength || /strength|fuerza|gym|gimnasio/.test(declaredSport)) return 'strength';
+  if (/walk|paseo|caminar/.test(declaredSport)) return 'walk';
   if (/ride|bike|cycling|bici|ciclismo/.test(declaredSport)) return 'bike';
   if (/trail|mountain|montaña/.test(declaredSport)) return 'trail';
   if (/run|running|correr|carrera/.test(declaredSport)) return /trail|montaña|mountain|desnivel/.test(title) ? 'trail' : 'run';
@@ -773,7 +774,7 @@ function workoutAvailabilityKind(workout) {
 
 function availabilityMode(day) {
   const explicit = sanitiseText(day && (day.activity_type || day.mode), 30);
-  if (['unavailable', 'run', 'trail', 'bike', 'strength', 'gym', 'flexible'].includes(explicit)) return explicit;
+  if (['unavailable', 'run', 'trail', 'bike', 'strength', 'gym', 'walk', 'flexible'].includes(explicit)) return explicit;
   if (day && day.can_train === false) return 'unavailable';
   if (day && day.gym && day.strength && day.run === false) return 'gym';
   if (day && day.strength && day.run === false && day.bike !== true) return 'strength';
@@ -784,13 +785,13 @@ function availabilityMode(day) {
 }
 
 function availabilityTypes(day) {
-  const allowed = ['run', 'trail', 'bike', 'strength', 'gym'];
+  const allowed = ['run', 'trail', 'bike', 'strength', 'gym', 'walk'];
   const multiple = Array.isArray(day && day.activity_types)
-    ? [...new Set(day.activity_types.map(value => sanitiseText(value, 30)).filter(value => allowed.includes(value)))].slice(0, 2)
+    ? [...new Set(day.activity_types.map(value => sanitiseText(value, 30)).filter(value => allowed.includes(value)))]
     : [];
   if (multiple.length) return multiple;
   const legacy = availabilityMode(day);
-  if (legacy === 'flexible') return allowed.filter(value => value !== 'gym');
+  if (legacy === 'flexible') return allowed.filter(value => !['gym', 'walk'].includes(value));
   return [legacy];
 }
 
@@ -816,9 +817,10 @@ function workoutAvailabilityError(availability, workout) {
       : mode === 'trail' ? kind === 'trail'
         : mode === 'bike' ? kind === 'bike'
           : (mode === 'strength' || mode === 'gym') ? kind === 'strength'
+            : mode === 'walk' ? kind === 'walk'
             : false;
   if (!allowed) {
-    const labels = { run: 'correr', trail: 'trail/montaña', bike: 'bici', strength: 'fuerza', gym: 'gimnasio', flexible: 'actividad flexible' };
+    const labels = { run: 'correr', trail: 'trail/montaña', bike: 'bici', strength: 'fuerza', gym: 'gimnasio', walk: 'paseo', flexible: 'actividad flexible' };
     return `No puedes colocar “${title}” el ${dayName}: ese día admite ${types.map(type => labels[type] || type).join(' o ')}.`;
   }
   const duration = numberOrNull(workout.planned_duration_min, 0, 2000);
