@@ -5,5 +5,18 @@
   "server": {
     "url": "https://runflow-online-pilot.onrender.com/athlete",
     "cleartext": false
+  },
+  "plugins": {
+    "SystemBars": {
+      "insetsHandling": "disable"
+    },
+    "BackgroundRunner": {
+      "label": "com.runflow.athlete.activitycheck",
+      "src": "runners/runflow-activity-check.js",
+      "event": "checkActivities",
+      "repeat": true,
+      "interval": 15,
+      "autoStart": true
+    }
   }
 }
