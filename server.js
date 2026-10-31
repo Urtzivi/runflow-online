@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { URL } = require('url');
+const RunflowInsights = require('./public/js/athlete-insights.js');
 const { compareDetailedBlocks, detailedBlocks, findPreviousComparable, identity, sessionBlockAnalysis } = require('./session-comparison-metrics');
 
 const PORT = Number(process.env.PORT || 8787);
@@ -334,16 +335,20 @@ function addDays(dateString, days) {
 
 function demoSeed() {
   const weekStart = startOfWeek();
-  const workout = (day, title, summary, load, sport = 'Run') => ({
-    id: crypto.randomUUID(),
-    workout_date: addDays(weekStart, day),
-    sport,
-    title,
-    summary,
-    planned_load: load,
-    structured_description: summary,
-    blocks: [],
-  });
+  const workout = (day, title, summary, load, sport = 'Run', templateId = '') => {
+    const template = templateId ? SYSTEM_WORKOUT_TEMPLATES.find(item => item.id === templateId)?.template_data || {} : {};
+    return {
+      id: crypto.randomUUID(),
+      workout_date: addDays(weekStart, day),
+      sport,
+      title,
+      summary,
+      planned_load: load,
+      structured_description: summary,
+      blocks: [],
+      ...(templateId ? { blocks: template.blocks || [], session_objective: template.session_objective || '', purpose: template.purpose || '', adaptation_target: template.adaptation_target || '', planned_duration_min: template.planned_duration_min || null, planned_distance_km: template.planned_distance_km || null } : {}),
+    };
+  };
   const demoIntervals = (paces, hrs) => paces.map((pace, index) => ({
     type: 'WORK', name: `Serie ${index + 1}`, moving_time: 180, distance: Math.round(180 / (pace / 1000)),
     average_speed: 1000 / pace, average_heartrate: hrs[index], max_heartrate: hrs[index] + 5,
@@ -352,11 +357,23 @@ function demoSeed() {
     id: crypto.randomUUID(), athlete_id: athleteId, intervals_activity_id: `demo-${athleteId}-${day}-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
     activity_date: `${addDays(weekStart, day)}T18:00:00Z`, sport: 'Run', name, duration_sec: duration, distance_m: distance, load, avg_hr: avgHr, max_hr: maxHr,
     avg_pace_sec_per_km: distance > 0 ? duration / (distance / 1000) : null,
-    raw_summary: { id: `demo-${athleteId}-${day}`, name, type: 'Run', start_date_local: `${addDays(weekStart, day)}T18:00:00`, moving_time: duration, distance, icu_training_load: load, average_heartrate: avgHr, max_heartrate: maxHr, average_speed: distance / duration, icu_intervals: demoIntervals(paces, paces.map((_, i) => avgHr - 5 + i * 2)) },
+    raw_summary: { id: `demo-${athleteId}-${day}`, name, type: 'Run', start_date_local: `${addDays(weekStart, day)}T18:00:00`, moving_time: duration, distance, icu_training_load: load, average_heartrate: avgHr, max_heartrate: maxHr, average_speed: distance / duration, icu_intervals: demoIntervals(paces, paces.map((_, i) => avgHr - 5 + i * 2)),
+      icu_hr_zone_times: paces.length ? [Math.round(duration * .18), Math.round(duration * .4), Math.round(duration * .1), Math.round(duration * .12), Math.round(duration * .2)] : [Math.round(duration * .25), Math.round(duration * .62), Math.round(duration * .1), Math.round(duration * .03), 0],
+      decoupling: paces.length ? 6.2 : 3.1, average_temp: 14, average_cadence: 88, calories: Math.round(duration / 60 * 12) },
   });
-  const wellnessRows = (athleteId, baseFitness, baseRhr, baseHrv) => Array.from({ length: 24 }, (_, index) => {
-    const date = addDays(weekStart, index - 20);
-    const fitness = baseFitness + Math.round(index / 8);
+  // Historial de 12 semanas para la evolución (solo demo).
+  const history = (athleteId, avgHr) => Array.from({ length: 84 }, (_, i) => -84 + i).filter(day => ![-5, -2].includes(day) && ![0, 4].includes(((day % 7) + 7) % 7)).map(day => {
+    const dow = ((day % 7) + 7) % 7, week = Math.floor((day + 84) / 7);
+    const long = dow === 6, quality = dow === 1 || dow === 3;
+    const factor = [1, 1.05, .9, 1.1, .7, 1, 1.08, 1.12, .75, 1.1, 1.15, 1][week] || 1;
+    const minutes = Math.round((long ? 75 + week * 2 : quality ? 50 : 40) * factor);
+    const pace = (quality ? 250 : 312) - week * 1.2;
+    const distance = Math.round(minutes * 60 / pace * 1000);
+    return activity(athleteId, day, long ? 'Tirada larga' : quality ? 'Series' : 'Rodaje suave', Math.round(minutes * (quality ? 1.3 : .8)), distance, minutes * 60, avgHr + (quality ? 14 : 0), avgHr + 30, quality ? [232 - week, 231 - week, 233 - week] : []);
+  });
+  const wellnessRows = (athleteId, baseFitness, baseRhr, baseHrv) => Array.from({ length: 84 }, (_, index) => {
+    const date = addDays(weekStart, index - 80);
+    const fitness = baseFitness - 9 + Math.round(index / 7);
     const fatigue = Math.max(10, fitness + ((index % 5) - 2) * 3);
     const sleep = 6.6 + ((index % 6) * .18);
     const rhr = baseRhr + ((index % 5) - 2);
@@ -400,12 +417,12 @@ function demoSeed() {
           target_load: 245, status: 'published', published_at: new Date().toISOString(),
           workouts: [
             workout(0, 'Descanso y movilidad', '15 min de movilidad suave', 5),
-            workout(1, '6 × 3 min ritmo 5K', '15 min suave + 6 × 3 min Z5 con 2 min suaves + 10 min enfriamiento', 68),
-            workout(2, 'Rodaje aeróbico', '45 min en Z2', 38),
+            workout(1, '6 × 3 min ritmo 5K', '15 min suave + 6 × 3 min Z5 con 2 min suaves + 10 min enfriamiento', 68, 'Run', 'system-run-vo2-6x3'),
+            workout(2, 'Rodaje aeróbico', '45 min en Z2', 38, 'Run', 'system-run-z2-40'),
             workout(3, 'Fuerza funcional', '35 min de fuerza general', 30, 'Strength'),
-            workout(4, 'Umbral controlado', '3 × 8 min en Z4 con 2 min suaves', 58),
-            workout(5, 'Recuperación', '35 min muy suaves', 24),
-            workout(6, 'Trail largo', '1 h 35 min con 650 m+', 72),
+            workout(4, 'Umbral controlado', '3 × 8 min en Z4 con 2 min suaves', 58, 'Run', 'system-run-threshold-3x8'),
+            workout(5, 'Recuperación', '35 min muy suaves', 24, 'Run', 'system-run-recovery-30'),
+            workout(6, 'Trail largo', '1 h 35 min con 650 m+', 72, 'Run', 'system-run-long-90'),
           ],
         },
       },
@@ -440,6 +457,7 @@ function demoSeed() {
       activity('a-urtzi', -5, 'Rodaje aeróbico', 44, 10120, 3010, 132, 146),
       activity('a-urtzi', -2, '6 × 3 min ritmo 5K', 69, 11250, 3375, 151, 164, [218, 216, 217, 219, 221, 222]),
       activity('a-ibon', -4, 'Rodaje suave', 31, 6500, 2450, 139, 153),
+      ...history('a-urtzi', 136),
     ],
     daily_metrics: [...wellnessRows('a-urtzi', 42, 47, 44), ...wellnessRows('a-ibon', 23, 52, 38)],
     activity_reviews: [],
@@ -4644,6 +4662,22 @@ async function performanceBundle(athleteId, days = 84, refresh = false) {
   return { latest, history: rows, trajectory, activity_metrics: activityMetrics, activity_summary: performanceActivitySummary(activityMetrics, runProfile), intervals_run_profile: runProfile };
 }
 
+// Evolución para la app del atleta: semanas (km, tiempo, desnivel, zonas), días con actividad y bienestar diario.
+async function athleteEvolution(athleteId, weeksParam) {
+  const weeks = Math.max(4, Math.min(26, Number(weeksParam) || 12));
+  const today = localDateInTimeZone();
+  const oldest = RunflowInsights.addDaysIso(RunflowInsights.isoMonday(today), -7 * (weeks - 1));
+  const activities = DEMO_MODE
+    ? demo.activities.filter(item => item.athlete_id === athleteId && String(item.activity_date).slice(0, 10) >= oldest)
+    : await listStoredActivities(athleteId, oldest, today);
+  const summary = RunflowInsights.weeklyEvolution(activities, today, weeks);
+  const daily = (await listRecoveryRows(athleteId, addDays(today, -7 * weeks), today).catch(() => [])).map(row => ({
+    date: row.metric_date, fitness: roundOrNull(row.fitness, 1), fatigue: roundOrNull(row.fatigue, 1), form: roundOrNull(row.form, 1),
+    hrv: roundOrNull(row.hrv, 1), resting_hr: roundOrNull(row.resting_hr, 0), sleep_sec: roundOrNull(row.sleep_sec, 0),
+  }));
+  return { ...summary, daily, today };
+}
+
 let dailyPerformanceLastDate = '';
 let dailyPerformanceRunning = false;
 async function refreshAllPerformanceSnapshots(reason = 'timer') {
@@ -5638,6 +5672,12 @@ async function api(req, res, url) {
     requireRole(session, 'athlete');
     if (!session.athlete_id) throw Object.assign(new Error('Tu usuario todavía no está vinculado a una ficha de deportista.'), { status: 409 });
     return sendJson(res, 200, await performanceBundle(session.athlete_id, url.searchParams.get('days') || 84, url.searchParams.get('refresh') === '1'));
+  }
+
+  if (pathname === '/api/athlete/evolution' && method === 'GET') {
+    requireRole(session, 'athlete');
+    if (!session.athlete_id) throw Object.assign(new Error('Tu usuario todavía no está vinculado a una ficha de deportista.'), { status: 409 });
+    return sendJson(res, 200, await athleteEvolution(session.athlete_id, url.searchParams.get('weeks')));
   }
 
   if (pathname === '/api/athlete/dashboard' && method === 'GET') {
