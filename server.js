@@ -4706,6 +4706,88 @@ async function feedbackForActivity(athleteId, activity) {
   return publicFeedbackLog(matched || null);
 }
 
+// ── Aviso de actividad nueva (APK Athlete) ──
+// La APK comprueba cada ~15 min en segundo plano (Background Runner) si han llegado actividades sin valorar.
+// Ese proceso no comparte cookies con la app, así que usa un token propio, firmado y solo válido para esta consulta.
+const ACTIVITY_ALERT_TOKEN_DAYS = 180;
+const ACTIVITY_ALERT_WINDOW_HOURS = 36;
+
+function activityAlertSecret() {
+  const secret = athleteSessionSecret();
+  return secret ? `${secret}:activity-alerts` : '';
+}
+
+function createActivityAlertToken(athleteId) {
+  const secret = activityAlertSecret();
+  if (!secret) throw Object.assign(new Error('Los avisos de actividad no están configurados en el servidor.'), { status: 503 });
+  const now = Math.floor(Date.now() / 1000);
+  const payload = Buffer.from(JSON.stringify({ purpose: 'activity_alerts', athlete_id: athleteId, iat: now, exp: now + 60 * 60 * 24 * ACTIVITY_ALERT_TOKEN_DAYS })).toString('base64url');
+  const signature = crypto.createHmac('sha256', secret).update(payload).digest('base64url');
+  return { token: `${payload}.${signature}`, expires_at: new Date((now + 60 * 60 * 24 * ACTIVITY_ALERT_TOKEN_DAYS) * 1000).toISOString() };
+}
+
+function readActivityAlertToken(token) {
+  const secret = activityAlertSecret();
+  if (!secret || !token || !String(token).includes('.')) return null;
+  const [payload, signature] = String(token).split('.');
+  const expected = crypto.createHmac('sha256', secret).update(payload).digest();
+  let received;
+  try { received = Buffer.from(signature, 'base64url'); } catch { return null; }
+  if (received.length !== expected.length || !crypto.timingSafeEqual(received, expected)) return null;
+  try {
+    const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    if (data.purpose !== 'activity_alerts' || !data.athlete_id || Number(data.exp) <= Math.floor(Date.now() / 1000)) return null;
+    return data;
+  } catch { return null; }
+}
+
+function activityStartMs(activity) {
+  const raw = activity && activity.raw_summary || {};
+  const utc = raw.start_date ? Date.parse(raw.start_date) : NaN;
+  if (Number.isFinite(utc)) return utc;
+  const local = Date.parse(String(activity && activity.activity_date || ''));
+  return Number.isFinite(local) ? local : NaN;
+}
+
+// Actividades recientes (planificadas o no) que el deportista todavía no ha valorado.
+async function pendingActivityAlerts(athleteId, { sync = true } = {}) {
+  const today = localDateInTimeZone();
+  const oldest = addDays(today, -2);
+  let rows;
+  if (sync && !DEMO_MODE) {
+    try { rows = await syncActivities(athleteId, oldest, today); }
+    catch (error) {
+      console.warn(`[activity-alerts] athlete=${athleteId}: ${error.message}`);
+      rows = await listStoredActivities(athleteId, oldest, today);
+    }
+  } else rows = await listStoredActivities(athleteId, oldest, today);
+  const cutoff = Date.now() - ACTIVITY_ALERT_WINDOW_HOURS * 60 * 60 * 1000;
+  const recent = (rows || []).filter(item => item && item.intervals_activity_id && activityStartMs(item) >= cutoff);
+  const workoutIds = [...new Set(recent.map(item => item.workout_id).filter(Boolean))];
+  let titles = new Map();
+  if (workoutIds.length && !DEMO_MODE) {
+    const workouts = await prodRows('workouts', `id=in.(${workoutIds.map(encodeURIComponent).join(',')})&athlete_id=eq.${encodeURIComponent(athleteId)}&select=id,title`).catch(() => []);
+    titles = new Map(workouts.map(item => [String(item.id), item.title]));
+  }
+  const pending = [];
+  for (const activity of recent) {
+    const feedback = await feedbackForActivity(athleteId, activity).catch(() => null);
+    if (feedback) continue;
+    pending.push({
+      id: String(activity.intervals_activity_id),
+      name: activity.name || 'Actividad',
+      sport: activity.sport || null,
+      activity_date: activity.activity_date,
+      duration_sec: activity.duration_sec ?? null,
+      distance_m: activity.distance_m ?? null,
+      planned: Boolean(activity.workout_id),
+      planned_title: activity.workout_id ? titles.get(String(activity.workout_id)) || null : null,
+    });
+  }
+  pending.sort((a, b) => String(b.activity_date).localeCompare(String(a.activity_date)));
+  return pending;
+}
+
 async function linkActivityToWorkout(athleteId, externalId, workoutId) {
   const targetWorkoutId = sanitiseText(workoutId, 80) || null;
 
@@ -5118,6 +5200,17 @@ async function api(req, res, url) {
   if (pathname === '/api/auth/me' && method === 'GET') {
     const session = await requireSession(req, res);
     return sendJson(res, 200, { user: publicUser(session), demo: DEMO_MODE });
+  }
+
+  // Consulta en segundo plano de la APK (sin cookies): token de avisos en la cabecera Authorization.
+  if (pathname === '/api/athlete/activity-alerts/pending' && method === 'GET' && /^Bearer\s/i.test(String(req.headers.authorization || ''))) {
+    const alert = readActivityAlertToken(String(req.headers.authorization).replace(/^Bearer\s+/i, '').trim());
+    if (!alert) throw Object.assign(new Error('El aviso de actividades ha caducado. Abre RunFlow para renovarlo.'), { status: 401 });
+    if (!DEMO_MODE) {
+      const athletes = await prodRows('athletes', `id=eq.${encodeURIComponent(alert.athlete_id)}&lifecycle_status=eq.active&select=id&limit=1`);
+      if (!athletes.length) throw Object.assign(new Error('Este deportista ya no está activo.'), { status: 401 });
+    }
+    return sendJson(res, 200, { athlete_id: alert.athlete_id, activities: await pendingActivityAlerts(alert.athlete_id) });
   }
 
   const session = await requireSession(req, res);
@@ -5605,6 +5698,18 @@ async function api(req, res, url) {
     const body = await readJson(req);
     const item = await createAthleteMessage({ athleteId: session.athlete_id, coachUserId, senderUserId: session.user.id, senderRole: 'athlete', workoutId: body.workout_id, message: body.message });
     return sendJson(res, 201, { message: item });
+  }
+
+  if (pathname === '/api/athlete/activity-alerts/token' && method === 'POST') {
+    requireRole(session, 'athlete');
+    if (!session.athlete_id) throw Object.assign(new Error('Tu usuario todavía no está vinculado a una ficha de deportista.'), { status: 409 });
+    return sendJson(res, 200, { athlete_id: session.athlete_id, ...createActivityAlertToken(session.athlete_id) });
+  }
+
+  if (pathname === '/api/athlete/activity-alerts/pending' && method === 'GET') {
+    requireRole(session, 'athlete');
+    if (!session.athlete_id) throw Object.assign(new Error('Tu usuario todavía no está vinculado a una ficha de deportista.'), { status: 409 });
+    return sendJson(res, 200, { athlete_id: session.athlete_id, activities: await pendingActivityAlerts(session.athlete_id, { sync: url.searchParams.get('sync') !== '0' }) });
   }
 
   if (pathname === '/api/athlete/activities' && method === 'GET') {
