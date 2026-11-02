@@ -80,8 +80,7 @@
       <div class="ca-row"><span class="ca-k">Efecto del entrenamiento</span>${effect.plan ? `<span class="ca-plan ${effect.plan.ok ? 'ok' : 'warn'}">${effect.plan.ok ? '✓' : '⚠'} ${esc(effect.plan.ok ? 'Según lo previsto' : 'Distinto a lo previsto')}</span>` : ''}</div>
       <h3 class="ca-effect-title">${esc(effect.headline)}</h3>
       <p class="ca-p">${effect.lines.map(esc).join(' ')}${effect.plan ? ` <b>${esc(effect.plan.text)}</b>` : ''}</p>
-      <div class="ca-stimuli">${stim.map(s => `<div class="ca-stim ${s.key === effect.primary ? 'main' : ''}"><span>${esc(s.label)}</span><span class="ca-dots" title="${esc(s.levelLabel)}">${dots(s.level)}</span><small>${esc(s.levelLabel)} · ${fmtMin(s.minutes)}${s.key === 'aer' ? ' en total' : ''}</small></div>`).join('')}</div>
-      <small class="ca-mut">Cada recuadro cuenta los minutos de su zona de la barra. Base aeróbica suma todo lo que no es recuperación (aeróbico, tempo, umbral, VO₂máx y velocidad), porque todo ese tiempo trabaja el motor aeróbico.</small>
+      <div class="ca-stimuli">${stim.map(s => `<div class="ca-stim ${s.key === effect.primary ? 'main' : ''}"><span>${esc(s.label)}</span><span class="ca-dots" title="${esc(s.levelLabel)}">${dots(s.level)}</span><small>${esc(s.levelLabel)} · ${fmtMin(s.minutes)}</small></div>`).join('')}</div>
       ${dist.length ? `<div class="ca-zbar">${dist.map(x => `<i title="${esc(x.label)} ${fmtMin(x.m)}" style="width:${((x.m / Math.max(1, barTotal)) * 100).toFixed(1)}%;background:${x.color}"></i>`).join('')}</div>
       <div class="ca-legend">${dist.map(x => `<span><i style="background:${x.color}"></i>${esc(x.label)} ${fmtMin(x.m)}</span>`).join('')}</div>
       ${tl ? `<small class="ca-mut">Total de la actividad ${clockMin(tl.elapsed)} = ${clockMin(effect.total)} de entrenamiento${tl.stopped >= 0.5 ? ` + ${clockMin(tl.stopped)} parado` : ''}${tl.noData >= 0.5 ? ` + ${clockMin(tl.noData)} sin pulso ni ritmo útil` : ''}.</small>` : ''}` : ''}

@@ -36,7 +36,7 @@ test('rodaje planificado suave que sale a tempo avisa',()=>{
 test('sin streams usa el tiempo en zonas de Intervals',()=>{
   const r=TE.analyse({activity:{sport:'Run',raw_summary:{icu_hr_zone_times:[300,1800,300,300,300,0,0]}}});
   assert.equal(r.method,'hr-zones');
-  assert.equal(r.kind,'aer'); assert.equal(r.stimuli.find(s=>s.key==='thr').levelLabel,'Mantiene');
+  assert.equal(r.kind,'maintain'); assert.equal(r.stimuli.find(s=>s.key==='aer').minutes,30); assert.equal(r.stimuli.find(s=>s.key==='thr').levelLabel,'Mantiene');
 });
 
 test('sin pulso ni ritmo no inventa',()=>{

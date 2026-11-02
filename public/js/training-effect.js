@@ -187,7 +187,7 @@
       vo2: min.vo2,
       thr: min.thr,
       tempo: min.tempo,
-      aer: total - min.rec,
+      aer: min.aer,
     };
     const stimuli = Object.keys(STIMULI).map(key => ({ key, label: STIMULI[key].label, what: STIMULI[key].what, minutes: stimMinutes[key], level: levelFor(stimMinutes[key], STIMULI[key].steps), levelLabel: LEVEL[levelFor(stimMinutes[key], STIMULI[key].steps)] }));
     const byKey = Object.fromEntries(stimuli.map(s => [s.key, s]));
