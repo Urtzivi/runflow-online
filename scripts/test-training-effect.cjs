@@ -42,3 +42,15 @@ test('sin streams usa el tiempo en zonas de Intervals',()=>{
 test('sin pulso ni ritmo no inventa',()=>{
   assert.equal(TE.analyse({activity:{sport:'Run',raw_summary:{}}}).available,false);
 });
+
+test('el tiempo parado no cuenta y nunca suma más que el tiempo en movimiento',()=>{
+  // 38 min corriendo suave y casi 1 h parado con el reloj en marcha (como la actividad de Ur).
+  const s=streams([[1200,0.8,140],[3570,0,100],[1080,0.82,145]]);
+  const r=TE.analyse({activity:{sport:'Run',raw_summary:{...raw,moving_time:2288,elapsed_time:5858},streams:s}});
+  assert.ok(r.total<=2288/60+0.5, `total ${r.total}`);
+  assert.ok(r.minutes.rec<1);
+  assert.match(r.methodText,/parado/);
+  // Zonas de pulso y ritmo que suman más que la actividad: se ajustan.
+  const z=TE.analyse({activity:{sport:'Run',raw_summary:{moving_time:2400,icu_hr_zone_times:[1800,600,0,0,0,0,0],pace_zone_times:[0,0,1200,600,0,0,0]}}});
+  assert.ok(z.total<=40.5, `total ${z.total}`);
+});

@@ -100,17 +100,19 @@
     const usePace = isRun(activity) && ref.thrSpeed && speed.length;
     const usableHr = hr.some(v => num(v) > 60) && (ref.lthr || ref.hrUpper.length >= 5);
     if (!usePace && !usableHr) return null;
-    // Velocidad media de 15 s para quitar picos del GPS.
+    // Velocidad media de 15 s para quitar picos del GPS (y para saber cuándo está parado).
     const smooth = [];
-    if (usePace) {
+    if (speed.length) {
       let sum = 0, q = [];
       for (let i = 0; i < speed.length; i += 1) { const v = Math.max(0, num(speed[i]) || 0); q.push(v); sum += v; if (q.length > 15) sum -= q.shift(); smooth.push(sum / q.length); }
     }
     const sec = [0, 0, 0, 0, 0, 0];
-    let counted = 0, byPace = 0, byHr = 0;
+    let counted = 0, byPace = 0, byHr = 0, stopped = 0;
     for (let i = 1; i < time.length; i += 1) {
       const dt = Math.min(10, Math.max(0, (num(time[i]) || 0) - (num(time[i - 1]) || 0)));
       if (!dt) continue;
+      // Parado (semáforo, descanso, reloj sin pausar): no cuenta como entrenamiento.
+      if (smooth.length && (num(speed[i]) || 0) < 0.5 && (smooth[i] || 0) < 0.8) { stopped += dt; continue; }
       const h = usableHr ? hrDomain(num(hr[i]), ref) : -1;
       let p = -1;
       if (usePace) {
@@ -124,7 +126,7 @@
       sec[d] += dt; counted += dt;
     }
     if (counted < 120) return null;
-    return { sec, counted, method: 'streams', byPace, byHr };
+    return { sec, counted, method: 'streams', byPace, byHr, stopped };
   }
 
   // Minutos en cada dominio a partir del tiempo en zonas de Intervals.
@@ -138,7 +140,19 @@
     const h = toDomains(hrZ), p = toDomains(paceZ);
     // Lo fácil por pulso; lo intenso, el máximo de pulso y ritmo (el pulso se queda corto en series).
     const sec = hrZ && paceZ ? [h[0], h[1], Math.max(h[2], p[2]), Math.max(h[3], p[3]), Math.max(h[4], p[4]), Math.max(h[5], p[5])] : (hrZ ? h : p);
-    return { sec, counted: sec.reduce((s, v) => s + v, 0), method: hrZ && paceZ ? 'zones' : hrZ ? 'hr-zones' : 'pace-zones' };
+    // Al mezclar pulso y ritmo no se puede pasar del tiempo total que registró Intervals.
+    const base = (hrZ || paceZ).reduce((a, v) => a + v, 0);
+    return { sec, counted: sec.reduce((a, v) => a + v, 0), base, method: hrZ && paceZ ? 'zones' : hrZ ? 'hr-zones' : 'pace-zones' };
+  }
+
+  // Nunca más minutos que el tiempo en movimiento (o el total) de la actividad.
+  function capToActivity(data, activity) {
+    const raw = (activity && activity.raw_summary) || {};
+    const moving = num(raw.moving_time) || num(raw.icu_recording_time) || num(activity && activity.duration_sec) || num(raw.elapsed_time);
+    const limit = Math.min(...[moving, data.base].filter(v => v && v > 0));
+    if (!Number.isFinite(limit) || data.counted <= limit * 1.03) return data;
+    const k = limit / data.counted;
+    return { ...data, sec: data.sec.map(v => v * k), counted: limit, capped: true };
   }
 
   const lc = text => String(text).replace(/^[A-ZÁÉÍÓÚ](?![A-Z₂])/, c => c.toLowerCase()).replace(/ \/ R/, ' / r');
@@ -151,7 +165,8 @@
   function analyse({ activity, athleteZones, plannedKey } = {}) {
     if (!activity) return null;
     const ref = references(activity, athleteZones);
-    const data = fromStreams(activity, ref) || fromZoneTimes(activity);
+    const rawData = fromStreams(activity, ref) || fromZoneTimes(activity);
+    const data = rawData ? capToActivity(rawData, activity) : null;
     if (!data) {
       return { available: false, reason: ref.lthr || ref.thrSpeed ? 'La actividad no tiene pulso, ritmo ni tiempo en zonas.' : 'Faltan el umbral de pulso o de ritmo del atleta en Intervals.', refs: ref };
     }
@@ -213,7 +228,7 @@
       zones: 'Estimado con el tiempo en zonas de pulso y de ritmo que calcula Intervals.',
       'hr-zones': 'Estimado con el tiempo en zonas de pulso que calcula Intervals.',
       'pace-zones': 'Estimado con el tiempo en zonas de ritmo que calcula Intervals.',
-    }[data.method];
+    }[data.method] + (data.stopped >= 60 ? ` No cuentan ${Math.round(data.stopped / 60)} min parado.` : '') + (data.capped ? ' Ajustado al tiempo en movimiento de la actividad.' : '');
 
     return {
       available: true, kind, headline, primary, lines, secondary, stimuli, plan,
