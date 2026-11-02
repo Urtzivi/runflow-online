@@ -175,6 +175,7 @@
     const football=item.type==='football';
     const metric=v=>v===null||v===undefined||v===''?'Sin dato':esc(num(v,1));
     dialog.innerHTML='<button class="btn secondary" data-close style="float:right">Cerrar</button><h2>'+esc(item.athlete.display_name)+' · '+esc(a?.name||w.title||'Actividad')+'</h2><p>'+dateLabel(item.date||w.workout_date)+'</p>'+sourceHtml(item)+
+      (item.type==='intervals'&&a?.intervals_activity_id&&window.RunflowCoachActivity?'<div data-activity-analysis></div><h3 style="margin:6px 0 8px">Plan vs real</h3>':'')+
       (mismatch?'<p role="alert" class="notice"><strong>Cambio de deporte:</strong> se había previsto '+esc(w.sport)+' y ha realizado '+esc(a.sport)+'. No se considera cumplida la sesión prevista. Revisar su objetivo.</p>':'')+
       (a&&!item.linked?'<p>Actividad sin sesión vinculada. La previsión del mismo día es solo una referencia; no se ha emparejado automáticamente.</p>':'')+
       '<table style="width:100%;text-align:left"><thead><tr><th>Dato</th><th>Previsto'+(w.id?'':' (sin sesión)')+'</th><th>Realizado</th></tr></thead><tbody>'+[
@@ -192,6 +193,8 @@
       (review?'<label>Comentario del entrenador<textarea id="v8ReviewComment" style="width:100%"></textarea></label><button class="btn primary" data-confirm>Validar actividad realizada</button>':'')+'<p role="status" data-status></p>';
     q('[data-close]',dialog).onclick=()=>dialog.close();
     openSource(item,dialog);
+    const analysisHost=q('[data-activity-analysis]',dialog);
+    if(analysisHost) window.RunflowCoachActivity.load(analysisHost,{athleteId:item.athlete.id,activityId:a.intervals_activity_id,log});
     if(item.type==='intervals'&&a?.intervals_activity_id&&window.RunflowSessionBlocks){
       const blocksButton=document.createElement('button');blocksButton.type='button';blocksButton.className='btn secondary';blocksButton.style.cssText='float:right;margin-right:8px';blocksButton.textContent='Ver sesión por bloques';
       blocksButton.onclick=()=>window.RunflowSessionBlocks.open({athleteId:item.athlete.id,activityId:a.intervals_activity_id,title:a.name||w.title||'Sesión'});
