@@ -62,3 +62,10 @@ test('entrenamiento + parado + sin datos suman el total de la actividad',()=>{
   assert.ok(Math.abs(sum-60)<0.05, `suma ${sum}`);
   assert.ok(Math.abs(r.timeline.stopped-15)<0.01);
 });
+
+test('50 min a umbral es exceso: suma fatiga',()=>{
+  const r=run([[900,0.8,140],[3000,0.99,166],[600,0.78,135]]);
+  const thrS=r.stimuli.find(s=>s.key==='thr');
+  assert.ok(thrS.excess); assert.match(thrS.levelLabel,/fatiga/);
+  assert.ok(r.lines.some(l=>/fatiga/.test(l)));
+});

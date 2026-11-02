@@ -66,7 +66,8 @@
     if (tl && tl.noData >= 0.5) dist.push({ d: 'nodata', m: tl.noData, label: 'Sin datos útiles', color: '#E6E9E3' });
     const barTotal = dist.reduce((a, x) => a + x.m, 0);
     const clockMin = m => { const s = Math.round(m * 60); const h = Math.floor(s / 3600), mm = Math.floor((s % 3600) / 60), r = s % 60; return h ? `${h}:${String(mm).padStart(2, '0')}:${String(r).padStart(2, '0')}` : `${mm}:${String(r).padStart(2, '0')}`; };
-    const stim = effect.stimuli;
+    const ORDER = ['speed', 'vo2', 'thr', 'tempo', 'aer'];
+    const stim = effect.stimuli.filter(s => s.level >= 1 || s.excess).sort((a, b) => (b.key === effect.primary) - (a.key === effect.primary) || ORDER.indexOf(a.key) - ORDER.indexOf(b.key));
     const dots = level => [1, 2, 3].map(l => `<i class="${l <= level ? 'on' : ''}"></i>`).join('');
     const fmtMin = m => m >= 10 ? `${Math.round(m)}'` : `${String(Math.round(m * 10) / 10).replace('.', ',')}'`;
     const cuts = effect.cuts || {};
@@ -75,12 +76,14 @@
       cuts.pace ? `Ritmo en llano (umbral ${I().fmtPace(1000 / effect.refs.thrSpeed)}/km): aeróbico desde ${cuts.pace[0]} · tempo desde ${cuts.pace[1]} · umbral desde ${cuts.pace[2]} · VO₂máx desde ${cuts.pace[3]} · velocidad más rápido de ${cuts.pace[4]}/km.` : '',
       'Cada segundo cuenta en el dominio más alto que marquen el pulso o el ritmo (el pulso tarda en subir en series cortas).',
       'Para que haya mejora hacen falta, acumulados: VO₂máx 6 min, umbral 15 min, tempo 25 min, base aeróbica 45 min, velocidad 2 min. Con la mitad, mantiene; con el doble, mejora mucho.',
+      'Exceso (más fatiga que mejora en una sola sesión): más de 25 min de VO₂máx, 45 min de umbral, 90 min de tempo u 8 min de velocidad.',
+      'Solo aparecen los recuadros de lo que la sesión ha estimulado.',
     ].filter(Boolean);
     return `<section class="ca-card ca-effect" style="--ca-effect:${color}">
       <div class="ca-row"><span class="ca-k">Efecto del entrenamiento</span>${effect.plan ? `<span class="ca-plan ${effect.plan.ok ? 'ok' : 'warn'}">${effect.plan.ok ? '✓' : '⚠'} ${esc(effect.plan.ok ? 'Según lo previsto' : 'Distinto a lo previsto')}</span>` : ''}</div>
       <h3 class="ca-effect-title">${esc(effect.headline)}</h3>
       <p class="ca-p">${effect.lines.map(esc).join(' ')}${effect.plan ? ` <b>${esc(effect.plan.text)}</b>` : ''}</p>
-      <div class="ca-stimuli">${stim.map(s => `<div class="ca-stim ${s.key === effect.primary ? 'main' : ''}"><span>${esc(s.label)}</span><span class="ca-dots" title="${esc(s.levelLabel)}">${dots(s.level)}</span><small>${esc(s.levelLabel)} · ${fmtMin(s.minutes)}</small></div>`).join('')}</div>
+      <div class="ca-stimuli">${stim.length ? stim.map(s => `<div class="ca-stim ${s.key === effect.primary ? 'main' : ''} ${s.excess ? 'excess' : ''}"><span class="ca-stim-name">${s.excess ? '⚠ ' : ''}${esc(s.label)}</span>${s.excess ? '' : `<span class="ca-dots" title="${esc(s.levelLabel)}">${dots(s.level)}</span>`}<b class="ca-stim-level">${esc(s.levelLabel)}</b><small>generado con ${fmtMin(s.minutes)}</small></div>`).join('') : '<div class="ca-stim none"><span class="ca-stim-name">Ningún estímulo</span><small>No ha generado mejora en ninguna capacidad</small></div>'}</div>
       ${dist.length ? `<div class="ca-zbar">${dist.map(x => `<i title="${esc(x.label)} ${fmtMin(x.m)}" style="width:${((x.m / Math.max(1, barTotal)) * 100).toFixed(1)}%;background:${x.color}"></i>`).join('')}</div>
       <div class="ca-legend">${dist.map(x => `<span><i style="background:${x.color}"></i>${esc(x.label)} ${fmtMin(x.m)}</span>`).join('')}</div>
       ${tl ? `<small class="ca-mut">Total de la actividad ${clockMin(tl.elapsed)} = ${clockMin(effect.total)} de entrenamiento${tl.stopped >= 0.5 ? ` + ${clockMin(tl.stopped)} parado` : ''}${tl.noData >= 0.5 ? ` + ${clockMin(tl.noData)} sin pulso ni ritmo útil` : ''}.</small>` : ''}` : ''}
