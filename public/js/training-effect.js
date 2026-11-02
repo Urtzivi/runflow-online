@@ -150,9 +150,19 @@
     const raw = (activity && activity.raw_summary) || {};
     const moving = num(raw.moving_time) || num(raw.icu_recording_time) || num(activity && activity.duration_sec) || num(raw.elapsed_time);
     const limit = Math.min(...[moving, data.base].filter(v => v && v > 0));
-    if (!Number.isFinite(limit) || data.counted <= limit * 1.03) return data;
+    if (!Number.isFinite(limit) || data.counted <= limit) return data;
     const k = limit / data.counted;
     return { ...data, sec: data.sec.map(v => v * k), counted: limit, capped: true };
+  }
+
+  // Reparto del tiempo total de la actividad: entrenamiento + parado + sin datos útiles = total.
+  function timeline(activity, data) {
+    const raw = (activity && activity.raw_summary) || {};
+    const elapsed = num(raw.elapsed_time) || num(activity && activity.duration_sec);
+    if (!elapsed) return null;
+    const moving = Math.min(elapsed, num(raw.moving_time) || elapsed);
+    const counted = Math.min(data.counted, moving);
+    return { elapsed: elapsed / 60, stopped: (elapsed - moving) / 60, noData: Math.max(0, moving - counted) / 60 };
   }
 
   const lc = text => String(text).replace(/^[A-ZÁÉÍÓÚ](?![A-Z₂])/, c => c.toLowerCase()).replace(/ \/ R/, ' / r');
@@ -174,7 +184,7 @@
     const total = data.counted / 60;
     const stimMinutes = {
       speed: min.speed,
-      vo2: min.vo2 + min.speed * 0.5,
+      vo2: min.vo2,
       thr: min.thr,
       tempo: min.tempo,
       aer: total - min.rec,
@@ -209,7 +219,7 @@
     else if (kind === 'aer') lines.push(`${fmtMin(byKey.aer.minutes)} de trabajo aeróbico sin apenas intensidad: ${byKey.aer.level >= 3 ? 'desarrolla la resistencia' : 'suma base aeróbica'}.`);
     else if (kind === 'rec') lines.push('Sesión muy suave y corta: ayuda a recuperar, no busca mejorar nada.');
     else if (kind === 'maintain') lines.push('Algo de estímulo, pero poco tiempo para provocar una mejora clara. Sirve para mantener.');
-    else lines.push(`Solo ${fmtMin(total)} con datos útiles y casi todo muy suave: no hay estímulo suficiente para mejorar nada.`);
+    else lines.push(`${fmtMin(total)} de entrenamiento y casi todo muy suave: no hay estímulo suficiente para mejorar nada.`);
     const hardShare = (min.tempo + min.thr) / Math.max(1, total);
 
     let plan = null;
@@ -228,11 +238,11 @@
       zones: 'Estimado con el tiempo en zonas de pulso y de ritmo que calcula Intervals.',
       'hr-zones': 'Estimado con el tiempo en zonas de pulso que calcula Intervals.',
       'pace-zones': 'Estimado con el tiempo en zonas de ritmo que calcula Intervals.',
-    }[data.method] + (data.stopped >= 60 ? ` No cuentan ${Math.round(data.stopped / 60)} min parado.` : '') + (data.capped ? ' Ajustado al tiempo en movimiento de la actividad.' : '');
+    }[data.method] + ' El tiempo parado no cuenta como entrenamiento.';
 
     return {
       available: true, kind, headline, primary, lines, secondary, stimuli, plan,
-      minutes: min, total, method: data.method, methodText, refs: ref,
+      minutes: min, total, method: data.method, methodText, refs: ref, timeline: timeline(activity, data),
       cuts: {
         hr: ref.lthr ? HR_CUTS.map(c => Math.round(c * ref.lthr)) : null,
         pace: ref.thrSpeed ? SPEED_CUTS.map(c => fmtPace(1000 / (c * ref.thrSpeed))) : null,

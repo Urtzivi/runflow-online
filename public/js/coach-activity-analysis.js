@@ -60,7 +60,12 @@
     if (!effect.available) return `<section class="ca-card ca-effect"><span class="ca-k">Efecto del entrenamiento</span><p class="ca-p">No se puede calcular: ${esc(effect.reason)}</p></section>`;
     const T = TE();
     const color = KIND_COLOR[effect.kind] || '#6B7A70';
-    const dist = T.DOMAINS.map(d => ({ d, m: effect.minutes[d] })).filter(x => x.m >= 0.25);
+    const dist = T.DOMAINS.map(d => ({ d, m: effect.minutes[d], label: T.DOMAIN_LABEL[d], color: DOMAIN_COLOR[d] })).filter(x => x.m >= 0.25);
+    const tl = effect.timeline;
+    if (tl && tl.stopped >= 0.5) dist.push({ d: 'stop', m: tl.stopped, label: 'Parado', color: '#C9CEC6' });
+    if (tl && tl.noData >= 0.5) dist.push({ d: 'nodata', m: tl.noData, label: 'Sin datos útiles', color: '#E6E9E3' });
+    const barTotal = dist.reduce((a, x) => a + x.m, 0);
+    const clockMin = m => { const s = Math.round(m * 60); const h = Math.floor(s / 3600), mm = Math.floor((s % 3600) / 60), r = s % 60; return h ? `${h}:${String(mm).padStart(2, '0')}:${String(r).padStart(2, '0')}` : `${mm}:${String(r).padStart(2, '0')}`; };
     const stim = effect.stimuli;
     const dots = level => [1, 2, 3].map(l => `<i class="${l <= level ? 'on' : ''}"></i>`).join('');
     const fmtMin = m => m >= 10 ? `${Math.round(m)}'` : `${String(Math.round(m * 10) / 10).replace('.', ',')}'`;
@@ -75,9 +80,11 @@
       <div class="ca-row"><span class="ca-k">Efecto del entrenamiento</span>${effect.plan ? `<span class="ca-plan ${effect.plan.ok ? 'ok' : 'warn'}">${effect.plan.ok ? '✓' : '⚠'} ${esc(effect.plan.ok ? 'Según lo previsto' : 'Distinto a lo previsto')}</span>` : ''}</div>
       <h3 class="ca-effect-title">${esc(effect.headline)}</h3>
       <p class="ca-p">${effect.lines.map(esc).join(' ')}${effect.plan ? ` <b>${esc(effect.plan.text)}</b>` : ''}</p>
-      <div class="ca-stimuli">${stim.map(s => `<div class="ca-stim ${s.key === effect.primary ? 'main' : ''}"><span>${esc(s.label)}</span><span class="ca-dots" title="${esc(s.levelLabel)}">${dots(s.level)}</span><small>${esc(s.levelLabel)} · ${fmtMin(s.minutes)}</small></div>`).join('')}</div>
-      ${dist.length ? `<div class="ca-zbar">${dist.map(x => `<i title="${esc(T.DOMAIN_LABEL[x.d])} ${fmtMin(x.m)}" style="width:${((x.m / Math.max(1, effect.total)) * 100).toFixed(1)}%;background:${DOMAIN_COLOR[x.d]}"></i>`).join('')}</div>
-      <div class="ca-legend">${dist.map(x => `<span><i style="background:${DOMAIN_COLOR[x.d]}"></i>${esc(T.DOMAIN_LABEL[x.d])} ${fmtMin(x.m)}</span>`).join('')}</div>` : ''}
+      <div class="ca-stimuli">${stim.map(s => `<div class="ca-stim ${s.key === effect.primary ? 'main' : ''}"><span>${esc(s.label)}</span><span class="ca-dots" title="${esc(s.levelLabel)}">${dots(s.level)}</span><small>${esc(s.levelLabel)} · ${fmtMin(s.minutes)}${s.key === 'aer' ? ' en total' : ''}</small></div>`).join('')}</div>
+      <small class="ca-mut">Cada recuadro cuenta los minutos de su zona de la barra. Base aeróbica suma todo lo que no es recuperación (aeróbico, tempo, umbral, VO₂máx y velocidad), porque todo ese tiempo trabaja el motor aeróbico.</small>
+      ${dist.length ? `<div class="ca-zbar">${dist.map(x => `<i title="${esc(x.label)} ${fmtMin(x.m)}" style="width:${((x.m / Math.max(1, barTotal)) * 100).toFixed(1)}%;background:${x.color}"></i>`).join('')}</div>
+      <div class="ca-legend">${dist.map(x => `<span><i style="background:${x.color}"></i>${esc(x.label)} ${fmtMin(x.m)}</span>`).join('')}</div>
+      ${tl ? `<small class="ca-mut">Total de la actividad ${clockMin(tl.elapsed)} = ${clockMin(effect.total)} de entrenamiento${tl.stopped >= 0.5 ? ` + ${clockMin(tl.stopped)} parado` : ''}${tl.noData >= 0.5 ? ` + ${clockMin(tl.noData)} sin pulso ni ritmo útil` : ''}.</small>` : ''}` : ''}
       <details class="ca-how"><summary>Cómo se calcula</summary><small class="ca-mut">${esc(effect.methodText)}</small><ul>${how.map(t => `<li>${t}</li>`).join('')}</ul></details>
     </section>`;
   }

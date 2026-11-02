@@ -54,3 +54,11 @@ test('el tiempo parado no cuenta y nunca suma más que el tiempo en movimiento',
   const z=TE.analyse({activity:{sport:'Run',raw_summary:{moving_time:2400,icu_hr_zone_times:[1800,600,0,0,0,0,0],pace_zone_times:[0,0,1200,600,0,0,0]}}});
   assert.ok(z.total<=40.5, `total ${z.total}`);
 });
+
+test('entrenamiento + parado + sin datos suman el total de la actividad',()=>{
+  const s=streams([[1200,0.8,140],[600,0,100],[1080,0.82,145]]);
+  const r=TE.analyse({activity:{sport:'Run',raw_summary:{...raw,moving_time:2700,elapsed_time:3600},streams:s}});
+  const sum=r.total+r.timeline.stopped+r.timeline.noData;
+  assert.ok(Math.abs(sum-60)<0.05, `suma ${sum}`);
+  assert.ok(Math.abs(r.timeline.stopped-15)<0.01);
+});
