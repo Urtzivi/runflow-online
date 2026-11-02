@@ -4866,13 +4866,15 @@ async function getActivityDetail(session, athleteId, externalId) {
   }
 
   const activity = { ...stored, raw_summary: raw, streams, intervals: summariseIntervals(raw) };
-  const blockAnalysis = await athleteZonesForBlocks(athleteId)
-    .then(zones => sessionBlockAnalysis(activity, planned, zones))
-    .catch(error => { console.warn(`[block-analysis] ${externalId}: ${error.message}`); return null; });
+  const athleteZones = await athleteZonesForBlocks(athleteId).catch(() => ({ hr: [], pace: [] }));
+  let blockAnalysis = null;
+  try { blockAnalysis = sessionBlockAnalysis(activity, planned, athleteZones); }
+  catch (error) { console.warn(`[block-analysis] ${externalId}: ${error.message}`); }
   return {
     activity,
     planned,
     block_analysis: blockAnalysis,
+    athlete_zones: athleteZones,
     recovery,
     feedback: await feedbackForActivity(athleteId, stored),
     review: await activityReview(session, athleteId, stored.id),
