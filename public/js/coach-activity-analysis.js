@@ -99,9 +99,12 @@
     const effect = TE() ? TE().analyse({ activity, athleteZones: zones, plannedKey }) : null;
     const comp = I().compliance(activity, planned);
     const reading = I().activityReading({ activity, planned, athleteZones: zones, analysis });
-    const pace = num(activity.avg_pace_sec_per_km);
-    const stats = [['Distancia', num(activity.distance_m) ? km(activity.distance_m) : '—'], ['Tiempo', clock(activity.duration_sec)], pace && num(activity.distance_m) > 500 ? ['Ritmo', `${I().fmtPace(pace)}/km`] : ['Carga', num(activity.load) ? String(Math.round(num(activity.load))) : '—']];
-    const extra = [num(activity.avg_hr) ? `Pulso medio ${Math.round(num(activity.avg_hr))}` : '', num(activity.max_hr) ? `máx. ${Math.round(num(activity.max_hr))}` : '', num(activity.load) && stats[2][0] !== 'Carga' ? `carga ${Math.round(num(activity.load))}` : '', num(raw.moving_time) && num(raw.elapsed_time) && raw.elapsed_time - raw.moving_time >= 120 ? `parado ${clock(raw.elapsed_time - raw.moving_time)}` : ''].filter(Boolean).join(' · ');
+    const moving = num(raw.moving_time), elapsed = num(raw.elapsed_time) || num(activity.duration_sec);
+    const stoppedSec = moving && elapsed && elapsed - moving >= 120 ? elapsed - moving : 0;
+    // Con mucho tiempo parado, el tiempo y el ritmo que importan son los de movimiento.
+    const pace = stoppedSec && num(activity.distance_m) > 500 ? moving / (num(activity.distance_m) / 1000) : num(activity.avg_pace_sec_per_km);
+    const stats = [['Distancia', num(activity.distance_m) ? km(activity.distance_m) : '—'], stoppedSec ? ['En movimiento', clock(moving)] : ['Tiempo', clock(activity.duration_sec)], pace && num(activity.distance_m) > 500 ? ['Ritmo', `${I().fmtPace(pace)}/km`] : ['Carga', num(activity.load) ? String(Math.round(num(activity.load))) : '—']];
+    const extra = [num(activity.avg_hr) ? `Pulso medio ${Math.round(num(activity.avg_hr))}` : '', num(activity.max_hr) ? `máx. ${Math.round(num(activity.max_hr))}` : '', num(activity.load) && stats[2][0] !== 'Carga' ? `carga ${Math.round(num(activity.load))}` : '', stoppedSec ? `total ${clock(elapsed)} con ${clock(stoppedSec)} parado` : ''].filter(Boolean).join(' · ');
     const chips = I().contextChips(activity, null).filter(c => !/^Tu esfuerzo/.test(c.label));
     const watchRpe = num(raw.icu_rpe) ?? num(raw.session_rpe);
     if (watchRpe) chips.push({ label: `RPE del reloj ${watchRpe}/10`, hint: 'Puesto por el atleta en Garmin/Intervals' });
