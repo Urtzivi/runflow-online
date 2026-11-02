@@ -33,11 +33,12 @@
   const SPEED_CUTS = [0.78, 0.88, 0.95, 1.03, 1.15]; // … · 103–115 VO2 · ≥115 velocidad
 
   // Estímulos y minutos necesarios para: mantiene, mejora, mejora mucho.
+  // `max`: por encima, en una sola sesión, suma más fatiga que mejora.
   const STIMULI = {
-    speed: { label: 'Velocidad', what: 'potencia anaeróbica y economía a ritmos muy altos', steps: [0.75, 2, 4] },
-    vo2: { label: 'VO₂máx', what: 'el techo aeróbico (potencia aeróbica máxima)', steps: [3, 6, 12] },
-    thr: { label: 'Umbral', what: 'el umbral (el ritmo más rápido que se aguanta sin acumular fatiga)', steps: [8, 15, 30] },
-    tempo: { label: 'Tempo / ritmo de carrera', what: 'el ritmo sostenido de media maratón o maratón', steps: [15, 25, 45] },
+    speed: { label: 'Velocidad', what: 'potencia anaeróbica y economía a ritmos muy altos', steps: [0.75, 2, 4], max: 8 },
+    vo2: { label: 'VO₂máx', what: 'el techo aeróbico (potencia aeróbica máxima)', steps: [3, 6, 12], max: 25 },
+    thr: { label: 'Umbral', what: 'el umbral (el ritmo más rápido que se aguanta sin acumular fatiga)', steps: [8, 15, 30], max: 45 },
+    tempo: { label: 'Tempo / ritmo de carrera', what: 'el ritmo sostenido de media maratón o maratón', steps: [15, 25, 45], max: 90 },
     aer: { label: 'Base aeróbica', what: 'la base aeróbica y la resistencia', steps: [25, 45, 90] },
   };
   const LEVEL = ['Sin efecto', 'Mantiene', 'Mejora', 'Mejora mucho'];
@@ -187,9 +188,13 @@
       vo2: min.vo2,
       thr: min.thr,
       tempo: min.tempo,
-      aer: total - min.rec,
+      aer: min.aer,
     };
-    const stimuli = Object.keys(STIMULI).map(key => ({ key, label: STIMULI[key].label, what: STIMULI[key].what, minutes: stimMinutes[key], level: levelFor(stimMinutes[key], STIMULI[key].steps), levelLabel: LEVEL[levelFor(stimMinutes[key], STIMULI[key].steps)] }));
+    const stimuli = Object.keys(STIMULI).map(key => {
+      const minutes = stimMinutes[key], level = levelFor(minutes, STIMULI[key].steps);
+      const excess = !!(STIMULI[key].max && minutes > STIMULI[key].max);
+      return { key, label: STIMULI[key].label, what: STIMULI[key].what, minutes, level, excess, max: STIMULI[key].max || null, levelLabel: excess ? 'Exceso: más fatiga que mejora' : LEVEL[level] };
+    });
     const byKey = Object.fromEntries(stimuli.map(s => [s.key, s]));
 
     // Efecto principal: el estímulo más intenso que llega a "mejora".
@@ -220,6 +225,8 @@
     else if (kind === 'rec') lines.push('Sesión muy suave y corta: ayuda a recuperar, no busca mejorar nada.');
     else if (kind === 'maintain') lines.push('Algo de estímulo, pero poco tiempo para provocar una mejora clara. Sirve para mantener.');
     else lines.push(`${fmtMin(total)} de entrenamiento y casi todo muy suave: no hay estímulo suficiente para mejorar nada.`);
+    if (primary && byKey[primary].excess) { headline = `Exceso de ${lc(byKey[primary].label)}`; lines.length = 0; }
+    stimuli.filter(x => x.excess).forEach(x => lines.push(`⚠ ${fmtMin(x.minutes)} de ${lc(x.label)}: más de lo que se asimila en una sesión (unos ${x.max} min). Suma fatiga sin añadir mejora; necesitará más recuperación.`));
     const hardShare = (min.tempo + min.thr) / Math.max(1, total);
 
     let plan = null;

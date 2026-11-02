@@ -36,7 +36,7 @@ test('rodaje planificado suave que sale a tempo avisa',()=>{
 test('sin streams usa el tiempo en zonas de Intervals',()=>{
   const r=TE.analyse({activity:{sport:'Run',raw_summary:{icu_hr_zone_times:[300,1800,300,300,300,0,0]}}});
   assert.equal(r.method,'hr-zones');
-  assert.equal(r.kind,'aer'); assert.equal(r.stimuli.find(s=>s.key==='thr').levelLabel,'Mantiene');
+  assert.equal(r.kind,'maintain'); assert.equal(r.stimuli.find(s=>s.key==='aer').minutes,30); assert.equal(r.stimuli.find(s=>s.key==='thr').levelLabel,'Mantiene');
 });
 
 test('sin pulso ni ritmo no inventa',()=>{
@@ -61,4 +61,11 @@ test('entrenamiento + parado + sin datos suman el total de la actividad',()=>{
   const sum=r.total+r.timeline.stopped+r.timeline.noData;
   assert.ok(Math.abs(sum-60)<0.05, `suma ${sum}`);
   assert.ok(Math.abs(r.timeline.stopped-15)<0.01);
+});
+
+test('50 min a umbral es exceso: suma fatiga',()=>{
+  const r=run([[900,0.8,140],[3000,0.99,166],[600,0.78,135]]);
+  const thrS=r.stimuli.find(s=>s.key==='thr');
+  assert.ok(thrS.excess); assert.match(thrS.levelLabel,/fatiga/);
+  assert.ok(r.lines.some(l=>/fatiga/.test(l)));
 });

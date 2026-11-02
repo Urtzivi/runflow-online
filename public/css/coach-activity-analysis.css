@@ -42,3 +42,9 @@
 .ca-how li,.ca td{white-space:normal}
 .ca-blocks{padding:4px}
 @media (max-width:640px){.ca-grid3{grid-template-columns:repeat(3,minmax(0,1fr))}.ca-hero{font-size:20px}.ca-stimuli{grid-template-columns:repeat(2,minmax(0,1fr))}.ca-two{grid-template-columns:1fr}}
+.ca-stimuli{grid-template-columns:repeat(auto-fill,minmax(170px,1fr))}
+.ca-stim-name{font-size:15px;font-weight:800}
+.ca-stim-level{font-size:13px;color:var(--ca-effect,#17201C)}
+.ca-stim.excess{background:#FFF4E5;outline:2px solid #E07B39}
+.ca-stim.excess .ca-stim-level{color:#93510F}
+.ca-stim.none{background:#F1F3EF;color:#6B7A70}
