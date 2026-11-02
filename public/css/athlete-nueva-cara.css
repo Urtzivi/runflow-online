@@ -1,0 +1,124 @@
+/* RunFlow Athlete · nueva cara (oct 2026). Solo actúa con body.nc-on. */
+body.nc-on{--nc-bg:#F3F4EF;--nc-ink:#17201C;--nc-mut:#5C665F;--nc-dark:#1E2622;--nc-dark2:#2A332E;--nc-lime:#C6F24E;--nc-green:#2F6B1F;--nc-line:#E3E6DE;background:var(--nc-bg)!important;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--nc-ink)}
+body.nc-on .nc-hide{display:none!important}
+body.nc-on .athlete-v2-hero{background:transparent!important;border-bottom:0!important}
+body.nc-on .athlete-v2-greeting h1,body.nc-on .athlete-page-title h1,body.nc-on .athlete-v2-wordmark strong{font-family:Manrope,Inter,system-ui,sans-serif!important;font-weight:800!important;letter-spacing:-.01em}
+body.nc-on .athlete-v2-greeting h1{font-size:32px!important;color:var(--nc-ink)!important}
+body.nc-on .athlete-v2-greeting p{color:var(--nc-mut)!important;font-weight:500}
+body.nc-on #todaySubtitle{display:block;color:#3C4640!important;font-size:15px;line-height:1.45;margin-top:4px}
+body.nc-on #todaySubtitle b{color:var(--nc-ink)}
+body.nc-on .athlete-avatar{background:var(--nc-dark)!important;color:var(--nc-lime)!important;font-family:Manrope,Inter,sans-serif;font-weight:800}
+body.nc-on .athlete-section-card,body.nc-on .athlete-week-summary-card,body.nc-on .profile-hero-card{border-radius:22px!important;box-shadow:0 1px 2px rgba(23,32,28,.06)!important;border-color:var(--nc-line)!important}
+body.nc-on .coach-message-card{background:var(--nc-dark)!important;border:0!important;border-radius:22px!important}
+body.nc-on .athlete-bottom-nav button.active,body.nc-on .athlete-bottom-nav button.active span{color:var(--nc-ink)!important}
+body.nc-on .athlete-bottom-nav button.active small{font-weight:700}
+body.nc-on .athlete-bottom-nav button.active::before{content:"";position:absolute;top:6px;left:50%;width:30px;height:4px;margin-left:-15px;border-radius:3px;background:var(--nc-lime)}
+body.nc-on .athlete-bottom-nav button{position:relative}
+body.nc-on .athlete-v2-content{gap:14px}
+/* Bloques reutilizables */
+.nc-stack{display:flex;flex-direction:column;gap:14px}
+.nc-card{background:#fff;border-radius:22px;padding:18px;display:flex;flex-direction:column;gap:12px;border:0;text-align:left;color:var(--nc-ink,#17201C);font:inherit;box-shadow:0 1px 2px rgba(23,32,28,.06);width:100%;box-sizing:border-box}
+.nc-card.nc-flat{box-shadow:none;border:1px solid #ECEEE7}
+button.nc-card{cursor:pointer}
+.nc-dark{background:#1E2622;color:#F3F4EF;border-radius:22px;padding:18px;display:flex;flex-direction:column;gap:14px}
+.nc-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.nc-row.nc-top{align-items:flex-start}.nc-row.nc-bottom{align-items:flex-end}
+.nc-k{font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:#5C665F;font-weight:700}
+.nc-k-green{color:#2F6B1F}.nc-k-light{color:#B9C4BC}
+.nc-h2{margin:3px 0;font-family:Manrope,Inter,sans-serif;font-weight:800;font-size:21px;line-height:1.2}
+.nc-h3{margin:2px 0;font-family:Manrope,Inter,sans-serif;font-weight:800;font-size:19px}
+.nc-h3s{font-family:Manrope,Inter,sans-serif;font-weight:800;font-size:15px}
+.nc-mut{color:#5C665F;font-size:13.5px}
+.nc-small{font-size:12px}
+.nc-green{color:#2F6B1F;font-weight:600;font-size:13px}
+.nc-warn{color:#A6551B;font-weight:600;font-size:13px}
+.nc-p{margin:0;font-size:15px;line-height:1.5}
+.nc-note{background:#F3F4EF;border-radius:14px;padding:12px 14px;font-size:14px;line-height:1.45;color:#2C3530}
+.nc-btn{display:flex;align-items:center;justify-content:center;gap:8px;min-height:50px;border-radius:16px;background:#17201C;color:#F3F4EF;font-weight:600;font-size:15px;border:0;text-decoration:none;cursor:pointer;width:100%;font-family:inherit}
+.nc-btn-lime{background:#C6F24E;color:#17201C}
+.nc-ghost-btn{min-height:44px;border-radius:14px;border:1px solid #3A4540;background:transparent;color:#F3F4EF;font:inherit;font-weight:600;font-size:14px;cursor:pointer}
+.nc-link{display:inline-flex;align-items:center;gap:6px;align-self:flex-start;background:none;border:0;color:#2F6B1F;font:inherit;font-weight:700;font-size:14px;padding:8px 0;min-height:44px;cursor:pointer}
+.nc-pill{border-radius:999px;padding:5px 10px;font-size:12px;font-weight:700;white-space:nowrap}
+.nc-pill-z{background:color-mix(in srgb,var(--z) 16%,#fff);color:#24323A}
+.nc-pill-lime{background:#C6F24E;color:#17201C}
+.nc-pill-green{background:#EAF6D3;color:#2F6B1F}
+.nc-pill-soft{background:#2A332E;color:#DDE5DF}
+.nc-card .nc-pill-soft{background:#F0F1EC;color:#5C665F}
+.nc-grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.nc-grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.nc-dstat{background:#2A332E;border-radius:14px;padding:10px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.nc-dstat span{font-size:11px;color:#B9C4BC}.nc-dstat b{font-family:Manrope,Inter,sans-serif;font-size:16px}
+.nc-dstat small{font-size:11px}.nc-dstat small.ok{color:#C6F24E}.nc-dstat small.warn{color:#F2C14E}
+.nc-stat{background:#F3F4EF;border-radius:14px;padding:10px 12px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.nc-stat span{font-size:11.5px;color:#5C665F}.nc-stat b{font-family:Manrope,Inter,sans-serif;font-size:16px}
+.nc-hero-num{display:block;font-family:Manrope,Inter,sans-serif;font-weight:800;font-size:22px;margin-top:2px}
+.nc-big{display:block;font-family:Manrope,Inter,sans-serif;font-weight:800;font-size:21px;text-align:right}
+.nc-right{text-align:right}.nc-right small{color:#5C665F;font-size:12px}
+.nc-huge{display:block;font-family:Manrope,Inter,sans-serif;font-weight:800;font-size:28px}.nc-huge small{font-size:15px}
+/* Disposición */
+.nc-ready-top{display:flex;align-items:center;gap:16px}
+.nc-ready-top>div{display:flex;flex-direction:column;gap:4px}
+.nc-ready-title{font-family:Manrope,Inter,sans-serif;font-weight:800;font-size:20px;line-height:1.25}
+.nc-ring-num{font-family:Manrope,Inter,sans-serif;font-weight:800;font-size:26px;fill:#F3F4EF}
+/* Dibujo de la sesión */
+.nc-profile{display:flex;align-items:flex-end;gap:3px}
+.nc-profile i{display:block;border-radius:5px;min-width:3px}
+.nc-legend{display:flex;gap:12px;flex-wrap:wrap;font-size:11.5px;color:#5C665F}
+.nc-legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+/* Última sesión */
+.nc-last{flex-direction:row;align-items:center;gap:14px;padding:14px 16px}
+.nc-last-ico{width:46px;height:46px;flex:none;border-radius:14px;background:#EAF6D3;color:#2F6B1F;display:flex;align-items:center;justify-content:center}
+.nc-last-txt{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
+.nc-last-txt small{color:#5C665F;font-size:12px}.nc-last-txt b{font-size:15px}
+/* Semana */
+.nc-bar{height:10px;background:#ECEEE7;border-radius:999px;overflow:hidden}.nc-bar i{display:block;height:100%;background:#C6F24E;border-radius:999px}
+.nc-week{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.nc-day{display:flex;flex-direction:column;align-items:center;gap:6px;background:none;border:0;padding:0;font:inherit;color:#17201C;cursor:pointer;min-height:44px}
+.nc-day:disabled{cursor:default}
+.nc-day small{font-size:11px;color:#5C665F;font-weight:600}
+.nc-day span{width:36px;height:36px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-family:Manrope,Inter,sans-serif;font-weight:700;font-size:14px;background:#F3F4EF}
+.nc-day i{width:6px;border-radius:3px;background:#D5D9D0}
+.nc-day.done span{background:var(--c)!important;color:#fff}.nc-day.done i{background:var(--c)}
+.nc-day.today span{background:#fff!important;box-shadow:inset 0 0 0 2px #17201C}
+.nc-day:not(:disabled) span{background:#F3F4EF;background:color-mix(in srgb,var(--c) 18%,#fff)}
+.nc-day.missed span{background:#fff;color:#8A938C;box-shadow:inset 0 0 0 1.5px #D5D9D0}
+.nc-count{background:#17201C;color:#C6F24E;border-radius:16px;padding:10px 14px;text-align:center;display:flex;flex-direction:column}
+.nc-count b{font-family:Manrope,Inter,sans-serif;font-weight:800;font-size:26px;line-height:1}.nc-count small{font-size:11px;color:#F3F4EF}
+/* Tablas, RPE, consejos */
+.nc-table{width:100%;border-collapse:collapse;font-size:13px}
+.nc-table th{font-size:11px;color:#5C665F;font-weight:600;text-align:left;padding:6px 4px;border-bottom:1px solid #E3E6DE;white-space:nowrap}
+.nc-table td{padding:8px 4px;border-bottom:1px solid #F0F1EC;white-space:normal!important}
+.nc-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}
+.nc-rpe{display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:3px}
+.nc-rpe i{height:28px;border-radius:7px;background:#ECEEE7;font-size:11px;font-style:normal;display:flex;align-items:center;justify-content:center;color:#5C665F}
+.nc-rpe i.on{color:#fff;font-weight:700}
+.nc-tips{margin:0;padding-left:18px;font-size:14px;line-height:1.6}
+/* Actividad */
+.nc-reading b{font-weight:700}
+.nc-chart{width:100%;height:auto;display:block}
+.nc-axis{font-size:10px;fill:#5C665F;font-family:Inter,system-ui,sans-serif}.nc-axis-b{font-weight:700;fill:#17201C;font-size:12px}
+.nc-zbar{display:flex;height:26px;border-radius:8px;overflow:hidden}
+.nc-zbar i{display:flex;align-items:center;height:100%}
+.nc-zbar em{font-style:normal;color:#fff;font-size:12px;font-weight:700;padding-left:10px;white-space:nowrap}
+.nc-chips{display:flex;flex-wrap:wrap;gap:6px}
+.nc-chip{background:#F3F4EF;border-radius:999px;padding:6px 11px;font-size:12.5px;font-weight:600}
+body.nc-on #athleteActivityModal .sb-verdict{display:none}
+body.nc-on #athleteActivityModal .modal-body,body.nc-on #sessionDetail .modal-body{display:flex;flex-direction:column;gap:14px}
+body.nc-on #athleteActivityPlan{margin:0;font-size:13px}
+/* Evolución */
+.nc-markers{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px}
+.nc-km{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:5px;align-items:end;height:136px}
+.nc-kmcol{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;height:100%}
+.nc-kmcol i{display:block;width:100%;border-radius:5px}
+.nc-kmcol small{font-size:9.5px;color:#5C665F}.nc-kmcol span{font-size:9.5px;color:#5C665F;min-height:12px}
+.nc-heat{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:4px}
+.nc-heatcol{display:grid;gap:4px}
+.nc-heatcol i{height:16px;border-radius:4px;background:#E3E6DE}
+.nc-heatcol i.on{background:#6FB04E}.nc-heatcol i.big{background:#2F6B1F}.nc-heatcol i.future{background:#F6F7F3}
+.nc-share-btn{display:flex;align-items:center;justify-content:center}
+.nc-page{padding-bottom:110px}
+/* Compartir */
+.nc-share-modal .modal-body{display:flex;flex-direction:column;gap:12px}
+.nc-share-img{width:100%;max-width:340px;align-self:center;border-radius:18px;box-shadow:0 10px 30px rgba(0,0,0,.18)}
+.nc-share-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.nc-design-switch .athlete-secondary-cta{width:100%;margin-top:6px}
