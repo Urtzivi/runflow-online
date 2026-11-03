@@ -1,7 +1,7 @@
 # Sistema multi-agente RunFlow — "El domingo por la noche, todo listo"
 
 Diseño resultante de ejecutar el prompt "arquitecto de agentes" sobre RunFlow (3/11/2026).
-Estado: **propuesta en modo plan — no hay código cambiado todavía.**
+Estado: **Día 1 hecho** (borradores de feedback + herramientas MCP). Siguiente: Día 2, Verificador.
 
 ---
 
@@ -148,7 +148,7 @@ DOMINGO 20:00–22:00  ✋ TÚ apruebas en la Bandeja
 
 | Día | Entregable | Prueba |
 |---|---|---|
-| 1 | Tabla de borradores + `create_feedback_draft` + `list_pending_drafts` en el MCP | Crear/leer borrador a mano con 1 atleta |
+| 1 ✅ | Borradores + `create_feedback_draft` + `list_pending_drafts` en el MCP | `scripts/test-assistant-drafts.cjs` |
 | 2 | Verificador (reglas duras) + tests en `scripts/` | Tests en verde con casos buenos y malos |
 | 3 | Bandeja del domingo en Coach (aprobar / editar / rechazar / enviar) | Aprobar un mensaje y verlo en la app del atleta |
 | 4 | Analista: modo sesión y modo semana; prueba manual desde Claude con 1 atleta | Comparar con lo que tú habrías escrito |
@@ -195,3 +195,17 @@ Todo se registra en la tabla de auditoría que ya usa el asistente (`AUDIT`).
 - **¿Dónde puede haber duplicación o alucinaciones?** Reintentos (→ clave idempotente) y números en mensajes (→ Verificador).
 - **¿Qué sigue necesitando revisión humana?** Todo envío, todo plan publicado, todo semáforo rojo.
 - **¿Puedes empezar hoy?** Sí: Día 1 = tabla de borradores + 2 herramientas MCP. Dime "adelante" y lo construyo.
+
+---
+
+## Registro de implementación
+
+### Día 1 — Borradores de feedback (hecho)
+
+- **Almacenamiento:** igual que las propuestas y credenciales del asistente, en `workout_templates` con `category = '__runflow_assistant_draft__'`. **No hace falta migración SQL.**
+- **Estados:** `draft → ready | needs_review` (Verificador, día 2) `→ approved | rejected` (coach, día 3) `→ sent`.
+- **Sin duplicados:** clave `session:<atleta>:<actividad>` o `week:<atleta>:<lunes>`. Un reintento reemplaza el borrador pendiente (guarda las 5 versiones anteriores en `history`); si ya está `approved`/`sent` responde 409 y no lo toca.
+- **MCP (`/mcp`):** `create_feedback_draft` (scope `draft`), `list_pending_drafts` (scope `read`).
+- **REST asistente:** `POST /api/assistant/athletes/:id/drafts`, `GET /api/assistant/drafts?status=&kind=&athlete_id=`.
+- **REST coach:** `GET /api/coach/assistant-drafts` (base para la Bandeja del día 3).
+- Todo queda en la auditoría (`draft_created`, `draft_replaced`, `drafts_read`).
