@@ -287,7 +287,7 @@
     const today = model.today;
     try {
       const [calendar, recovery] = await Promise.all([
-        apiCall(`${base()}/calendar?oldest=${P.addDays(today, -21)}&newest=${today}`),
+        apiCall(`${base()}/calendar?oldest=${P.addDays(today, -28)}&newest=${today}`),
         apiCall(`${base()}/recovery?oldest=${P.addDays(today, -40)}&newest=${today}`).catch(() => ({ rows: [] })),
       ]);
       ui.advice[key] = { result: P.weekAdvice({ week, calendarWeeks: calendar.weeks || [], recovery: recovery.rows || [], today }) };

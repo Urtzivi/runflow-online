@@ -377,3 +377,51 @@ test('historial: el plan empieza cerca de lo que venía corriendo y sube como mu
   assert.ok(st.warnings.some(w=>/poco a poco/.test(w)));
   assert.equal(P.readAnswers(P.macroPayload({...answers,history_minutes:80},st,'g').notes).history_minutes,80);
 });
+
+// ---------- Reglas expertas ----------
+test('regla 3: el volumen no sube más de un 10 % sobre la semana más alta anterior',()=>{
+  for(const level of ['nuevo','regular','experto']){
+    const st=P.buildStructure({...answers,level});
+    let peak=0;
+    st.weeks.forEach(w=>{ if(['deload','recovery','taper','competition'].includes(w.type)) return; if(peak) assert.ok(w.minutes<=Math.round(peak*1.1/5)*5,`${level} semana ${w.index}: ${w.minutes} tras ${peak}`); peak=Math.max(peak,w.minutes); });
+  }
+});
+
+test('reglas 9, 10 y 11: 80/20, tirada larga ≤35 % y un día de descanso',()=>{
+  const a={...answers,level:'regular',goal_mode:'marca',days:[0,1,2,3,4,5,6].map(day=>({day,minutes:day===6?120:50,types:['run','strength']}))};
+  const st=P.buildStructure(a);
+  for(const week of st.weeks){
+    const s=P.buildWeekSessions(a,st,week,library);
+    const days=new Set(s.map(x=>x.workout_date));
+    assert.ok(days.size<=6,`semana ${week.index}: un día de descanso`);
+    const runs=s.filter(x=>!x.is_strength&&!/^Opcional/.test(x.title));
+    const total=runs.reduce((t,x)=>t+x.planned_duration_min,0);
+    const long=runs.find(x=>/Tirada larga/.test(x.summary));
+    if(long) assert.ok(long.planned_duration_min<=Math.max(40,Math.round(week.minutes*0.35)),`semana ${week.index}: tirada ${long.planned_duration_min} de ${week.minutes}`);
+    const quality=runs.filter(x=>/Sesión de calidad/.test(x.summary));
+    if(quality.length>1&&week.type!=='competition'){
+      const lib=Object.fromEntries(library.map(r=>[r.ID||r.i,P.libRow(r)]));
+      const hard=quality.reduce((t,x)=>{const r=lib[x.runflow_library_id];return t+Math.max(0,r.minutes-r.warmup-r.cooldown)},0);
+      assert.ok(hard<=total*0.2+0.5,`semana ${week.index}: duro ${hard} de ${total}`);
+    }
+  }
+  // Con experiencia puede entrenar los 7 días.
+  const e={...a,level:'experto'}; const se=P.buildStructure(e);
+  assert.equal(new Set(P.buildWeekSessions(e,se,se.weeks[3],library).map(x=>x.workout_date)).size,7);
+});
+
+test('regla 13: los 2 días después de una carrera de preparación no llevan series',()=>{
+  const a={...answers,level:'experto',goal_mode:'marca',days:[{day:0,minutes:60},{day:1,minutes:60},{day:2,minutes:60},{day:3,minutes:60},{day:5,minutes:60},{day:6,minutes:120}],other_races:[{name:'10K',date:'2026-12-13'}]};
+  const st=P.buildStructure(a);
+  const week=st.weeks.find(w=>w.start==='2026-12-14');
+  const s=P.buildWeekSessions(a,st,week,library);
+  s.filter(x=>/Sesión de calidad/.test(x.summary)).forEach(x=>assert.ok(x.workout_date>'2026-12-15',`${x.title} el ${x.workout_date}`));
+});
+
+test('regla 17: con la carga de la semana muy por encima de su media, propone bajar',()=>{
+  const act=(date,load)=>({activity_date:date,load});
+  const weeks=[{week_start:'2026-10-19',workouts:[],unplanned_activities:[act('2026-10-22',100),act('2026-10-25',100),act('2026-10-29',100),act('2026-11-02',100),act('2026-11-05',100),act('2026-11-09',400),act('2026-11-12',400),act('2026-11-15',300)]}];
+  const r=P.weekAdvice({week:{type:'load'},calendarWeeks:weeks,recovery:[],today});
+  assert.ok(r.data.acwr>1.5); assert.equal(r.decision,'bajar');
+  assert.ok(r.reasons.some(x=>/mucho más alta/.test(x.text)));
+});
