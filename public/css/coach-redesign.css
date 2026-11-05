@@ -1,0 +1,76 @@
+/* RunFlow Coach · estructura nueva (coach-redesign.js). Solo actúa con body.rd-mode. */
+/* Colores en variables para poder ajustarlos al libro de estilo */
+:root{--rd-lime:#C6F24E;--rd-green:#3E9B4F;--rd-amber:#E9A23B;--rd-red:#D9534A;--rd-blue:#4a8fc9;--rd-ink:#181d19;--rd-muted:#737a74;--rd-line:#dde1da;--rd-paper:#fbfbf7}
+/* Menú: ocultamos el antiguo (sigue existiendo y se usa por debajo) */
+body.rd-mode .v8-sidebar>.v8-nav-title,body.rd-mode #v8GeneralNav,body.rd-mode #v8AthleteNav,body.rd-mode .v8-selected-athlete,body.rd-mode #v8AthleteApp,body.rd-mode .v8-sidebar>.v8-nav:not(.rd-nav){display:none!important}
+body.rd-mode .rd-nav{gap:4px;margin-top:6px}
+body.rd-mode .rd-nav button{font-size:15px;padding:12px}
+body.rd-mode .rd-nav-bottom{margin-top:auto;margin-bottom:12px;border-top:1px solid #242b25;padding-top:12px}
+body.rd-mode .v8-sidebar-foot{margin-top:0}
+.rd-count{background:var(--rd-lime);color:#111;border-radius:999px;font-size:11px;font-weight:900;padding:2px 8px}
+.rd-count.g{background:#2a322b;color:#aab3aa}
+.rd-count:empty{display:none}
+/* Cabecera antigua «Planificar con contexto» y selector: fuera (el selector sigue funcionando oculto) */
+body.rd-mode main.shell>.page-head{display:none!important}
+/* Ficha del atleta */
+#rdFicha{display:none}
+body.rd-mode.rd-in-ficha #rdFicha{display:block;margin-bottom:6px}
+.rd-crumb{font-size:13px;color:var(--rd-muted);margin-bottom:10px}.rd-crumb button{border:0;background:none;padding:0;color:var(--rd-muted);font:inherit;cursor:pointer;text-decoration:underline}.rd-crumb b{color:var(--rd-ink)}
+.rd-ficha-head{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:14px;flex-wrap:wrap}
+.rd-ficha-id{display:flex;gap:14px;align-items:center}.rd-ficha-id h1{margin:0;font-size:30px;letter-spacing:-.02em}.rd-ficha-id p{margin:2px 0 0;color:var(--rd-muted)}
+.rd-ficha-actions{display:flex;gap:8px;flex-wrap:wrap}
+.rd-btn-danger{background:#fbe1de!important;color:#a8352c!important;border-color:#f1c3bd!important}
+.rd-btn-lime{background:var(--rd-lime)!important;color:#111!important;border:0!important}
+.rd-tabs{display:flex;gap:4px;background:#e8eae4;padding:4px;border-radius:14px;width:max-content;max-width:100%;overflow-x:auto}
+.rd-tabs button{border:0;background:transparent;padding:9px 18px;border-radius:11px;font-weight:800;font-size:14px;color:#5d655e;cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:6px}
+.rd-tabs button.on{background:#fff;color:var(--rd-ink);box-shadow:0 2px 8px rgba(0,0,0,.08)}
+/* Dentro de la ficha, las vistas antiguas no necesitan su propio margen superior grande */
+body.rd-mode.rd-in-ficha main.shell>.view.active{margin-top:12px!important}
+/* Avatares, puntos, píldoras */
+.rd-av{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;font-weight:900;font-size:14px;flex:none}.rd-av.big{width:54px;height:54px;font-size:18px;border-radius:15px}
+.rd-dot{width:10px;height:10px;border-radius:50%;display:inline-block;flex:none}.rd-dot.g{background:var(--rd-green)}.rd-dot.a{background:var(--rd-amber)}.rd-dot.r{background:var(--rd-red)}.rd-dot.n{background:#c9cec7}
+.rd-tabs .rd-dot{width:8px;height:8px}
+.rd-pill{font-style:normal;font-size:11px;font-weight:850;padding:4px 9px;border-radius:999px;white-space:nowrap}.rd-pill.g{background:#e5f3e2;color:#2f7a3b}.rd-pill.a{background:#fbefd9;color:#9a6312}.rd-pill.r{background:#fbe1de;color:#a8352c}.rd-pill.n{background:#eef0eb;color:#666}
+/* Bloques comunes */
+.rd-head{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;margin-bottom:18px;flex-wrap:wrap}
+.rd-head h1{font-size:30px;margin:4px 0;letter-spacing:-.02em}
+.rd-eyebrow{font-size:10px;letter-spacing:.14em;font-weight:900;color:#858c86;text-transform:uppercase;margin:0}.rd-eyebrow.red{color:var(--rd-red)}
+.rd-sub{color:var(--rd-muted);font-size:14px;margin:0}
+.rd-muted{color:var(--rd-muted);font-size:13px;margin:8px 0 0}
+.rd-card{background:var(--rd-paper);border:1px solid var(--rd-line);border-radius:20px;box-shadow:0 14px 40px rgba(24,31,25,.07);padding:16px 18px}
+.rd-st{display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:13px;padding:8px 0;border-top:1px solid #eef0eb}.rd-st:first-of-type{border-top:0}.rd-st span{color:var(--rd-muted)}.rd-st b{text-align:right}.rd-st b.red{color:var(--rd-red)}.rd-st b.amber{color:#b97712}
+.rd-link{border:0;background:none;padding:0;color:#5f8819;font:inherit;font-weight:800;cursor:pointer;text-decoration:underline}
+.rd-chip{border:0;border-radius:999px;padding:7px 12px;font-size:12px;font-weight:800;background:#eceee8;color:#596059;cursor:pointer}.rd-chip.on{background:#151a16;color:#fff}
+.rd-filters{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+/* Para revisar */
+body.rd-mode #summaryView .v8-team-hero{display:none!important}
+#rdReviewHead{display:none}body.rd-mode #rdReviewHead{display:block}
+.rd-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+.rd-kpi{padding:14px 16px;border-radius:16px;background:#fff;border:1px solid var(--rd-line)}.rd-kpi b{font-size:26px;display:block;letter-spacing:-.02em}.rd-kpi span{font-size:12px;color:var(--rd-muted)}.rd-kpi.bad{border-color:#f1c3bd}.rd-kpi.bad b{color:var(--rd-red)}
+body.rd-mode #rdReviewGrid{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:18px;align-items:start}
+body.rd-mode #rdReviewSide{display:grid;gap:14px}
+body:not(.rd-mode) #rdReviewSide{display:none}
+body.rd-mode #v8TeamDashboard{display:grid;gap:16px}
+.rd-alert{display:flex;gap:10px;align-items:flex-start;width:100%;border:0;background:none;text-align:left;padding:10px 0 0;cursor:pointer;font:inherit}.rd-alert .rd-dot{margin-top:5px}.rd-alert b{display:block;font-size:14px}.rd-alert small{display:block;color:var(--rd-muted);font-size:12px;margin-top:2px;line-height:1.4}
+.rd-prep{display:flex;justify-content:space-between;align-items:center;gap:10px;padding-top:10px}.rd-prep b{display:block;font-size:14px}.rd-prep small{display:block;color:var(--rd-muted);font-size:12px}
+.rd-today{display:flex;gap:8px;align-items:center;font-size:13px;margin:8px 0 0}
+/* Atletas */
+.rd-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.rd-acard{background:#fff;border:1px solid var(--rd-line);border-radius:18px;padding:16px;text-align:left;font:inherit;color:inherit;cursor:pointer;transition:box-shadow .15s,border-color .15s}
+.rd-acard:hover{border-color:var(--rd-lime);box-shadow:0 0 0 2px var(--rd-lime)}
+.rd-acard-top{display:flex;gap:12px;align-items:center;margin-bottom:10px}.rd-acard-top>span{flex:1;min-width:0}.rd-acard-top b{font-size:16px;display:block}.rd-acard-top small{display:block;color:var(--rd-muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rd-acard .rd-st:first-of-type{border-top:1px solid #eef0eb}
+.rd-add{border-style:dashed;background:transparent;box-shadow:none;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:4px;text-align:center;color:var(--rd-muted);cursor:pointer;font:inherit;min-height:150px}.rd-add b{display:block;color:var(--rd-ink)}.rd-add small{display:block;margin-top:4px}
+/* Ajustes */
+.rd-two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.rd-two .rd-card .rd-eyebrow{margin-bottom:6px}
+@media(max-width:1100px){.rd-grid,.rd-two{grid-template-columns:1fr 1fr}body.rd-mode #rdReviewGrid{grid-template-columns:1fr}.rd-kpis{grid-template-columns:1fr 1fr}body.rd-mode .rd-nav-bottom button span:not(.ico){display:none}.rd-count{display:none}}
+@media(max-width:760px){.rd-grid,.rd-two{grid-template-columns:1fr}}
+/* En la ficha, la temporada la gestiona la planificación nueva */
+body.rd-mode #v10ProfileSeason{display:none!important}
+.rd-subtabs{display:flex;gap:6px;margin-top:10px}.rd-subtabs[hidden]{display:none}
+.rd-subtabs button{border:1px solid #dde1da;background:#fff;border-radius:999px;padding:6px 12px;font-size:12px;font-weight:800;color:#596059;cursor:pointer}.rd-subtabs button.on{background:#151a16;color:#fff;border-color:#151a16}
+/* Libro de estilo RunFlow (2026-11-05): lima y colores de zona como la app, títulos en Manrope */
+body.rd-mode{--v8-lime:var(--rd-lime);--v8-z2:#4F8FC0;--v8-tempo:#E3B341;--v8-sweet:#E07B39;--v8-threshold:#E07B39;--v8-vo2:#C8402F;--v8-strength:#7A5BB5;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+body.rd-mode h1,body.rd-mode h2,body.rd-mode .v8-brand strong,body.rd-mode .rd-kpi b,body.rd-mode .rd-acard-top b,body.rd-mode .rd-av{font-family:Manrope,Inter,system-ui,sans-serif;font-weight:800}
+.rd-nav .ico svg{width:20px;height:20px;display:block;margin:auto}
