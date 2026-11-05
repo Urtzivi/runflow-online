@@ -293,3 +293,31 @@ test('structureFromPlan respeta la fase guardada en cada semana tras recalcular'
   assert.deepEqual(r.mesos.map(m=>m.key),['base','especifico']);
   assert.equal(r.mesos[1].weeks.length,st.weeks.length-10);
 });
+
+test('guarda km y desnivel de la carrera principal y de las otras, y los manda en los objetivos',()=>{
+  const a={...answers,race_km:'21.3',race_elevation:'350',other_races:[{name:'San Silvestre',date:'2026-12-31',km:'10',elevation:''}]};
+  const notes=P.macroPayload(a,P.buildStructure(a),'g').notes;
+  const back=P.readAnswers(notes);
+  assert.equal(back.race_km,21.3); assert.equal(back.race_elevation,350);
+  assert.deepEqual(back.other_races,[{name:'San Silvestre',date:'2026-12-31',km:10,elevation:null}]);
+  const goals=P.goalPayloads(a,P.buildStructure(a),'s');
+  assert.equal(goals[0].distance_km,21.3); assert.equal(goals[0].elevation_m,350);
+  assert.equal(goals[1].distance_km,10); assert.equal(goals[1].elevation_m,null);
+  // Sin km, los del tipo de carrera.
+  assert.equal(P.goalPayloads(answers,P.buildStructure(answers),'s')[0].distance_km,21.1);
+  assert.match(P.buildStructure(a).summary,/21,3 km y 350 m de desnivel/);
+});
+
+test('con mucho desnivel, la tirada larga de las fases fuertes va con cuestas y la fuerza trabaja bajadas',()=>{
+  const flat=P.buildStructure(answers);
+  assert.ok(!P.courseOf(answers).hilly);
+  const a={...answers,race_elevation:'400'};
+  const st=P.buildStructure(a);
+  assert.ok(P.courseOf(a).hilly);
+  const week=st.weeks.find(w=>['resistencia','especifico'].includes(w.phase)&&w.type==='load');
+  const long=P.buildWeekSessions(a,st,week,library).find(s=>/Tirada larga/.test(s.summary));
+  assert.match(long.title,/cuestas/); assert.match(long.structured_description,/400 m de desnivel/);
+  const flatLong=P.buildWeekSessions(answers,flat,flat.weeks.find(w=>w.start===week.start),library).find(s=>/Tirada larga/.test(s.summary));
+  assert.doesNotMatch(flatLong.title,/cuestas/);
+  assert.ok(st.mesos.find(m=>m.key==='umbral').strength.families.includes('Trail Eccentric'));
+});

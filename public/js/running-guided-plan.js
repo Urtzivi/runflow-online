@@ -131,10 +131,24 @@
     'Al menos un día entre dos sesiones de fuerza.',
     'En semanas de descarga, una sola sesión y más ligera. La semana de la carrera, nada.',
   ];
+  /*
+   * Recorrido de la carrera: km y desnivel positivo que mete el entrenador (o los del tipo de carrera).
+   * hilly: 15 m+ por km o más (p. ej. una media con 300 m+): el plan mete cuestas y fuerza excéntrica.
+   */
+  function courseOf(answers) {
+    const race = RACES[answers?.race];
+    const km = Number(answers?.race_km) > 0 ? Math.round(Number(answers.race_km) * 10) / 10 : race ? race.distance_km : 0;
+    const elevation = Math.max(0, Math.round(Number(answers?.race_elevation) || 0));
+    const perKm = km ? elevation / km : 0;
+    return { km, elevation, perKm, hilly: perKm >= 15, steep: perKm >= 40 };
+  }
+  function courseText(course) {
+    return `${String(course.km).replace('.', ',')} km${course.elevation ? ` y ${course.elevation} m de desnivel positivo` : ''}`;
+  }
   function strengthPlanFor(answers, race, phaseKey, weekType) {
     const chosen = Number(answers.strength) || 0;
     const base = STRENGTH[phaseKey] || STRENGTH.base;
-    let families = race.trail && ['umbral', 'vo2', 'resistencia'].includes(phaseKey) ? ['Trail Eccentric', ...base.families] : base.families;
+    let families = (race.trail || courseOf(answers).hilly) && ['umbral', 'vo2', 'resistencia'].includes(phaseKey) ? ['Trail Eccentric', ...base.families] : base.families;
     if (answers.level === 'nuevo' && ['base', 'vo2'].includes(phaseKey)) families = ['General Strength', 'Unilateral', 'Calf/Soleus'];
     let perWeek = Math.min(chosen, base.max || 2);
     if (weekType === 'deload') perWeek = Math.min(perWeek, 1);
@@ -313,7 +327,9 @@
     const goalText = answers.goal_mode === 'marca' && answers.target_time ? `bajar de ${answers.target_time}` : 'terminarla bien';
     return {
       race, level, start, end: addDays(raceMonday, 6), race_date: answers.race_date, totalWeeks, mesos, weeks, warnings,
-      summary: `Tienes ${totalWeeks} ${totalWeeks === 1 ? 'semana' : 'semanas'} hasta ${race.article} con el objetivo de ${goalText}. `
+      course: courseOf(answers),
+      summary: `Tienes ${totalWeeks} ${totalWeeks === 1 ? 'semana' : 'semanas'} hasta ${race.article} (${courseText(courseOf(answers))}) con el objetivo de ${goalText}. `
+        + (courseOf(answers).hilly ? 'Como tiene mucho desnivel, las tiradas largas irán con cuestas y la fuerza trabajará las bajadas. ' : '')
         + (mesos.length > 1 ? `${sequenceText(mesos.filter(m => m.key !== 'taper').map(m => m.name.toLowerCase()))} ${race.taper === 1 ? 'La última semana' : `Las ${race.taper} últimas semanas`} se baja el volumen para llegar fresco.` : 'Solo queda tiempo para la puesta a punto.'),
     };
   }
@@ -441,9 +457,11 @@
   /*
    * Sesiones de una semana. days: [{ day: 0-6, minutes, types: ['run', 'trail', 'bike', 'strength', 'walk'] }]
    */
+  const HILL_PHASES = ['umbral', 'terreno', 'resistencia', 'especifico'];
   function buildWeekSessions(answers, structure, week, libraryRows) {
     const rows = (libraryRows || []).map(libRow).filter(row => row.id && row.name);
     const race = structure.race, level = structure.level, phase = PHASES[week.phase];
+    const course = courseOf(answers);
     const allDays = (answers.days || []).filter(day => Number(day.minutes) > 0).sort((a, b) => a.day - b.day);
     const trainDays = allDays.filter(runsOn);
     if (!trainDays.length) return [];
@@ -466,7 +484,9 @@
     const plan = new Map();
     if (longDay && !quietWeek && week.phase !== 'taper') {
       const family = race.trail && allowTrail(longDay) ? 'Long Trail' : 'Long Run';
-      const cap = Math.min(longDay.minutes, race.longCap || 100, week.type === 'deload' ? 75 : 999, Math.max(40, Math.round(week.minutes * 0.4)));
+      // Si la carrera es más larga que la típica de su tipo, la tirada larga puede crecer (hasta +40 %).
+      const longCap = Math.round((race.longCap || 100) * Math.min(1.4, Math.max(1, course.km / race.distance_km)));
+      const cap = Math.min(longDay.minutes, longCap, week.type === 'deload' ? 75 : 999, Math.max(40, Math.round(week.minutes * 0.4)));
       const row = week.phase === 'prep'
         ? pickRow(rows, runFilter(longDay, r => r.family === 'Easy'), 1, level.maxLib, cap, used)
         : pickRow(rows, runFilter(longDay, r => r.family === family), progress, Math.min(5, level.maxLib + 1), cap, used)
@@ -547,6 +567,12 @@
       // Si ese día solo puede hacer trail, la sesión va por montaña (y así lo entiende la disponibilidad).
       if (trailOnly(trainDays.find(d => d.day === day)) && !/trail|montaña|desnivel/i.test(session.title)) session.title += ' · por montaña';
       session.easy = /^Rodaje/.test(item.role);
+      // Carrera con mucho desnivel: la tirada larga de las fases fuertes va con cuestas, como la carrera.
+      if (item.role === 'Tirada larga' && course.hilly && HILL_PHASES.includes(week.phase)) {
+        if (!/trail|montaña|desnivel|cuesta/i.test(session.title)) session.title += ' · con cuestas';
+        session.summary += ' · Por terreno con cuestas';
+        session.structured_description += `\nTerreno: busca un recorrido con subidas y bajadas. La carrera tiene ${course.elevation} m de desnivel positivo en ${String(course.km).replace('.', ',')} km.`;
+      }
       sessions.push(session);
     });
 
@@ -954,12 +980,13 @@
   function goalPayloads(answers, structure, seasonId) {
     const main = {
       season_id: seasonId, name: answers.race_name || structure.race.label, goal_date: answers.race_date, sport: structure.race.trail ? 'TrailRun' : 'Run',
-      event_type: structure.race.label, goal_type: 'competition', priority_code: 'A', distance_km: structure.race.distance_km,
+      event_type: structure.race.label, goal_type: 'competition', priority_code: 'A', distance_km: courseOf(answers).km, elevation_m: courseOf(answers).elevation,
       target_time_sec: answers.goal_mode === 'marca' ? parseTime(answers.target_time) : null,
       performance_target: answers.goal_mode === 'marca' && answers.target_time ? `Bajar de ${answers.target_time}` : 'Terminarla en buen estado',
     };
     const others = (answers.other_races || []).filter(item => item.date && item.date >= structure.start && item.date < answers.race_date).map(item => ({
       season_id: seasonId, name: item.name || 'Carrera de preparación', goal_date: item.date, sport: 'Run', event_type: 'Carrera de preparación', goal_type: 'competition', priority_code: 'B',
+      distance_km: Number(item.km) > 0 ? Number(item.km) : null, elevation_m: Number(item.elevation) > 0 ? Math.round(Number(item.elevation)) : null,
       performance_target: 'Usarla como entrenamiento de calidad',
     }));
     return [main, ...others];
@@ -992,7 +1019,7 @@
     const strength = workouts ? workouts.filter(w => w.is_strength).length : week.strength_sessions || 0;
     return {
       name: `${meso.name} · semana ${position}`, start_date: week.start, end_date: week.end, type: week.type,
-      primary_objective: week.b_race ? `${meso.goal} Esta semana hay carrera de preparación (${week.b_race.name || 'objetivo B'}): úsala como sesión de calidad.` : meso.goal,
+      primary_objective: week.b_race ? `${meso.goal} Esta semana hay carrera de preparación (${[week.b_race.name || 'objetivo B', Number(week.b_race.km) > 0 && `${week.b_race.km} km`, Number(week.b_race.elevation) > 0 && `${week.b_race.elevation} m+`].filter(Boolean).join(', ')}): úsala como sesión de calidad.` : meso.goal,
       planned: { hours: week.hours, distance_km: 0, elevation_m: 0, load: workouts && workouts.length ? workouts.filter(w => !w.optional).reduce((sum, w) => sum + (Number(w.planned_load) || 0), 0) : week.load, strength_sessions: strength },
       lifecycle_status: 'planned', publication_status: 'draft',
       recovery_target: ['deload', 'recovery', 'taper', 'competition'].includes(week.type) ? week.why : '',
@@ -1002,10 +1029,11 @@
   }
 
   function compactAnswers(a) {
+    const num = value => (Number(value) > 0 ? Math.round(Number(value) * 10) / 10 : null);
     return {
-      v: 1, race: a.race, race_date: a.race_date, race_name: a.race_name || '', goal_mode: a.goal_mode, target_time: a.target_time || '',
+      v: 1, race: a.race, race_date: a.race_date, race_name: a.race_name || '', race_km: num(a.race_km), race_elevation: num(a.race_elevation), goal_mode: a.goal_mode, target_time: a.target_time || '',
       level: a.level, injuries: a.injuries || '', long_day: a.long_day, strength: a.strength, equipment: a.equipment || 'gimnasio', start_date: a.start_date,
-      days: (a.days || []).map(d => ({ day: d.day, minutes: d.minutes, types: dayTypes(d) })), other_races: a.other_races || [],
+      days: (a.days || []).map(d => ({ day: d.day, minutes: d.minutes, types: dayTypes(d) })), other_races: (a.other_races || []).map(r => ({ name: r.name || '', date: r.date || '', km: num(r.km), elevation: num(r.elevation) })),
     };
   }
   function readAnswers(notes) {
@@ -1027,6 +1055,7 @@
   }
 
   return {
+    courseOf, courseText,
     DAYS, DAYS_SHORT, PHASES, RACES, LEVELS, WEEK_TYPES, REASONS, MARKER, STRENGTH, EQUIPMENT, STRENGTH_RULES, ACTIVITIES,
     strengthPlanFor, equipmentOk, dayTypes, canDo, runsOn,
     addDays, mondayOf, nextMonday, dayIndex, formatDate, rpeExplain, parseMain, parseTime,

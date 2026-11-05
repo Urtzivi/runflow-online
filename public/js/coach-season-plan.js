@@ -246,7 +246,7 @@
     const status = today > answers.race_date ? 'La carrera ya ha pasado' : today < structure.start ? `Empieza el ${fmt(structure.start)}` : `Faltan ${plural(left, 'semana', 'semanas')}`;
     return `<header class="sp-head">
       <div><span class="sp-eyebrow">Temporada</span><h2>${esc(raceName)} · ${esc(fmt(answers.race_date))}</h2>
-      <p>${esc(structure.race.label)} · ${esc(goal)} · <b>${esc(status)}</b></p></div>
+      <p>${esc(structure.race.label)} · ${esc(P.courseText(P.courseOf(answers)))} · ${esc(goal)} · <b>${esc(status)}</b></p></div>
       <div class="sp-actions">${seasonSelect()}${model.active ? '' : '<button class="btn primary" data-sp-act="incident">Ha pasado algo</button>'}<button class="btn soft" data-sp-act="delete">Borrar temporada</button></div>
     </header>`;
   }
