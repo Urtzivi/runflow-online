@@ -175,3 +175,42 @@ test('cargas para la API y respuestas guardadas en el macrociclo',()=>{
   assert.equal(micro.publication_status,'draft');
   assert.equal(micro.planned.load,workouts.filter(w=>!w.optional).reduce((s,w)=>s+w.planned_load,0));
 });
+
+test('structureFromPlan rehace la temporada guardada para preparar cualquier semana',()=>{
+  const st=P.buildStructure(answers);
+  // Simula lo que guarda la API: mesociclos con sus notas y microciclos con horas previstas.
+  const macro={notes:`${P.MARKER}\n${JSON.stringify(P.compactAnswers(answers))}`,mesocycles:st.mesos.map((meso,i)=>{
+    const payload=P.mesoPayload(meso);
+    return {id:`m${i}`,name:payload.name,notes:payload.notes,start_date:meso.start,microcycles:meso.weeks.map((week,j)=>{const mp=P.microPayload(meso,week,null,answers);return {id:`w${i}-${j}`,start_date:week.start,type:mp.type,planned:mp.planned};}).reverse()};
+  }).reverse()};
+  const saved=P.readAnswers(macro.notes);
+  const rebuilt=P.structureFromPlan(saved,macro);
+  assert.equal(rebuilt.weeks.length,st.weeks.length);
+  assert.deepEqual(rebuilt.mesos.map(m=>m.key),st.mesos.map(m=>m.key));
+  rebuilt.weeks.forEach((w,i)=>{
+    assert.equal(w.index,i+1);
+    assert.equal(w.start,st.weeks[i].start);
+    assert.equal(w.phase,st.weeks[i].phase);
+    assert.equal(w.type,st.weeks[i].type);
+    assert.ok(Math.abs(w.minutes-st.weeks[i].minutes)<=5,'mismos minutos (redondeo de horas)');
+  });
+  assert.equal(rebuilt.weeks.find(w=>w.start<='2026-12-31'&&w.end>='2026-12-31').b_race.name,'San Silvestre');
+  // Una semana del medio sale igual que si se hubiera preparado al crear el plan.
+  const i=6;
+  const a=P.buildWeekSessions(saved,rebuilt,rebuilt.weeks[i],library).map(s=>`${s.workout_date} ${s.title}`);
+  assert.ok(a.length>=3,'la semana tiene sesiones');
+  a.forEach(line=>assert.ok(line.slice(0,10)>=rebuilt.weeks[i].start&&line.slice(0,10)<=rebuilt.weeks[i].end,'dentro de la semana'));
+});
+
+test('daysFromProfile lee la disponibilidad de la ficha (gym cuenta como fuerza)',()=>{
+  assert.equal(P.daysFromProfile({availability:{days:[]}}),null);
+  const days=P.daysFromProfile({availability:{configured:true,days:[
+    {day:1,activity_types:['run','gym'],can_train:true,max_minutes:60},
+    {day:3,activity_types:['unavailable'],can_train:false},
+    {day:7,activity_type:'flexible',can_train:true,max_minutes:120},
+  ]}});
+  assert.equal(days.length,7);
+  assert.deepEqual(days[0],{day:0,minutes:60,types:['run','strength']});
+  assert.deepEqual(days[2],{day:2,minutes:0,types:[]});
+  assert.deepEqual(days[6],{day:6,minutes:120,types:['run','strength']});
+});
