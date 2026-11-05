@@ -1,7 +1,7 @@
 /*
  * RunFlow Coach · Planificación › "Crear plan guiado" (running).
  * Asistente de pocas preguntas que crea temporada, objetivo, macrociclo,
- * mesociclos, microciclos y las sesiones de las 2 primeras semanas en borrador.
+ * mesociclos, microciclos y las sesiones de la primera semana en borrador.
  * El cálculo vive en running-guided-plan.js (RunFlowRunningPlan).
  */
 (() => {
@@ -21,7 +21,7 @@
   };
   const base = () => `/api/coach/athletes/${encodeURIComponent(athleteId())}`;
   const today = () => new Date().toISOString().slice(0, 10);
-  const SESSION_WEEKS = 2; // sesiones que se crean al principio; el resto, semana a semana
+  const SESSION_WEEKS = 1; // solo la primera semana; el resto se prepara semana a semana en Planificación
 
   const STEPS = [
     { key: 'race', q: '¿Qué carrera vais a preparar?', help: 'Es el objetivo principal de la temporada. Todo el plan se construye hacia atrás desde ese día.' },
@@ -45,20 +45,7 @@
     catch { ui.profile = null; }
     return ui.profile;
   }
-  // Ficha → días del asistente. La ficha guarda 'gym' para la fuerza con entrenador.
-  const FROM_PROFILE = { run: 'run', trail: 'trail', bike: 'bike', strength: 'strength', gym: 'strength', walk: 'walk' };
-  function profileDays(profile) {
-    const days = profile?.availability?.days || [];
-    const configured = profile?.availability?.configured || days.some(day => day && (day.activity_type || Object.prototype.hasOwnProperty.call(day, 'can_train')));
-    if (!configured) return null;
-    return [0, 1, 2, 3, 4, 5, 6].map(index => {
-      const stored = days.find(day => Number(day.day) === index + 1) || {};
-      const listed = Array.isArray(stored.activity_types) && stored.activity_types.length ? stored.activity_types : [stored.activity_type || (stored.can_train === false ? 'unavailable' : 'flexible')];
-      let types = [...new Set(listed.flatMap(type => type === 'flexible' ? ['run', 'strength'] : FROM_PROFILE[type] ? [FROM_PROFILE[type]] : []))];
-      if (stored.can_train === false) types = [];
-      return { day: index, minutes: types.length ? Number(stored.max_minutes) || 60 : 0, types };
-    });
-  }
+  const profileDays = profile => P.daysFromProfile(profile);
   const guidedGym = profile => (profile?.availability?.days || []).some(day => (day.activity_types || []).includes('gym') || day.activity_type === 'gym');
   function defaults() {
     const fromProfile = profileDays(ui.profile);
@@ -180,8 +167,8 @@
       <div class="rgp-strength">${structure.mesos.filter(meso => meso.strength.perWeek).map(meso => `<div><b>${esc(meso.name)} → ${esc(meso.strength.name)}</b><span>${esc(meso.strength.goal)}</span><small>${esc(meso.strength.effort)}</small></div>`).join('')}</div>
       <ul class="rgp-rules">${P.STRENGTH_RULES.map(rule => `<li>${esc(rule)}</li>`).join('')}</ul>` : '<div class="rgp-warn">Sin fuerza en el plan. Si la hace por su cuenta, que no sea el día antes de las sesiones de calidad ni de la tirada larga.</div>'}
       <details class="rgp-why"><summary>¿Por qué este orden?</summary>${structure.mesos.map(meso => `<p><b>${esc(meso.name)}.</b> ${esc(meso.why)} <em>Ha funcionado si: ${esc(meso.success.charAt(0).toLowerCase() + meso.success.slice(1))}</em></p>`).join('')}</details>
-      <h3>Las ${SESSION_WEEKS} primeras semanas</h3>
-      <div class="rgp-sub">Sesiones de la biblioteca RunFlow con la intensidad en RPE (del 1 al 10). El resto de semanas se preparan más adelante, según cómo vaya.</div>
+      <h3>La primera semana</h3>
+      <div class="rgp-sub">Sesiones de la biblioteca RunFlow con la intensidad en RPE (del 1 al 10). El resto de semanas se preparan una a una en Planificación, según cómo vaya.</div>
       ${!ui.library ? '<div class="rgp-info">Cargando la biblioteca de sesiones…</div>' : sessions.map(({ week, items }) => `<div class="rgp-week"><div class="rgp-week-head"><b>Semana ${week.index} · ${esc(P.formatDate(week.start))} – ${esc(P.formatDate(week.end))}</b><span>${esc(week.label)} · ≈ ${week.minutes} min</span></div>
         ${items.length ? `<table class="rgp-table"><tbody>${items.map(item => `<tr${item.optional ? ' class="rgp-optional"' : ''}><td>${P.DAYS_SHORT[P.dayIndex(item.workout_date)]}</td><td><b>${esc(item.title)}</b><small>${esc(item.summary)}</small></td><td>${item.planned_duration_min || '—'} min</td></tr>`).join('')}</tbody></table>` : '<div class="rgp-sub">Sin sesiones: revisa los días disponibles.</div>'}</div>`).join('')}
       <div class="rgp-info">Se guardará en su ficha lo que puede hacer cada día: corre ${esc(trainDays)}${strengthDayCount(a) ? `, fuerza ${esc(a.days.filter(day => P.canDo(day, 'strength')).map(day => P.DAYS_SHORT[day.day]).join(', '))}` : ''}${a.strength ? `, con hasta ${a.strength} ${a.strength === 1 ? 'sesión' : 'sesiones'} de fuerza a la semana (${esc(P.EQUIPMENT[a.equipment]?.label.toLowerCase() || '')})` : ''}. Si pierde días o semanas, el plan se podrá recalcular desde ese punto sin mover la carrera.</div>`;
@@ -315,7 +302,7 @@
       ui.busy = false; ui.open = false; render();
       appState().selectedSeasonId = season.id;
       if (typeof window.loadPlan === 'function') await window.loadPlan(season.id);
-      notify(`Plan creado: ${structure.weeks.length} semanas en ${structure.mesos.length} bloques, con las sesiones de las ${SESSION_WEEKS} primeras semanas en borrador.`, 'success');
+      notify(`Plan creado: ${structure.weeks.length} semanas en ${structure.mesos.length} bloques, con las sesiones de la primera semana en borrador. Las demás se preparan semana a semana.`, 'success');
     } catch (error) {
       let message = error.message;
       if (season) {

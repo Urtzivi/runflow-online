@@ -631,6 +631,67 @@
     };
   }
 
+
+  // ---------- Temporada guardada → estructura (para preparar semana a semana) ----------
+  // Ficha → días del plan. La ficha guarda 'gym' para la fuerza con entrenador.
+  const FROM_PROFILE = { run: 'run', trail: 'trail', bike: 'bike', strength: 'strength', gym: 'strength', walk: 'walk' };
+  function daysFromProfile(profile) {
+    const days = profile?.availability?.days || [];
+    const configured = profile?.availability?.configured || days.some(day => day && (day.activity_type || Object.prototype.hasOwnProperty.call(day, 'can_train')));
+    if (!configured) return null;
+    return [0, 1, 2, 3, 4, 5, 6].map(index => {
+      const stored = days.find(day => Number(day.day) === index + 1) || {};
+      const listed = Array.isArray(stored.activity_types) && stored.activity_types.length ? stored.activity_types : [stored.activity_type || (stored.can_train === false ? 'unavailable' : 'flexible')];
+      let types = [...new Set(listed.flatMap(type => type === 'flexible' ? ['run', 'strength'] : FROM_PROFILE[type] ? [FROM_PROFILE[type]] : []))];
+      if (stored.can_train === false) types = [];
+      return { day: index, minutes: types.length ? Number(stored.max_minutes) || 60 : 0, types };
+    });
+  }
+  function phaseOfMeso(meso) {
+    const text = String(meso?.notes || '');
+    const index = text.indexOf(PHASE_PREFIX);
+    if (index >= 0) {
+      const key = text.slice(index + PHASE_PREFIX.length).split('\n')[0].trim();
+      if (PHASES[key]) return key;
+    }
+    const byName = Object.keys(PHASES).find(key => norm(PHASES[key].name) === norm(meso?.name));
+    return byName || 'base';
+  }
+  /*
+   * structureFromPlan: a partir de la temporada guardada (macrociclo del plan guiado con sus
+   * mesociclos y microciclos) rehace la estructura que usa buildWeekSessions. Así cada semana
+   * se prepara cuando toca, con la disponibilidad de ese momento.
+   */
+  function structureFromPlan(answers, macro) {
+    const race = RACES[answers?.race];
+    if (!race) throw new Error('Esta temporada no tiene los datos del plan guiado.');
+    const level = LEVELS[answers.level] || LEVELS.regular;
+    const mesos = [];
+    const weeks = [];
+    (macro?.mesocycles || []).slice().sort((a, b) => String(a.start_date).localeCompare(String(b.start_date))).forEach(meso => {
+      const key = phaseOfMeso(meso);
+      const own = (meso.microcycles || []).slice().sort((a, b) => String(a.start_date).localeCompare(String(b.start_date))).map(micro => {
+        const type = WEEK_TYPES[micro.type] ? micro.type : 'load';
+        const info = WEEK_TYPES[type];
+        const hours = Number(micro.planned?.hours) || 0;
+        const minutes = Math.round(hours * 60 / 5) * 5;
+        const week = {
+          index: 0, start: micro.start_date, end: addDays(micro.start_date, 6), phase: key, type, minutes, hours,
+          load: Number(micro.planned?.load) || Math.round(minutes * info.rpe), label: info.label, why: info.why,
+          strength_sessions: Number(micro.planned?.strength_sessions) || 0, micro_id: micro.id, meso_id: meso.id,
+        };
+        const race2 = (answers.other_races || []).find(item => item.date >= week.start && item.date <= week.end);
+        if (race2) week.b_race = race2;
+        return week;
+      });
+      if (!own.length) return;
+      weeks.push(...own);
+      mesos.push({ key, ...PHASES[key], id: meso.id, start: own[0].start, end: own[own.length - 1].end, weeks: own, strength: strengthPlanFor(answers, race, key, 'load') });
+    });
+    weeks.sort((a, b) => a.start.localeCompare(b.start)).forEach((week, i) => { week.index = i + 1; });
+    return { race, level, race_date: answers.race_date, start: weeks[0]?.start || '', end: weeks.length ? weeks[weeks.length - 1].end : '', totalWeeks: weeks.length, weeks, mesos, warnings: [] };
+  }
+
   // ---------- Cargas útiles para la API ----------
   function seasonPayload(answers, structure) {
     return {
@@ -721,5 +782,6 @@
     addDays, mondayOf, nextMonday, dayIndex, formatDate, rpeExplain, parseMain, parseTime,
     distribute, buildStructure, replan, buildWeekSessions, libRow,
     seasonPayload, goalPayloads, macroPayload, mesoPayload, microPayload, compactAnswers, readAnswers,
+    daysFromProfile, phaseOfMeso, structureFromPlan,
   };
 });
