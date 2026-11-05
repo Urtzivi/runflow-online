@@ -662,34 +662,284 @@
    * mesociclos y microciclos) rehace la estructura que usa buildWeekSessions. Así cada semana
    * se prepara cuando toca, con la disponibilidad de ese momento.
    */
+  function phaseOfMicro(micro) {
+    const text = String(micro?.notes || '');
+    const index = text.indexOf(PHASE_PREFIX);
+    if (index < 0) return null;
+    const key = text.slice(index + PHASE_PREFIX.length).split('\n')[0].trim();
+    return PHASES[key] ? key : null;
+  }
   function structureFromPlan(answers, macro) {
     const race = RACES[answers?.race];
     if (!race) throw new Error('Esta temporada no tiene los datos del plan guiado.');
     const level = LEVELS[answers.level] || LEVELS.regular;
-    const mesos = [];
     const weeks = [];
-    (macro?.mesocycles || []).slice().sort((a, b) => String(a.start_date).localeCompare(String(b.start_date))).forEach(meso => {
-      const key = phaseOfMeso(meso);
-      const own = (meso.microcycles || []).slice().sort((a, b) => String(a.start_date).localeCompare(String(b.start_date))).map(micro => {
+    (macro?.mesocycles || []).forEach(meso => {
+      const mesoKey = phaseOfMeso(meso);
+      (meso.microcycles || []).forEach(micro => {
         const type = WEEK_TYPES[micro.type] ? micro.type : 'load';
         const info = WEEK_TYPES[type];
         const hours = Number(micro.planned?.hours) || 0;
         const minutes = Math.round(hours * 60 / 5) * 5;
+        // Tras recalcular la temporada, la fase de cada semana va en la propia semana.
+        const key = phaseOfMicro(micro) || mesoKey;
         const week = {
           index: 0, start: micro.start_date, end: addDays(micro.start_date, 6), phase: key, type, minutes, hours,
           load: Number(micro.planned?.load) || Math.round(minutes * info.rpe), label: info.label, why: info.why,
           strength_sessions: Number(micro.planned?.strength_sessions) || 0, micro_id: micro.id, meso_id: meso.id,
+          adapted: String(micro.notes || '').includes(ADAPTED_PREFIX),
         };
         const race2 = (answers.other_races || []).find(item => item.date >= week.start && item.date <= week.end);
         if (race2) week.b_race = race2;
-        return week;
+        weeks.push(week);
       });
-      if (!own.length) return;
-      weeks.push(...own);
-      mesos.push({ key, ...PHASES[key], id: meso.id, start: own[0].start, end: own[own.length - 1].end, weeks: own, strength: strengthPlanFor(answers, race, key, 'load') });
     });
     weeks.sort((a, b) => a.start.localeCompare(b.start)).forEach((week, i) => { week.index = i + 1; });
+    // Bloques = semanas seguidas de la misma fase.
+    const mesos = [];
+    weeks.forEach(week => {
+      const last = mesos[mesos.length - 1];
+      if (last && last.key === week.phase) { last.weeks.push(week); last.end = week.end; return; }
+      mesos.push({ key: week.phase, ...PHASES[week.phase], id: week.meso_id, start: week.start, end: week.end, weeks: [week], strength: strengthPlanFor(answers, race, week.phase, 'load') });
+    });
     return { race, level, race_date: answers.race_date, start: weeks[0]?.start || '', end: weeks.length ? weeks[weeks.length - 1].end : '', totalWeeks: weeks.length, weeks, mesos, warnings: [] };
+  }
+
+  // ---------- «Ha pasado algo»: lesión, enfermedad, viaje o cansancio ----------
+  const INCIDENT_MARKER = 'RUNFLOW_GUIDED_INCIDENTS';
+  const ADAPTED_PREFIX = 'RUNFLOW_GUIDED_ADAPTED:';
+  const INCIDENT_KINDS = {
+    lesion: { label: 'Lesión o molestia', hint: 'Le duele algo al correr o después.' },
+    enfermedad: { label: 'Enfermedad', hint: 'Gripe, fiebre, catarro fuerte…' },
+    viaje: { label: 'Viaje o trabajo', hint: 'Unos días o semanas sin poder entrenar.' },
+    cansancio: { label: 'Mucho cansancio', hint: 'Va cargado, duerme mal o no rinde.' },
+  };
+  const STATES = {
+    parado: { label: 'Parado', why: 'Descanso: solo lo que no duela.' },
+    sin_correr: { label: 'Entrena sin correr', why: 'Mantiene la forma con lo que sí puede hacer, sin cargar la lesión.' },
+    vuelta: { label: 'Vuelta progresiva', why: 'Vuelve a correr poco a poco; manda el dolor.' },
+    normal: { label: 'Normal', why: 'Sigue el plan de la temporada.' },
+  };
+  const ALTERNATIVES = { bike: 'Bici o elíptica', walk: 'Caminar', strength: 'Ejercicios de fuerza y recuperación' };
+  const REHAB_CORE = ['Plancha frontal: 3 × 20-30 s', 'Dead bug: 3 × 8 por lado, lento', 'Puente de glúteo: 3 × 12'];
+  const INJURY_ZONES = {
+    pubis: {
+      label: 'Pubis o ingle', can: ['bike', 'walk', 'strength'],
+      avoid: ['Sprints y series rápidas', 'Cambios de dirección y giros bruscos', 'Cuestas fuertes, sobre todo bajando', 'Chutar o golpear un balón', 'Abrir mucho las piernas (zancadas laterales, sentadilla muy abierta)'],
+      rehab: ['Aductores en isométrico: balón entre las rodillas tumbado boca arriba, apretar 5 × 30 s', 'Copenhagen corto (rodilla apoyada en el banco): 3 × 6-8 por lado', 'Puente de glúteo: 3 × 12', 'Plancha lateral: 3 × 20-30 s por lado', 'Dead bug: 3 × 8 por lado, lento'],
+    },
+    rodilla: {
+      label: 'Rodilla', can: ['bike', 'walk', 'strength'],
+      avoid: ['Bajadas', 'Escaleras con carga', 'Saltos', 'Sentadillas profundas'],
+      rehab: ['Sentadilla isométrica en pared: 5 × 30-45 s', 'Step-up a un escalón bajo: 3 × 10 por pierna', 'Puente de glúteo: 3 × 12', 'Elevación de gemelos: 3 × 15', 'Abducción de cadera con goma: 3 × 15'],
+    },
+    gemelo: {
+      label: 'Gemelo o Aquiles', can: ['bike', 'strength'],
+      avoid: ['Cuestas', 'Correr de puntillas o rápido', 'Saltos', 'Zapatillas muy planas'],
+      rehab: ['Gemelo en isométrico (de puntillas, quieto): 5 × 30 s', 'Elevaciones de gemelo con pierna estirada, bajando lento: 3 × 12-15', 'Elevaciones de gemelo con rodilla flexionada: 3 × 12-15', 'Equilibrio a una pierna: 3 × 30 s', ...REHAB_CORE.slice(0, 1)],
+    },
+    tobillo: {
+      label: 'Tobillo o pie', can: ['bike', 'strength'],
+      avoid: ['Terreno irregular o montaña', 'Saltos', 'Cambios de dirección'],
+      rehab: ['Equilibrio a una pierna: 3 × 30 s', 'Movimientos del tobillo con goma en 4 direcciones: 3 × 15', 'Elevaciones de gemelo: 3 × 15', 'Recoger una toalla con los dedos: 3 × 30 s', ...REHAB_CORE.slice(0, 1)],
+    },
+    cadera: {
+      label: 'Cadera o glúteo', can: ['bike', 'walk', 'strength'],
+      avoid: ['Cuestas', 'Zancadas largas', 'Series rápidas'],
+      rehab: ['Puente de glúteo: 3 × 12', 'Abducción con goma (paso lateral): 3 × 12 por lado', 'Plancha lateral: 3 × 20-30 s por lado', 'Peso muerto a una pierna sin peso: 3 × 8 por pierna', 'Bird dog: 3 × 8 por lado'],
+    },
+    espalda: {
+      label: 'Espalda', can: ['bike', 'walk', 'strength'],
+      avoid: ['Cargar peso', 'Giros bruscos', 'Bajadas largas'],
+      rehab: ['Bird dog: 3 × 8 por lado', 'Dead bug: 3 × 8 por lado', 'Puente de glúteo: 3 × 12', 'Plancha lateral corta (rodillas apoyadas): 3 × 20 s'],
+    },
+    otra: { label: 'Otra zona', can: ['bike', 'walk', 'strength'], avoid: ['Todo lo que le duela'], rehab: [...REHAB_CORE, 'Plancha lateral: 3 × 20 s por lado'] },
+  };
+  // Vuelta a correr: cada semana en verde se sube un paso.
+  const RETURN_STEPS = [
+    { text: "5 × (1' trote muy suave + 2' andando)", run: 5, total: 15 },
+    { text: "6 × (2' trote + 1' andando)", run: 12, total: 18 },
+    { text: "4 × (4' trote + 1' andando)", run: 16, total: 20 },
+    { text: "20' de trote suave seguido", run: 20, total: 20 },
+    { text: "30' de trote suave seguido", run: 30, total: 30 },
+    { text: "40' de trote suave seguido", run: 40, total: 40 },
+  ];
+  const PAIN_RULE = 'Manda el dolor, durante y a la mañana siguiente: 0-2 de 10, bien; 3-4, se repite el paso; 5 o más, se para y se avisa al coach.';
+
+  // Estado con el que empieza: más prudente cuanto más duele.
+  function initialState(incident) {
+    if (incident.kind === 'enfermedad' || incident.kind === 'viaje') return 'parado';
+    const pain = Number(incident.pain) || 0;
+    if (pain >= 5) return 'parado';
+    if (incident.can_run && pain <= 2) return 'vuelta';
+    return 'sin_correr';
+  }
+  function readIncidents(notes) {
+    const text = String(notes || '');
+    const index = text.indexOf(INCIDENT_MARKER);
+    if (index < 0) return [];
+    try { const list = JSON.parse(text.slice(index + INCIDENT_MARKER.length).trim().split('\n')[0]); return Array.isArray(list) ? list : []; } catch { return []; }
+  }
+  function writeIncidents(notes, incidents) {
+    const text = String(notes || '');
+    const index = text.indexOf(INCIDENT_MARKER);
+    let before = text, after = '';
+    if (index >= 0) {
+      before = text.slice(0, index);
+      const rest = text.slice(index + INCIDENT_MARKER.length).replace(/^\s*\n/, '');
+      const nl = rest.indexOf('\n');
+      after = nl >= 0 ? rest.slice(nl + 1) : '';
+    }
+    const kept = incidents.slice(-5).map(item => ({ ...item, log: (item.log || []).slice(-12) }));
+    return `${before.replace(/\s+$/, '')}\n${INCIDENT_MARKER}\n${JSON.stringify(kept)}${after ? `\n${after}` : ''}`;
+  }
+  const activeIncident = list => (list || []).slice().reverse().find(item => !item.closed) || null;
+
+  function rehabSession(incident, date, maxMinutes) {
+    const zone = INJURY_ZONES[incident.zone] || INJURY_ZONES.otra;
+    const duration = Math.max(15, Math.min(25, Number(maxMinutes) || 25));
+    const list = incident.kind === 'lesion' ? zone.rehab : [...REHAB_CORE, 'Movilidad suave de caderas y tobillos: 5 min'];
+    return {
+      sport: 'Strength', is_strength: true, priority: 'B', workout_date: date,
+      title: incident.kind === 'lesion' ? `Recuperación · ${zone.label}` : 'Fuerza suave y movilidad',
+      planned_duration_min: duration, planned_load: duration * 3,
+      session_objective: 'Fortalecer la zona y el tronco para volver mejor.', adaptation_target: 'Rehab',
+      summary: 'Ejercicios de recuperación · RPE 4-5 de 10 · sin dolor',
+      structured_description: [
+        'Ejercicios sencillos, sin dolor (si alguno duele más de 3 de 10, quítalo).',
+        ...list.map(item => `· ${item}`),
+        'Si el fisio le ha dado ejercicios, haz los suyos en lugar de estos.',
+      ].join('\n'),
+      blocks: [{ type: 'runflow_meta', library_id: null, guided_plan: true, adapted: true }],
+      runflow_library_id: null,
+    };
+  }
+  function altSession(kind, date, minutes, harder) {
+    const bike = kind === 'bike';
+    const duration = Math.max(20, Math.round(minutes / 5) * 5);
+    const title = bike ? (harder ? `Bici o elíptica con cambios de ritmo ${duration}'` : `Bici o elíptica suave ${duration}'`) : `Caminar ${duration}'`;
+    const lines = bike
+      ? (harder
+        ? ["Calentamiento 10' suave.", "6 × (2' algo fuerte, RPE 6 de 10 + 2' suave).", 'Resto suave. Sin dolor en ningún momento.']
+        : ['Ritmo cómodo: RPE 3-4 de 10, puedes hablar con frases completas.', 'Sustituye a la carrera: mantiene el motor sin cargar la lesión.'])
+      : ['Caminar a buen paso, mejor por terreno blando y llano.', 'Si al día siguiente duele más, la próxima vez más corto.'];
+    return {
+      sport: bike ? 'Ride' : 'Walk', is_strength: false, priority: harder ? 'B' : 'C', workout_date: date, title,
+      planned_duration_min: duration, planned_load: Math.round(duration * (bike ? (harder ? 1.1 : 0.7) : 0.3)),
+      session_objective: bike ? 'Mantener la forma aeróbica sin el impacto de correr.' : 'Moverse sin cargar la lesión.',
+      adaptation_target: 'Cross-training',
+      summary: bike ? (harder ? 'Sustituye a la carrera · RPE 6 de 10 en los cambios' : 'Sustituye a la carrera · RPE 3-4 de 10') : 'Sustituye a la carrera · paseo activo',
+      structured_description: lines.join('\n'),
+      blocks: [{ type: 'steady', name: title, duration_min: duration, target: harder ? 'Z3' : 'Z1-Z2' }, { type: 'runflow_meta', library_id: null, guided_plan: true, adapted: true }],
+      runflow_library_id: null,
+    };
+  }
+  function returnRunSession(step, index, date) {
+    const s = RETURN_STEPS[Math.max(0, Math.min(RETURN_STEPS.length - 1, step))];
+    const duration = s.total + 10;
+    return {
+      sport: 'Run', is_strength: false, priority: 'A', workout_date: date,
+      title: `Vuelta a correr · paso ${step + 1} de ${RETURN_STEPS.length}`,
+      planned_duration_min: duration, planned_load: Math.round(duration * 3),
+      session_objective: 'Volver a correr sin que vuelva el dolor.', adaptation_target: 'Return to run',
+      summary: `${s.text} · muy suave, por llano y terreno blando`,
+      structured_description: [
+        "Calentamiento: 5' andando rápido.",
+        `Bloque principal: ${s.text}.`,
+        "Vuelta a la calma: 5' andando.",
+        'Ritmo: muy suave, RPE 2-3 de 10. Por llano y mejor sobre tierra o césped.',
+        PAIN_RULE,
+      ].join('\n'),
+      blocks: [
+        { type: 'warmup', duration_min: 5, target: 'Z1' },
+        { type: 'steady', name: s.text, duration_min: s.total, target: 'Z1-Z2' },
+        { type: 'cooldown', duration_min: 5, target: 'Z1' },
+        { type: 'runflow_meta', library_id: null, guided_plan: true, adapted: true, return_step: step + 1, return_index: index },
+      ],
+      runflow_library_id: null,
+    };
+  }
+  // Días separados al menos un día entre sí, empezando por los de más tiempo.
+  function spacedDays(list, count) {
+    const chosen = [];
+    for (const day of list.slice().sort((a, b) => b.minutes - a.minutes || a.day - b.day)) {
+      if (chosen.length >= count) break;
+      if (chosen.some(other => Math.abs(other.day - day.day) < 2)) continue;
+      chosen.push(day);
+    }
+    return chosen.sort((a, b) => a.day - b.day);
+  }
+  /*
+   * Semana adaptada mientras dura una lesión, enfermedad o viaje. days: disponibilidad (0 = lunes).
+   * fromDate: no se programa nada antes de ese día (lo pasado de la semana se respeta).
+   */
+  function buildAdaptedWeek(incident, week, days, options = {}) {
+    const state = incident.state || initialState(incident);
+    const from = options.fromDate || week.start;
+    const dateOf = day => addDays(week.start, day.day);
+    const usable = (days || []).filter(day => Number(day.minutes) > 0 && dateOf(day) >= from);
+    const can = new Set(incident.can || []);
+    const sessions = [];
+    if (state === 'normal' || incident.kind === 'viaje' || incident.kind === 'enfermedad' && state === 'parado') return sessions;
+    const runDays = usable.filter(runsOn);
+    const strengthDays = usable.filter(day => canDo(day, 'strength'));
+    const alt = can.has('bike') ? 'bike' : can.has('walk') ? 'walk' : null;
+    const rehabCount = can.has('strength') && (state !== 'parado' || Number(incident.pain) <= 4) ? 2 : 0;
+    // Primero se eligen los días de recuperación (fuerza) para dejarles sitio; después, lo demás.
+    const rehabDays = spacedDays(strengthDays, rehabCount);
+    const REHAB_MIN = 25;
+    const room = day => Number(day.minutes) - (rehabDays.includes(day) ? REHAB_MIN : 0);
+    let running = [];
+    if (state === 'vuelta') running = spacedDays(runDays.filter(day => room(day) >= RETURN_STEPS[Math.min(RETURN_STEPS.length - 1, Number(incident.step) || 0)].total + 10 || !rehabDays.includes(day)), 3);
+    running.forEach((day, i) => sessions.push(returnRunSession(Number(incident.step) || 0, i, dateOf(day))));
+    if (state !== 'parado' && alt) {
+      const pain = Number(incident.pain) || 0;
+      let harderDone = !(alt === 'bike' && incident.kind === 'lesion' && pain <= 2);
+      const longestDay = runDays.slice().sort((a, b) => b.minutes - a.minutes)[0];
+      runDays.filter(day => !running.includes(day) && canDo(day, alt)).forEach(day => {
+        const longest = day === longestDay;
+        const minutes = Math.min(room(day), alt === 'bike' ? (longest ? 75 : 45) : 40);
+        if (minutes < 20) return;
+        const harder = !harderDone && !longest;
+        if (harder) harderDone = true;
+        sessions.push(altSession(alt, dateOf(day), minutes, harder));
+      });
+    }
+    if (state === 'parado' && can.has('walk')) {
+      spacedDays(usable.filter(day => canDo(day, 'walk')), 2).forEach(day => {
+        const s = altSession('walk', dateOf(day), Math.min(room(day), 25), false);
+        s.title = `Opcional · ${s.title}`; s.optional = true; s.summary = 'Solo si no duele · paseo tranquilo';
+        sessions.push(s);
+      });
+    }
+    rehabDays.forEach(day => {
+      const used = sessions.filter(s => s.workout_date === dateOf(day) && !s.optional).reduce((sum, s) => sum + (Number(s.planned_duration_min) || 0), 0);
+      if (Number(day.minutes) - used < 15) return;
+      sessions.push(rehabSession(incident, dateOf(day), Number(day.minutes) - used));
+    });
+    return sessions.sort((a, b) => a.workout_date.localeCompare(b.workout_date) || Number(Boolean(a.is_strength)) - Number(Boolean(b.is_strength)));
+  }
+  // Tras la semana de vuelta: verde sube un paso, ámbar repite, rojo baja (o vuelve a «sin correr»).
+  function nextReturnStep(incident, light) {
+    const step = Number(incident.step) || 0;
+    if (light === 'green') return { state: 'vuelta', step: Math.min(RETURN_STEPS.length - 1, step + 1), ready: step + 1 >= RETURN_STEPS.length };
+    if (light === 'red') return step === 0 ? { state: 'sin_correr', step: 0 } : { state: 'vuelta', step: step - 1 };
+    return { state: 'vuelta', step };
+  }
+  /*
+   * Al volver: la carrera no se mueve. Se rehace la temporada desde el lunes de vuelta,
+   * contando las semanas perdidas y la fase en la que estaba cuando pasó.
+   */
+  function returnPlan(answers, incident, structure, returnDate) {
+    const startMonday = mondayOf(incident.from);
+    const back = nextMonday(returnDate);
+    const lostWeeks = Math.max(0, weeksBetween(startMonday, back));
+    const atStart = structure.weeks.find(week => week.start <= incident.from && week.end >= incident.from) || structure.weeks.find(week => week.start >= incident.from);
+    const reason = (incident.log || []).some(entry => entry.s === 'vuelta') || incident.kind === 'viaje' ? 'otro' : incident.kind === 'enfermedad' ? 'enfermedad' : 'dolor';
+    const phase = atStart?.phase && atStart.phase !== 'taper' ? atStart.phase : undefined;
+    const result = replan(answers, { from_date: back, lost_weeks: lostWeeks, reason, current_phase: phase });
+    result.lost_weeks = lostWeeks;
+    return result;
   }
 
   // ---------- Cargas útiles para la API ----------
@@ -782,6 +1032,8 @@
     addDays, mondayOf, nextMonday, dayIndex, formatDate, rpeExplain, parseMain, parseTime,
     distribute, buildStructure, replan, buildWeekSessions, libRow,
     seasonPayload, goalPayloads, macroPayload, mesoPayload, microPayload, compactAnswers, readAnswers,
-    daysFromProfile, phaseOfMeso, structureFromPlan,
+    daysFromProfile, phaseOfMeso, phaseOfMicro, structureFromPlan,
+    INCIDENT_KINDS, STATES, ALTERNATIVES, INJURY_ZONES, RETURN_STEPS, PAIN_RULE, ADAPTED_PREFIX, PHASE_PREFIX,
+    initialState, readIncidents, writeIncidents, activeIncident, buildAdaptedWeek, nextReturnStep, returnPlan,
   };
 });
