@@ -52,7 +52,7 @@
     const days = fromProfile || [0, 1, 2, 3, 4, 5, 6].map(day => ({ day, minutes: [1, 3, 6].includes(day) ? (day === 6 ? 90 : 60) : 0, types: [1, 3].includes(day) ? ['run', 'strength'] : day === 6 ? ['run'] : [] }));
     const longest = days.filter(P.runsOn).sort((a, b) => b.minutes - a.minutes)[0];
     return {
-      race: '', race_date: '', race_name: '', goal_mode: 'terminar', target_time: '', other_races: [],
+      race: '', race_date: '', race_name: '', race_km: '', race_elevation: '', goal_mode: 'terminar', target_time: '', other_races: [],
       level: 'regular', injuries: '', days, long_day: longest ? longest.day : 6, strength: 2, equipment: guidedGym(ui.profile) ? 'gimnasio_guiado' : 'gimnasio',
       start_date: P.nextMonday(P.addDays(today(), 1)), from_profile: Boolean(fromProfile),
     };
@@ -85,12 +85,22 @@
           <label class="rgp-f">Fecha de la carrera<input type="date" data-rgp-field="race_date" value="${esc(a.race_date)}" min="${esc(P.addDays(a.start_date, 7))}"></label>
           <label class="rgp-f">Nombre de la carrera (opcional)<input type="text" data-rgp-field="race_name" value="${esc(a.race_name)}" placeholder="Behobia, Media de Bilbao…"></label>
         </div>
+        <div class="rgp-grid2">
+          <label class="rgp-f">Distancia (km)<input type="number" inputmode="decimal" min="1" max="500" step="0.1" data-rgp-field="race_km" value="${esc(a.race_km === '' ? P.RACES[a.race]?.distance_km ?? '' : a.race_km)}"></label>
+          <label class="rgp-f">Desnivel positivo (m)<input type="number" inputmode="numeric" min="0" max="20000" step="10" data-rgp-field="race_elevation" value="${esc(a.race_elevation)}" placeholder="0 si es llana"></label>
+        </div>
+        <div class="rgp-sub">Con mucho desnivel (15 m o más por km), las tiradas largas irán con cuestas y la fuerza trabajará las bajadas.</div>
         <h3>Objetivo</h3>
         <div class="rgp-opts">${option('goal_mode', 'terminar', 'Terminarla bien', 'Llegar sano y disfrutarla. Menos series duras.', a.goal_mode)}${option('goal_mode', 'marca', 'Hacer una marca', 'Busca un tiempo concreto. Más trabajo de ritmo.', a.goal_mode)}</div>
         ${a.goal_mode === 'marca' ? `<label class="rgp-f rgp-narrow">Tiempo objetivo (h:mm:ss o mm:ss)<input type="text" data-rgp-field="target_time" value="${esc(a.target_time)}" placeholder="1:45:00"></label>` : ''}
         <h3>Otras carreras antes (opcional)</h3>
         <div class="rgp-sub">Carreras que sirven de entrenamiento. Esa semana no se pone otra sesión dura.</div>
-        ${a.other_races.map((race, i) => `<div class="rgp-row"><input type="text" data-rgp-other="${i}" data-key="name" value="${esc(race.name)}" placeholder="Nombre"><input type="date" data-rgp-other="${i}" data-key="date" value="${esc(race.date)}"><button type="button" class="rgp-btn small" data-rgp-act="other-remove" data-index="${i}">Quitar</button></div>`).join('')}
+        ${a.other_races.map((race, i) => `<div class="rgp-race">
+          <label class="rgp-f">Nombre<input type="text" data-rgp-other="${i}" data-key="name" value="${esc(race.name)}" placeholder="Carrera popular…"></label>
+          <label class="rgp-f">Fecha<input type="date" data-rgp-other="${i}" data-key="date" value="${esc(race.date)}"></label>
+          <label class="rgp-f">Km<input type="number" inputmode="decimal" min="0" max="500" step="0.1" data-rgp-other="${i}" data-key="km" value="${esc(race.km ?? '')}" placeholder="10"></label>
+          <label class="rgp-f">Desnivel (m)<input type="number" inputmode="numeric" min="0" max="20000" step="10" data-rgp-other="${i}" data-key="elevation" value="${esc(race.elevation ?? '')}" placeholder="0"></label>
+          <button type="button" class="rgp-btn small" data-rgp-act="other-remove" data-index="${i}">Quitar</button></div>`).join('')}
         <button type="button" class="rgp-btn" data-rgp-act="other-add">＋ Añadir carrera</button>`;
     } else if (step.key === 'athlete') {
       body = `<div class="rgp-opts">${Object.entries(P.LEVELS).map(([key, level]) => option('level', key, level.label, levelHint(key), a.level)).join('')}</div>
@@ -110,14 +120,21 @@
         ${a.strength ? `<h3>¿Dónde la hace?</h3><div class="rgp-opts rgp-opts3">${Object.entries(P.EQUIPMENT).map(([key, item]) => option('equipment', key, item.label, item.hint, a.equipment)).join('')}</div>` : ''}
         <label class="rgp-f rgp-narrow">El plan empieza el lunes<input type="date" data-rgp-field="start_date" value="${esc(a.start_date)}" step="7"></label>`;
     } else body = renderSummary();
-    const last = ui.step === STEPS.length - 1;
-    const blocked = stepError();
     q('#rgpBody').innerHTML = `
       <header class="rgp-head"><div><div class="rgp-eyebrow">Plan guiado de running · paso ${ui.step + 1} de ${STEPS.length}</div><h2>${esc(step.q)}</h2><div class="rgp-sub">${esc(step.help)}</div></div><button type="button" class="rgp-btn" data-rgp-act="close" ${ui.busy ? 'disabled' : ''}>Cerrar</button></header>
       <div class="rgp-progress"><i style="width:${Math.round((ui.step + 1) / STEPS.length * 100)}%"></i></div>
       <div class="rgp-content">${body}</div>
-      <footer class="rgp-actions">${ui.step ? `<button type="button" class="rgp-btn" data-rgp-act="back" ${ui.busy ? 'disabled' : ''}>‹ Atrás</button>` : ''}<span class="rgp-status ${ui.status.startsWith('Error') ? 'err' : ''}">${esc(blocked && !last ? blocked : ui.status)}</span>
+      ${footer()}`;
+  }
+  function footer() {
+    const last = ui.step === STEPS.length - 1;
+    const blocked = stepError();
+    return `<footer class="rgp-actions">${ui.step ? `<button type="button" class="rgp-btn" data-rgp-act="back" ${ui.busy ? 'disabled' : ''}>‹ Atrás</button>` : ''}<span class="rgp-status ${ui.status.startsWith('Error') ? 'err' : ''}">${esc(blocked && !last ? blocked : ui.status)}</span>
         ${last ? `<button type="button" class="rgp-btn lime" data-rgp-act="create" ${ui.busy || ui.preview?.error ? 'disabled' : ''}>${ui.busy ? 'Creando…' : 'Crear plan en borrador'}</button>` : `<button type="button" class="rgp-btn dark" data-rgp-act="next" ${blocked ? 'disabled' : ''}>Siguiente ›</button>`}</footer>`;
+  }
+  function refreshFooter() {
+    const el = q('#rgpBody .rgp-actions');
+    if (el) el.outerHTML = footer();
   }
   function raceHint(key) {
     return ({ '5K': 'Velocidad y ritmo alto.', '10K': 'Umbral y velocidad.', media: 'Resistencia y umbral.', maraton: 'Mucha base y tiradas largas.', trail_corto: 'Cuestas y ritmo en montaña.', trail_largo: 'Horas en montaña, subir y bajar.' })[key] || '';
@@ -133,8 +150,11 @@
       if (!a.race_date) return 'Indica la fecha de la carrera.';
       if (a.race_date < P.addDays(a.start_date, 6)) return 'La carrera tiene que ser después de la primera semana del plan.';
       if (a.goal_mode === 'marca' && a.target_time && !P.parseTime(a.target_time)) return 'Escribe el tiempo como 1:45:00 o 45:00.';
+      const bad = a.other_races.find(race => race.date && (race.date < a.start_date || race.date >= a.race_date));
+      if (bad) return `${bad.name || 'La otra carrera'} tiene que ser entre el inicio del plan y la carrera principal.`;
     }
     if (key === 'week') {
+      if (!a.start_date) return 'Indica el lunes en que empieza el plan.';
       const days = a.days.filter(P.runsOn).length;
       if (days < 2) return 'Marca correr o trail en al menos 2 días.';
       if (a.strength && !strengthDayCount(a)) return 'Marca Fuerza en algún día, o elige "Ninguna" en fuerza.';
@@ -206,15 +226,17 @@
     const act = el.dataset.rgpAct;
     if (act === 'close') { ui.open = false; render(); return; }
     if (act === 'back') { ui.step = Math.max(0, ui.step - 1); ui.status = ''; render(); return; }
-    if (act === 'next') { if (!stepError()) { ui.step = Math.min(STEPS.length - 1, ui.step + 1); ui.status = ''; } render(); return; }
-    if (act === 'other-add') { a.other_races.push({ name: '', date: '' }); render(); return; }
+    if (act === 'next') { if (a.start_date) a.start_date = P.nextMonday(a.start_date); if (!stepError()) { ui.step = Math.min(STEPS.length - 1, ui.step + 1); ui.status = ''; } render(); return; }
+    if (act === 'other-add') { a.other_races.push({ name: '', date: '', km: '', elevation: '' }); render(); return; }
     if (act === 'other-remove') { a.other_races.splice(Number(el.dataset.index), 1); render(); return; }
     if (act === 'create') create();
   }
   function onChange(event) {
     const el = event.target, a = ui.a;
-    if (el.type === 'text') return; // los textos se guardan al escribir; repintar aquí se come el siguiente clic
-    if (el.dataset.rgpField) { a[el.dataset.rgpField] = el.dataset.rgpField === 'start_date' && el.value ? P.nextMonday(el.value) : el.value; render(); return; }
+    // Textos, números y fechas se guardan al escribir (onInput). Repintar aquí se come el siguiente clic,
+    // y en una fecha tecleada corta el año a medias (se quedaba en 0002).
+    if (['text', 'number', 'date'].includes(el.type)) { onInput(event); return; }
+    if (el.dataset.rgpField) { a[el.dataset.rgpField] = el.value; render(); return; }
     if (el.dataset.rgpDay !== undefined) {
       const day = a.days.find(item => item.day === Number(el.dataset.rgpDay));
       day.minutes = Number(el.value);
@@ -222,7 +244,6 @@
       else if (!P.dayTypes(day).length) day.types = ['run'];
       fixLongDay(a); render(); return;
     }
-    if (el.dataset.rgpOther !== undefined) { a.other_races[Number(el.dataset.rgpOther)][el.dataset.key] = el.value; render(); }
   }
   function fixLongDay(a) {
     if (a.days.some(day => day.day === Number(a.long_day) && P.runsOn(day))) return;
@@ -231,8 +252,11 @@
   }
   function onInput(event) {
     const el = event.target;
-    if (el.dataset.rgpField && el.type === 'text') ui.a[el.dataset.rgpField] = el.value;
-    if (el.dataset.rgpOther !== undefined && el.type === 'text') ui.a.other_races[Number(el.dataset.rgpOther)][el.dataset.key] = el.value;
+    if (!['text', 'number', 'date'].includes(el.type)) return;
+    if (el.dataset.rgpField) ui.a[el.dataset.rgpField] = el.value;
+    else if (el.dataset.rgpOther !== undefined) ui.a.other_races[Number(el.dataset.rgpOther)][el.dataset.key] = el.value;
+    else return;
+    if (el.type === 'date') refreshFooter(); // la fecha decide si se puede seguir; solo se repinta el pie
   }
 
   // ---------- Crear ----------

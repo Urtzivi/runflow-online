@@ -77,3 +77,6 @@
   .rgp-map-head,.rgp-map-row{grid-template-columns:150px minmax(0,1fr)}
   .rgp-shell{padding:16px}
 }
+.rgp-race{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1.4fr) minmax(0,.8fr) minmax(0,1fr) auto;gap:8px;align-items:end;margin:8px 0;padding:10px;border:1px solid #e6e9e3;border-radius:12px;background:#fafbf8}
+.rgp-race .rgp-f{margin-top:0;min-width:0}.rgp-race .rgp-f input{min-width:0;width:100%;box-sizing:border-box}
+@media (max-width:640px){.rgp-race{grid-template-columns:1fr 1fr}.rgp-race .rgp-f:first-child{grid-column:1/-1}}

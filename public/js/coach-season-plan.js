@@ -232,7 +232,7 @@
     if (season) {
       return `<div class="sp-card sp-empty"><span class="sp-eyebrow">Planificación</span><h2>${esc(season.name)}</h2>
         <p>Esta temporada se creó con la planificación antigua, así que RunFlow no puede preparar sus semanas. Puedes seguir viéndola en la planificación antigua o crear una temporada nueva con el asistente.</p>
-        <div class="sp-actions"><button class="btn primary" data-sp-act="create">Crear temporada nueva</button><button class="btn soft" data-sp-act="legacy">Ver en la planificación antigua</button>${seasonSelect()}</div></div>`;
+        <div class="sp-actions"><button class="btn primary" data-sp-act="create">Crear temporada nueva</button><button class="btn soft" data-sp-act="legacy">Ver en la planificación antigua</button><button class="btn soft" data-sp-act="delete">Borrar temporada</button>${seasonSelect()}</div></div>`;
     }
     return `<div class="sp-card sp-empty"><span class="sp-eyebrow">Planificación</span><h2>Todavía no hay temporada</h2>
       <p>Responde unas preguntas (carrera, fecha, cómo está el atleta y qué días puede entrenar) y RunFlow prepara la temporada entera hasta la carrera. Después, cada semana preparas y publicas la siguiente.</p>
@@ -246,7 +246,7 @@
     const status = today > answers.race_date ? 'La carrera ya ha pasado' : today < structure.start ? `Empieza el ${fmt(structure.start)}` : `Faltan ${plural(left, 'semana', 'semanas')}`;
     return `<header class="sp-head">
       <div><span class="sp-eyebrow">Temporada</span><h2>${esc(raceName)} · ${esc(fmt(answers.race_date))}</h2>
-      <p>${esc(structure.race.label)} · ${esc(goal)} · <b>${esc(status)}</b></p></div>
+      <p>${esc(structure.race.label)} · ${esc(P.courseText(P.courseOf(answers)))} · ${esc(goal)} · <b>${esc(status)}</b></p></div>
       <div class="sp-actions">${seasonSelect()}${model.active ? '' : '<button class="btn primary" data-sp-act="incident">Ha pasado algo</button>'}<button class="btn soft" data-sp-act="delete">Borrar temporada</button></div>
     </header>`;
   }
