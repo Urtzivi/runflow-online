@@ -10,7 +10,7 @@ const syntaxFiles = [
   'public/js/coach-v9-batch.js','public/js/coach-v9-supplement.js','public/js/coach-v9-season-planner.js','public/js/coach-v9-season-bridge.js',
   'public/js/coach-v9-profile-availability.js','public/js/coach-v9-hierarchy.js','public/js/coach-v9-stepwise-final.js','public/js/coach-v9-session-generator-fix.js',
   'public/js/coach-v9-manual-planning.js','public/js/coach-v9-contextual-recommender-v2.js','public/js/coach-v9-plan-v2-import.js','public/js/coach-learning.js',
-  'public/js/coach-athlete-context-export.js','public/js/coach-assistant.js','public/js/coach-athlete-evolution.js',
+  'public/js/coach-athlete-context-export.js','public/js/coach-assistant.js','public/js/coach-athlete-evolution.js','public/js/coach-redesign.js',
   'public/js/athlete.js','public/js/athlete-v2-beta.js','public/js/athlete-v2-complete.js','public/js/athlete-v2-fixes.js','public/js/athlete-learning.js','public/js/athlete-native-readiness-notifications.js','public/js/athlete-insights.js','public/js/athlete-nueva-cara.js',
 ];
 for (const file of syntaxFiles) execFileSync(process.execPath, ['--check', path.join(root, file)], { stdio:'inherit' });
