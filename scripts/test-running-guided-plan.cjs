@@ -321,3 +321,59 @@ test('con mucho desnivel, la tirada larga de las fases fuertes va con cuestas y 
   assert.doesNotMatch(flatLong.title,/cuestas/);
   assert.ok(st.mesos.find(m=>m.key==='umbral').strength.families.includes('Trail Eccentric'));
 });
+
+// ---------- Historial del atleta ----------
+const today='2026-11-18';
+const wk=(date,status,rpe,extra={})=>({workout_date:date,title:'Rodaje',summary:'Rodaje fácil · RPE 2-4 de 10',execution_status:status,manual_log:rpe==null?null:{status:'completed',rpe,...extra}});
+const cal=list=>[{week_start:'2026-11-02',workouts:list}];
+const recov=(sleepLast,hrvLast)=>Array.from({length:35},(_,i)=>{const d=P.addDays(today,-35+i);const recent=d>=P.addDays(today,-7);return {metric_date:d,sleep_sec:(recent?sleepLast:7.5)*3600,hrv:recent?hrvLast:60,resting_hr:50,form:-5};});
+
+test('historial: puede dar más si lo hace todo con menos esfuerzo y recupera bien',()=>{
+  const w=[wk('2026-11-05','completed',2),wk('2026-11-07','completed',3),wk('2026-11-10','completed',3),wk('2026-11-12','completed',2),wk('2026-11-14','completed',3)];
+  const r=P.weekAdvice({week:{type:'load'},calendarWeeks:cal(w),recovery:recov(7.5,61),today});
+  assert.equal(r.decision,'subir'); assert.ok(r.factor>1);
+  // En descarga no se sube.
+  assert.equal(P.weekAdvice({week:{type:'deload'},calendarWeeks:cal(w),recovery:recov(7.5,61),today}).decision,'mantener');
+});
+
+test('historial: pide menos con dolor, con esfuerzo alto o con mala recuperación',()=>{
+  const ok=[wk('2026-11-05','completed',3),wk('2026-11-07','completed',3),wk('2026-11-10','completed',3)];
+  assert.equal(P.weekAdvice({week:{type:'load'},calendarWeeks:cal([...ok,wk('2026-11-12','completed',4,{pain:4,pain_area:'pubis'})]),recovery:[],today}).decision,'bajar');
+  const hard=[wk('2026-11-05','completed',6),wk('2026-11-07','completed',6),wk('2026-11-10','completed',5)];
+  assert.equal(P.weekAdvice({week:{type:'load'},calendarWeeks:cal(hard),recovery:[],today}).decision,'bajar');
+  const r=P.weekAdvice({week:{type:'load'},calendarWeeks:cal(ok),recovery:recov(6.2,48),today});
+  assert.equal(r.decision,'bajar'); assert.ok(r.reasons.some(x=>/Duerme menos/.test(x.text)));
+  // Sin datos, se mantiene.
+  assert.equal(P.weekAdvice({week:{type:'load'},calendarWeeks:[],recovery:[],today}).has_data,false);
+  // Las opcionales y lo de hoy en adelante no cuentan.
+  const opt=P.weekAdvice({week:{type:'load'},calendarWeeks:cal([{...wk('2026-11-10','planned',null),title:'Opcional · Paseo'},wk('2026-11-18','planned',null),...ok]),recovery:[],today});
+  assert.equal(opt.data.planned,3);
+});
+
+test('historial: la semana ajustada cambia minutos y deja una sola sesión dura al bajar',()=>{
+  const a={...answers,goal_mode:'marca',level:'experto',days:[{day:1,minutes:60},{day:2,minutes:60},{day:3,minutes:60},{day:4,minutes:60},{day:6,minutes:120}]};
+  const st=P.buildStructure(a);
+  const week=st.weeks.find(w=>w.phase==='umbral'&&w.type!=='deload');
+  const down=P.adjustWeek(week,{decision:'bajar',factor:0.8,lessQuality:true});
+  assert.ok(down.minutes<week.minutes);
+  const hardOf=list=>list.filter(s=>/calidad/i.test(s.summary)).length;
+  const normal=P.buildWeekSessions(a,st,week,library);
+  const lighter=P.buildWeekSessions(a,{...st,weeks:st.weeks.map(w=>w===week?down:w)},down,library);
+  assert.ok(hardOf(normal)>=2); assert.equal(hardOf(lighter),1);
+  assert.equal(P.readAdjust(`hola\n${P.adjustNote({decision:'subir',factor:1.08})}`).pct,8);
+  assert.equal(P.adjustNote({decision:'mantener',factor:1}),'');
+});
+
+test('historial: el plan empieza cerca de lo que venía corriendo y sube como mucho un 10 %',()=>{
+  const acts=[];
+  for(let i=0;i<6;i++){const mon=P.addDays('2026-10-26',-7*(6-i));acts.push({activity_date:mon,sport:'Run',duration_sec:40*60},{activity_date:P.addDays(mon,3),sport:'Run',duration_sec:40*60},{activity_date:P.addDays(mon,2),sport:'Ride',duration_sec:90*60});}
+  const h=P.historyFromActivities(acts,'2026-10-26');
+  assert.equal(h.avg_minutes,80); assert.equal(h.runs_per_week,2);
+  assert.equal(P.historyFromActivities(acts.slice(0,4),'2026-10-26').avg_minutes,null,'con menos de 3 semanas no se usa');
+  const plain=P.buildStructure(answers);
+  const st=P.buildStructure({...answers,history_minutes:80});
+  assert.ok(st.weeks[0].minutes<=90&&st.weeks[0].minutes<plain.weeks[0].minutes);
+  for(let i=1;i<st.weeks.length;i++){const prev=Math.max(...st.weeks.slice(0,i).map(w=>w.minutes));assert.ok(st.weeks[i].minutes<=Math.round(prev*1.1/5)*5+5,`semana ${i+1}: ${st.weeks[i].minutes} tras ${prev}`);}
+  assert.ok(st.warnings.some(w=>/poco a poco/.test(w)));
+  assert.equal(P.readAnswers(P.macroPayload({...answers,history_minutes:80},st,'g').notes).history_minutes,80);
+});
