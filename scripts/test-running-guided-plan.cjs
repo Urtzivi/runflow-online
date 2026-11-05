@@ -214,3 +214,82 @@ test('daysFromProfile lee la disponibilidad de la ficha (gym cuenta como fuerza)
   assert.deepEqual(days[2],{day:2,minutes:0,types:[]});
   assert.deepEqual(days[6],{day:6,minutes:120,types:['run','strength']});
 });
+
+// ---------- «Ha pasado algo» ----------
+const injuryDays=[{day:1,minutes:60,types:['run','bike','walk','strength']},{day:3,minutes:60,types:['run','bike','walk','strength']},{day:4,minutes:45,types:['run','bike','walk','strength']},{day:6,minutes:120,types:['run','bike','walk','strength']}];
+const pubis={kind:'lesion',zone:'pubis',from:'2026-11-04',pain:4,can_run:false,can:['bike','walk','strength']};
+const week={start:'2026-11-09',end:'2026-11-15'};
+
+test('el estado inicial depende del dolor y del tipo de problema',()=>{
+  assert.equal(P.initialState(pubis),'sin_correr');
+  assert.equal(P.initialState({...pubis,pain:6}),'parado');
+  assert.equal(P.initialState({...pubis,pain:2,can_run:true}),'vuelta');
+  assert.equal(P.initialState({kind:'enfermedad'}),'parado');
+  assert.equal(P.initialState({kind:'viaje'}),'parado');
+});
+
+test('pubis sin correr: bici en lugar de carrera y 2 sesiones de recuperación, nada de correr',()=>{
+  const s=P.buildAdaptedWeek({...pubis,state:'sin_correr'},week,injuryDays);
+  assert.ok(!s.some(x=>x.sport==='Run'),'no corre');
+  assert.equal(s.filter(x=>x.sport==='Ride').length,4);
+  const rehab=s.filter(x=>x.is_strength);
+  assert.equal(rehab.length,2);
+  assert.match(rehab[0].structured_description,/Copenhagen/);
+  rehab.forEach((r,i)=>{ if(i) assert.ok(P.dayIndex(r.workout_date)-P.dayIndex(rehab[i-1].workout_date)>=2,'separadas'); });
+  s.forEach(x=>{ const d=injuryDays.find(d=>d.day===P.dayIndex(x.workout_date)); assert.ok(d,'en un día disponible'); });
+  // Por día, lo programado cabe en el tiempo del día.
+  for(const d of injuryDays){ const total=s.filter(x=>P.dayIndex(x.workout_date)===d.day).reduce((a,x)=>a+x.planned_duration_min,0); assert.ok(total<=d.minutes,`cabe el ${d.day}`); }
+});
+
+test('vuelta progresiva: 3 salidas separadas con el paso que toca y la regla del dolor',()=>{
+  const s=P.buildAdaptedWeek({...pubis,state:'vuelta',step:1},week,injuryDays);
+  const runs=s.filter(x=>x.sport==='Run');
+  assert.equal(runs.length,3);
+  runs.forEach(r=>{ assert.match(r.title,/paso 2 de 6/); assert.match(r.structured_description,/Manda el dolor/); });
+  for(let i=1;i<runs.length;i++) assert.ok(P.dayIndex(runs[i].workout_date)-P.dayIndex(runs[i-1].workout_date)>=2);
+  assert.deepEqual(P.nextReturnStep({step:1},'green'),{state:'vuelta',step:2,ready:false});
+  assert.deepEqual(P.nextReturnStep({step:1},'amber'),{state:'vuelta',step:1});
+  assert.deepEqual(P.nextReturnStep({step:1},'red'),{state:'vuelta',step:0});
+  assert.deepEqual(P.nextReturnStep({step:0},'red'),{state:'sin_correr',step:0});
+  assert.equal(P.nextReturnStep({step:5},'green').ready,true);
+});
+
+test('no programa nada antes de hoy y enfermedad/viaje en parado no llevan sesiones',()=>{
+  const s=P.buildAdaptedWeek({...pubis,state:'sin_correr'},week,injuryDays,{fromDate:'2026-11-12'});
+  assert.ok(s.every(x=>x.workout_date>='2026-11-12'));
+  assert.equal(P.buildAdaptedWeek({kind:'enfermedad',state:'parado',can:['walk']},week,injuryDays).length,0);
+  assert.equal(P.buildAdaptedWeek({kind:'viaje',state:'parado'},week,injuryDays).length,0);
+});
+
+test('las incidencias se guardan en las notas sin tocar las respuestas del plan',()=>{
+  const notes=`${P.MARKER}\n${JSON.stringify(P.compactAnswers(answers))}`;
+  const one=P.writeIncidents(notes,[{id:'a',kind:'lesion',from:'2026-11-04',state:'sin_correr'}]);
+  assert.deepEqual(P.readAnswers(one),P.readAnswers(notes));
+  assert.equal(P.activeIncident(P.readIncidents(one)).id,'a');
+  const two=P.writeIncidents(one,[{id:'a',kind:'lesion',from:'2026-11-04',state:'normal',closed:'2026-12-01'}]);
+  assert.equal(P.readIncidents(two).length,1);
+  assert.equal(P.activeIncident(P.readIncidents(two)),null);
+  assert.deepEqual(P.readAnswers(two),P.readAnswers(notes));
+});
+
+test('al volver se recalcula hasta la carrera sin moverla y contando las semanas perdidas',()=>{
+  const st=P.buildStructure(answers);
+  const r=P.returnPlan(answers,{...pubis,from:'2026-11-25',log:[{s:'sin_correr'},{s:'vuelta'}]},st,'2027-01-06');
+  assert.equal(r.start,'2027-01-11');
+  assert.equal(r.end,'2027-02-14');
+  assert.equal(r.weeks.at(-1).type,'competition');
+  assert.equal(r.lost_weeks,7);
+  assert.equal(r.weeks[0].type,'adaptation','tras la vuelta progresiva, semana de adaptación');
+  assert.notEqual(r.mesos[0].key,'prep');
+  // Las semanas casan con las ya guardadas (mismos lunes).
+  const old=new Set(st.weeks.map(w=>w.start));
+  r.weeks.forEach(w=>assert.ok(old.has(w.start)));
+});
+
+test('structureFromPlan respeta la fase guardada en cada semana tras recalcular',()=>{
+  const st=P.buildStructure(answers);
+  const macro={mesocycles:[{id:'m',name:'Base',notes:'RUNFLOW_GUIDED_PHASE:base',microcycles:st.weeks.map((w,i)=>({id:'w'+i,start_date:w.start,type:w.type,planned:{hours:w.hours},notes:i>=10?`${P.PHASE_PREFIX}especifico`:''}))}]};
+  const r=P.structureFromPlan(answers,macro);
+  assert.deepEqual(r.mesos.map(m=>m.key),['base','especifico']);
+  assert.equal(r.mesos[1].weeks.length,st.weeks.length-10);
+});
