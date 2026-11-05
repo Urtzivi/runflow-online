@@ -84,3 +84,25 @@
 .rgp-history>div:last-child{display:flex;flex-direction:column;gap:4px;min-width:0}
 .rgp-bars{display:flex;align-items:flex-end;gap:3px;height:40px;flex:none}.rgp-bars i{display:block;width:8px;border-radius:3px;background:#b9e05a}
 .rgp-history .rgp-check{display:flex;flex-direction:row;justify-content:flex-start;text-align:left;gap:6px;align-items:center;font-size:12px;font-weight:500;color:#5d655f;margin-top:4px}.rgp-history .rgp-check input{width:auto;margin:0;flex:none}
+/* Propuesta del Planificador (agente en Claude) */
+.rgp-agent{display:block;background:#f3f6fb;border-color:#cfdcef}
+.rgp-agent-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+.rgp-agent-badge{flex:none;padding:5px 10px;border-radius:999px;font-size:12px;font-weight:800;white-space:nowrap}
+.rgp-agent-badge.ok{background:#e2f1dc;color:#2f6b2a}
+.rgp-agent-badge.bad{background:#fbe3df;color:#9a2e22}
+.rgp-agent-why,.rgp-agent-changes{margin-top:12px;padding:10px 12px;border-radius:12px;background:#fff;border:1px solid #e1e8f2;font-size:13px;line-height:1.5}
+.rgp-agent-why b,.rgp-agent-changes b{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#5d6b6e;margin-bottom:4px}
+.rgp-agent-why p{white-space:pre-line;max-width:none;color:#1c2a2d}
+.rgp-agent-changes ul{margin:0;padding-left:18px}
+.rgp-agent-changes li span{color:#5d6b6e}
+.rgp-agent-changes li b{display:inline;font-size:inherit;letter-spacing:0;text-transform:none;color:#1c2a2d;margin:0}
+.rgp-agent-weeks{margin-top:10px;font-size:13px}
+.rgp-agent-weeks summary{cursor:pointer;font-weight:700;color:#35506e}
+.rgp-agent-weeks table{width:100%;border-collapse:collapse;margin-top:8px;background:#fff;border-radius:10px;overflow:hidden}
+.rgp-agent-weeks th,.rgp-agent-weeks td{padding:5px 8px;text-align:left;border-bottom:1px solid #edf1f5}
+.rgp-agent-weeks tr.is-changed td{background:#fff7e3}
+.rgp-agent-weeks small{color:#7a6a3a}
+.rgp-agent-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:12px;flex-wrap:wrap}
+.rgp-agent .rgp-status{margin-top:10px;font-size:13px;color:#35506e}
+.rgp-agent .rgp-status.is-error{color:#9a2e22}
+@media (max-width:640px){.rgp-agent-head{flex-direction:column}.rgp-agent-weeks{overflow-x:auto}}

@@ -341,6 +341,14 @@
       }
       peak = Math.max(peak, week.minutes);
     });
+    // La puesta a punto siempre por debajo de la semana más alta (si el inicio se frenó por el historial, también).
+    weeks.forEach(week => {
+      const share = { taper: 0.75, competition: 0.5 }[week.type];
+      if (!share || !peak || week.minutes < peak) return;
+      week.minutes = Math.max(30, Math.round(peak * share / 5) * 5);
+      week.hours = Math.round(week.minutes / 6) / 10;
+      week.load = Math.round(week.minutes * WEEK_TYPES[week.type].rpe);
+    });
 
     const mesos = [];
     phases.forEach(phase => {
@@ -1260,8 +1268,122 @@
     return ADJUST[decision] ? { decision, pct: Number(pct) || 0, ...ADJUST[decision] } : null;
   }
 
+
+  // ---------- Agente Planificador + Verificador ----------
+  // El agente (Claude) parte SIEMPRE del cálculo del motor y solo puede retocarlo semana a semana:
+  // cambiar el tipo de semana (p. ej. meter una descarga) o los minutos, como mucho un ±15 %.
+  // El Verificador comprueba las reglas duras y, si alguna falla, la propuesta no se guarda.
+  const AGENT_MAX_CHANGE = 0.15;
+  const BUILD_TYPES = ['adaptation', 'load', 'development', 'overload'];
+  const EASY_TYPES = ['deload', 'recovery'];
+  const round5 = value => Math.round(value / 5) * 5;
+  function applySeasonAdjustments(structure, adjustments) {
+    const applied = [], ignored = [];
+    (Array.isArray(adjustments) ? adjustments : []).slice(0, 60).forEach(item => {
+      const week = structure.weeks.find(w => w.start === String(item?.start || item?.week_start || ''));
+      if (!week) { ignored.push({ start: item?.start || item?.week_start || '', why: 'No hay ninguna semana del plan que empiece ese día (tiene que ser un lunes del plan).' }); return; }
+      const base = week.agent || { base_minutes: week.minutes, base_type: week.type };
+      const type = item.type && WEEK_TYPES[item.type] ? item.type : week.type;
+      const minutes = Number(item.minutes) > 0 ? round5(Number(item.minutes)) : (type !== week.type ? round5(week.minutes * WEEK_TYPES[type].pct / WEEK_TYPES[week.type].pct) : week.minutes);
+      const why = String(item.why || '').trim().slice(0, 600);
+      // Referencia para el ±15 %: lo que pondría RunFlow para ese tipo de semana (una descarga ya baja sola).
+      const reference = round5(base.base_minutes * WEEK_TYPES[type].pct / WEEK_TYPES[base.base_type].pct);
+      Object.assign(week, {
+        type, minutes, hours: Math.round(minutes / 6) / 10, load: Math.round(minutes * WEEK_TYPES[type].rpe), label: WEEK_TYPES[type].label,
+        agent: { ...base, reference, why },
+        why: why ? `Planificador: ${why} ${WEEK_TYPES[type].why}` : week.why,
+      });
+      applied.push({ start: week.start, type, minutes, base_type: base.base_type, base_minutes: base.base_minutes, reference, why });
+    });
+    return { structure, applied, ignored };
+  }
+  function verifySeason(answers, structure) {
+    const failures = [], warnings = [];
+    const fail = (rule, text, week) => failures.push({ rule, text, ...(week ? { week: week.start } : {}) });
+    const weeks = structure.weeks || [];
+    const race = structure.race || RACES[answers.race] || { taper: 1 };
+    const level = structure.level || LEVELS[answers.level] || LEVELS.regular;
+    const last = weeks[weeks.length - 1];
+    if (!last || !(answers.race_date >= last.start && answers.race_date <= last.end)) fail('fecha_carrera', 'La última semana tiene que ser la de la carrera: la fecha de la carrera no se mueve.');
+    else if (last.type !== 'competition') fail('fecha_carrera', 'La semana de la carrera tiene que ser de competición (poco volumen, mucho descanso).', last);
+    const taperFrom = weeks.length - Math.min(race.taper, weeks.length);
+    weeks.forEach((week, i) => {
+      if (!WEEK_TYPES[week.type]) fail('tipo_semana', `Tipo de semana desconocido: ${week.type}.`, week);
+      const inTaper = i >= taperFrom;
+      if (inTaper && !['taper', 'competition'].includes(week.type)) fail('puesta_a_punto', `Las ${race.taper} últimas semanas son de puesta a punto: no se puede cargar justo antes de la carrera.`, week);
+      if (!inTaper && ['taper', 'competition'].includes(week.type)) fail('puesta_a_punto', 'La puesta a punto solo va al final, antes de la carrera.', week);
+      if (week.agent && week.agent.base_minutes > 0) {
+        const reference = week.agent.reference || week.agent.base_minutes;
+        const change = week.minutes / reference - 1;
+        if (Math.abs(change) > AGENT_MAX_CHANGE + 0.02) fail('cambio_maximo', `Los minutos cambian un ${Math.round(change * 100)} % sobre lo que calcula RunFlow para una semana de ${WEEK_TYPES[week.type]?.label.toLowerCase() || week.type} (${reference} min). Como mucho ±${Math.round(AGENT_MAX_CHANGE * 100)} %.`, week);
+        if (!week.agent.why) fail('justificacion', 'Cada cambio sobre el cálculo de RunFlow necesita un porqué.', week);
+      }
+    });
+    // Regla 3: no subir más de un 10 % sobre la semana más alta anterior.
+    let peak = 0;
+    weeks.forEach(week => {
+      if (!BUILD_TYPES.includes(week.type)) return;
+      if (peak && week.minutes > round5(peak * 1.1) + 5) fail('progresion_10', `Sube de ${peak} a ${week.minutes} min: más de un 10 % sobre la semana más alta anterior.`, week);
+      peak = Math.max(peak, week.minutes);
+    });
+    // Descargas: como mucho `cycle` semanas seguidas de carga sin bajar.
+    let run = 0;
+    weeks.forEach(week => {
+      run = BUILD_TYPES.includes(week.type) ? run + 1 : 0;
+      if (run === level.cycle + 1) fail('descarga', `Hay ${run} semanas seguidas de carga sin descarga (para su nivel, como mucho ${level.cycle}).`, week);
+    });
+    // La puesta a punto tiene que ser más suave que las semanas fuertes.
+    weeks.filter(w => ['taper', 'competition'].includes(w.type)).forEach(week => {
+      if (peak && week.minutes >= peak) fail('puesta_a_punto', `La puesta a punto (${week.minutes} min) no baja respecto a la semana más alta (${peak} min).`, week);
+    });
+    const available = (answers.days || []).filter(runsOn).reduce((sum, day) => sum + (Number(day.minutes) || 0), 0);
+    if (available) weeks.forEach(week => { if (week.minutes > available) fail('disponibilidad', `Pide ${week.minutes} min y el atleta solo tiene ${available} min libres para correr a la semana.`, week); });
+    const history = Number(answers.history_minutes) || 0;
+    const firstBuild = weeks.find(w => BUILD_TYPES.includes(w.type));
+    if (history && firstBuild && firstBuild.minutes > round5(Math.max(60, history * 1.1)) + 5) fail('punto_de_partida', `Empieza con ${firstBuild.minutes} min y venía corriendo ≈ ${Math.round(history)} min por semana: como mucho un 10 % más.`, firstBuild);
+    if (!history) warnings.push('No hay historial de las últimas semanas: el punto de partida es una estimación.');
+    return { ok: failures.length === 0, failures, warnings };
+  }
+  const HARD_TEXT = /series|intervalos|umbral|fartlek|tempo|vo2|cuestas|ritmo (de )?carrera|rpe\s*(7|8|9|10)/i;
+  const isStrengthWorkout = w => Boolean(w?.is_strength) || /strength|fuerza|weight|gym/i.test(String(w?.sport || ''));
+  const isHardWorkout = w => !isStrengthWorkout(w) && !w?.optional && (w?.priority === 'A' || w?.priority === 'B' || HARD_TEXT.test(`${w?.title || ''} ${w?.summary || ''}`));
+  // Semana: fechas, días libres, minutos por día, nada duro dos días seguidos y, en rojo, nada duro.
+  function verifyWeek({ weekStart, workouts, days, semaforo } = {}) {
+    const failures = [];
+    const fail = (rule, text, date) => failures.push({ rule, text, ...(date ? { date } : {}) });
+    const end = addDays(weekStart, 6);
+    const list = (workouts || []).filter(Boolean);
+    const perDay = new Map();
+    list.forEach(w => {
+      const date = String(w.workout_date || '');
+      if (!(date >= weekStart && date <= end)) { fail('fechas', `La sesión “${w.title || 'Sesión'}” (${date || 'sin fecha'}) está fuera de la semana ${weekStart} – ${end}.`, date); return; }
+      if (!perDay.has(date)) perDay.set(date, []);
+      perDay.get(date).push(w);
+    });
+    if (Array.isArray(days) && days.length) {
+      const available = days.filter(runsOn).reduce((sum, day) => sum + (Number(day.minutes) || 0), 0);
+      perDay.forEach((items, date) => {
+        const day = days.find(d => d.day === dayIndex(date)) || { minutes: 0, types: [] };
+        const required = items.filter(w => !w.optional);
+        if (!required.length) return;
+        if (!(Number(day.minutes) > 0)) { fail('dia_libre', `${DAYS[dayIndex(date)]} ${formatDate(date)}: el atleta no puede entrenar ese día.`, date); return; }
+        const minutes = required.filter(w => !isStrengthWorkout(w)).reduce((sum, w) => sum + (Number(w.planned_duration_min) || 0), 0);
+        if (minutes > Number(day.minutes) + 10) fail('minutos_dia', `${DAYS[dayIndex(date)]} ${formatDate(date)}: ${minutes} min y el atleta tiene ${day.minutes} min ese día.`, date);
+        if (required.some(w => !isStrengthWorkout(w)) && !runsOn(day)) fail('tipo_dia', `${DAYS[dayIndex(date)]} ${formatDate(date)}: ese día no puede correr.`, date);
+        if (required.some(isStrengthWorkout) && !canDo(day, 'strength') && !runsOn(day)) fail('tipo_dia', `${DAYS[dayIndex(date)]} ${formatDate(date)}: ese día no puede hacer fuerza.`, date);
+      });
+      const total = list.filter(w => !w.optional && !isStrengthWorkout(w)).reduce((sum, w) => sum + (Number(w.planned_duration_min) || 0), 0);
+      if (available && total > available * 1.1) fail('minutos_semana', `La semana suma ${total} min de carrera y el atleta tiene ${available} min libres.`);
+    }
+    const hardDates = [...perDay.entries()].filter(([, items]) => items.some(isHardWorkout)).map(([date]) => date).sort();
+    hardDates.forEach((date, i) => { if (i && hardDates[i - 1] === addDays(date, -1)) fail('dias_duros_seguidos', `${formatDate(hardDates[i - 1])} y ${formatDate(date)}: dos días duros seguidos (tirada larga o calidad). Entre medias, un día suave o de descanso.`, date); });
+    if (String(semaforo || '').toLowerCase() === 'rojo' && hardDates.length) fail('semaforo_rojo', `El Analista ha puesto el semáforo en rojo: esta semana no puede llevar sesiones duras (${hardDates.map(formatDate).join(', ')}).`);
+    return { ok: failures.length === 0, failures };
+  }
+
   return {
     courseOf, courseText,
+    applySeasonAdjustments, verifySeason, verifyWeek, isHardWorkout, AGENT_MAX_CHANGE,
     historyFromActivities, weekAdvice, adjustWeek, adjustNote, readAdjust, expectedRpe, ADJUST, ADJUST_PREFIX,
     DAYS, DAYS_SHORT, PHASES, RACES, LEVELS, WEEK_TYPES, REASONS, MARKER, STRENGTH, EQUIPMENT, STRENGTH_RULES, ACTIVITIES,
     strengthPlanFor, equipmentOk, dayTypes, canDo, runsOn,

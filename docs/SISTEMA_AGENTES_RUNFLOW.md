@@ -209,3 +209,15 @@ Todo se registra en la tabla de auditoría que ya usa el asistente (`AUDIT`).
 - **REST asistente:** `POST /api/assistant/athletes/:id/drafts`, `GET /api/assistant/drafts?status=&kind=&athlete_id=`.
 - **REST coach:** `GET /api/coach/assistant-drafts` (base para la Bandeja del día 3).
 - Todo queda en la auditoría (`draft_created`, `draft_replaced`, `drafts_read`).
+
+### Día 2 — Planificador: temporada y semana en Claude (hecho)
+
+- **El Planificador también planifica la temporada:**
+  - parte del cálculo del motor (`preview_season_plan`);
+  - retoca semanas con porqué;
+  - guarda con `create_season_proposal`.
+- **Verificador** en código: `verifySeason` y `verifyWeek` en `public/js/running-guided-plan.js`, compartidos por servidor y navegador. Bloquea las propuestas de temporada y de semana (`create_week_proposal`) que rompen una regla y devuelve los fallos.
+- **Nuevas herramientas MCP:** `get_planning_context`, `preview_season_plan`, `create_season_proposal`, `get_week_plan_base` (`assistant-planner.js`).
+- **Coach:** tarjeta *Propuesta del Planificador* en Planificación. Al aprobar, crea la temporada con el mismo flujo del plan guiado.
+- Instrucciones del agente y cómo conectarlo: `docs/AGENTE_PLANIFICADOR.md`.
+
