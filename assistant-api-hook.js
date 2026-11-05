@@ -15,6 +15,14 @@ const IS_PROD = process.env.NODE_ENV === 'production';
 const CREDENTIAL = '__runflow_assistant_credential__';
 const PROPOSAL = '__runflow_assistant_proposal__';
 const AUDIT = '__runflow_assistant_audit__';
+const DRAFT = '__runflow_assistant_draft__';
+// Draft lifecycle: draft -> ready | needs_review (Verificador) -> approved | rejected (coach) -> sent.
+const DRAFT_KINDS = ['session', 'week'];
+const DRAFT_LIGHTS = ['verde', 'ambar', 'rojo'];
+const DRAFT_PENDING = ['draft', 'ready', 'needs_review'];
+const DRAFT_STATUSES = [...DRAFT_PENDING, 'approved', 'rejected', 'sent'];
+const DRAFT_LOCKED = ['approved', 'sent'];
+const DRAFT_TOOLS = ['create_week_proposal', 'create_feedback_draft'];
 const ALLOWED_SCOPES = ['read', 'draft'];
 
 function sendJson(res, status, data) {
@@ -66,10 +74,75 @@ async function proposals(coachId,status){const rows=await sb('workout_templates'
 async function proposalStatus(coachId,id,status){if(!['approved','rejected'].includes(status))throw Object.assign(new Error('Estado no válido.'),{status:400});const rows=await sb('workout_templates',`id=eq.${encodeURIComponent(id)}&coach_user_id=eq.${encodeURIComponent(coachId)}&category=eq.${encodeURIComponent(PROPOSAL)}&select=template_data&limit=1`);if(!rows.length)throw Object.assign(new Error('Propuesta no encontrada.'),{status:404});const data={...rows[0].template_data,status,reviewed_at:new Date().toISOString()};await sb('workout_templates',`id=eq.${encodeURIComponent(id)}`,{method:'PATCH',body:{template_data:data,updated_at:new Date().toISOString()},prefer:'return=minimal'});return{id,...data}}
 
 
+// Feedback drafts (Analista). The assistant can only write drafts; nothing
+// reaches the athlete until the coach approves it in the review tray.
+function badRequest(message){return Object.assign(new Error(message),{status:400})}
+function textList(value,maxItems=20,maxLength=500){return(Array.isArray(value)?value:[]).map(x=>safe(x,maxLength)).filter(Boolean).slice(0,maxItems)}
+function draftKey(kind,athleteId,ref){return `${kind}:${athleteId}:${ref}`}
+function cleanDraft(athleteId,body={}){
+  const kind=safe(body.kind,20);
+  if(!DRAFT_KINDS.includes(kind))throw badRequest('kind debe ser "session" o "week".');
+  if(!safe(athleteId,80))throw badRequest('Falta athlete_id.');
+  const semaforo=safe(body.semaforo,10).toLowerCase();
+  if(!DRAFT_LIGHTS.includes(semaforo))throw badRequest('semaforo debe ser verde, ambar o rojo.');
+  const mensaje=safe(body.mensaje_atleta,2000);
+  if(!mensaje)throw badRequest('Falta mensaje_atleta.');
+  const base={kind,athlete_id:safe(athleteId,80),semaforo,hechos:textList(body.hechos),alertas:textList(body.alertas),mensaje_atleta:mensaje,notas_para_coach:safe(body.notas_para_coach,4000)};
+  if(kind==='session'){
+    const activityId=safe(body.activity_id,80),date=validDate(body.date);
+    if(!activityId)throw badRequest('Un borrador de sesión necesita activity_id.');
+    if(!date)throw badRequest('Un borrador de sesión necesita date (YYYY-MM-DD).');
+    return{...base,activity_id:activityId,date,workout_id:safe(body.workout_id,80)||null,idempotency_key:draftKey(kind,base.athlete_id,activityId)};
+  }
+  const weekStart=validDate(body.week_start);
+  if(!weekStart)throw badRequest('Un borrador semanal necesita week_start (YYYY-MM-DD).');
+  return{...base,week_start:weekStart,idempotency_key:draftKey(kind,base.athlete_id,weekStart)};
+}
+function draftView(row){return{id:row.id,athlete_id:row.athlete_id,created_at:row.created_at,updated_at:row.updated_at,...row.template_data}}
+// Same session/week => same record. A retry replaces the pending draft
+// (keeping the previous message in history) instead of creating a duplicate.
+async function saveDraft(coachId,athleteId,body,db=sb){
+  const clean=cleanDraft(athleteId,body),now=new Date().toISOString();
+  const existing=await db('workout_templates',`coach_user_id=eq.${encodeURIComponent(coachId)}&category=eq.${encodeURIComponent(DRAFT)}&template_data->>idempotency_key=eq.${encodeURIComponent(clean.idempotency_key)}&select=id,athlete_id,template_data,created_at,updated_at&order=created_at.desc&limit=1`);
+  const previous=existing[0];
+  if(previous){
+    const old=previous.template_data||{};
+    if(DRAFT_LOCKED.includes(old.status))throw Object.assign(new Error('Este borrador ya fue aprobado o enviado; no se puede reemplazar.'),{status:409});
+    const history=[...(Array.isArray(old.history)?old.history:[]),{version:old.version||1,status:old.status,mensaje_atleta:old.mensaje_atleta,semaforo:old.semaforo,replaced_at:now}].slice(-5);
+    const data={...clean,status:'draft',version:(Number(old.version)||1)+1,history,origin:'assistant',created_at:old.created_at||previous.created_at,updated_at:now};
+    await db('workout_templates',`id=eq.${encodeURIComponent(previous.id)}`,{method:'PATCH',body:{template_data:data,updated_at:now},prefer:'return=minimal'});
+    return{created:false,draft:draftView({...previous,updated_at:now,template_data:data})};
+  }
+  const data={...clean,status:'draft',version:1,history:[],origin:'assistant',created_at:now,updated_at:now};
+  const name=clean.kind==='session'?`Feedback sesión ${clean.date}`:`Feedback semana ${clean.week_start}`;
+  const row={id:crypto.randomUUID(),coach_user_id:coachId,athlete_id:clean.athlete_id,name,category:DRAFT,sport:'Internal',stimulus:'assistant',template_data:data,created_at:now,updated_at:now};
+  const rows=await db('workout_templates','',{method:'POST',body:row,prefer:'return=representation'});
+  return{created:true,draft:draftView(rows[0]||row)};
+}
+async function createDraft(session,athleteId,body){await coachAthlete(session.coach_user_id,athleteId);const result=await saveDraft(session.coach_user_id,athleteId,body);await audit(session,result.created?'draft_created':'draft_replaced',{draft_id:result.draft.id,athlete_id:athleteId,kind:result.draft.kind,idempotency_key:result.draft.idempotency_key,version:result.draft.version});return result}
+// Filters: status ("pending" = draft|ready|needs_review, "all", or one status), athlete_id, kind.
+function filterDrafts(rows,filters={}){
+  const status=safe(filters.status,20)||'pending',athleteId=safe(filters.athlete_id,80),kind=safe(filters.kind,20);
+  if(status!=='pending'&&status!=='all'&&!DRAFT_STATUSES.includes(status))throw badRequest('Estado de borrador no válido.');
+  const seen=new Set(),out=[];
+  for(const draft of rows){
+    const key=draft.idempotency_key||draft.id;if(seen.has(key))continue;seen.add(key);
+    if(status==='pending'&&!DRAFT_PENDING.includes(draft.status))continue;
+    if(status!=='pending'&&status!=='all'&&draft.status!==status)continue;
+    if(athleteId&&draft.athlete_id!==athleteId)continue;
+    if(kind&&draft.kind!==kind)continue;
+    out.push(draft);
+  }
+  return out.slice(0,Math.max(1,Math.min(200,Number(filters.limit)||100)));
+}
+async function listDrafts(coachId,filters={},db=sb){const rows=await db('workout_templates',`coach_user_id=eq.${encodeURIComponent(coachId)}&category=eq.${encodeURIComponent(DRAFT)}&select=id,athlete_id,template_data,created_at,updated_at&order=updated_at.desc&limit=500`);return filterDrafts(rows.map(draftView),filters)}
+
 const MCP_TOOLS=[
   {name:'list_athletes',description:'Lista los deportistas activos que gestiona el entrenador.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true,destructiveHint:false}},
   {name:'get_daily_report',description:'Obtiene la sesión planificada, actividad realizada y feedback de un deportista para una fecha.',inputSchema:{type:'object',properties:{athlete_id:{type:'string'},date:{type:'string',description:'Fecha YYYY-MM-DD; si se omite usa hoy en Europe/Madrid.'}},required:['athlete_id'],additionalProperties:false},annotations:{readOnlyHint:true,destructiveHint:false}},
-  {name:'create_week_proposal',description:'Crea una propuesta semanal para revisión del entrenador. Nunca publica ni modifica directamente el calendario.',inputSchema:{type:'object',properties:{athlete_id:{type:'string'},week_start:{type:'string'},title:{type:'string'},reason:{type:'string'},week_type:{type:'string'},coach_comment:{type:'string'},target_load:{type:'number'},workouts:{type:'array',items:{type:'object'}}},required:['athlete_id','week_start','title','reason','workouts'],additionalProperties:false},annotations:{readOnlyHint:false,destructiveHint:false}}
+  {name:'create_week_proposal',description:'Crea una propuesta semanal para revisión del entrenador. Nunca publica ni modifica directamente el calendario.',inputSchema:{type:'object',properties:{athlete_id:{type:'string'},week_start:{type:'string'},title:{type:'string'},reason:{type:'string'},week_type:{type:'string'},coach_comment:{type:'string'},target_load:{type:'number'},workouts:{type:'array',items:{type:'object'}}},required:['athlete_id','week_start','title','reason','workouts'],additionalProperties:false},annotations:{readOnlyHint:false,destructiveHint:false}},
+  {name:'create_feedback_draft',description:'Guarda un borrador de feedback (sesión o semana) para que el entrenador lo revise. Nunca envía nada al deportista. Si ya existe un borrador pendiente para la misma sesión o semana, lo reemplaza.',inputSchema:{type:'object',properties:{athlete_id:{type:'string'},kind:{type:'string',enum:DRAFT_KINDS},activity_id:{type:'string',description:'Obligatorio si kind=session.'},date:{type:'string',description:'YYYY-MM-DD. Obligatorio si kind=session.'},workout_id:{type:'string'},week_start:{type:'string',description:'YYYY-MM-DD. Obligatorio si kind=week.'},semaforo:{type:'string',enum:DRAFT_LIGHTS},hechos:{type:'array',items:{type:'string'}},alertas:{type:'array',items:{type:'string'}},mensaje_atleta:{type:'string'},notas_para_coach:{type:'string'}},required:['athlete_id','kind','semaforo','mensaje_atleta'],additionalProperties:false},annotations:{readOnlyHint:false,destructiveHint:false}},
+  {name:'list_pending_drafts',description:'Lista los borradores de feedback. Por defecto solo los pendientes de revisión del entrenador.',inputSchema:{type:'object',properties:{status:{type:'string',description:'pending (por defecto), all, draft, ready, needs_review, approved, rejected o sent.'},athlete_id:{type:'string'},kind:{type:'string',enum:DRAFT_KINDS},limit:{type:'number'}},additionalProperties:false},annotations:{readOnlyHint:true,destructiveHint:false}}
 ];
 function mcpResult(id,value){return{jsonrpc:'2.0',id,result:{content:[{type:'text',text:JSON.stringify(value)}],structuredContent:value,isError:false}}}
 async function handleMcp(req,res,url){const key=url.searchParams.get('key')||'';
@@ -80,11 +153,13 @@ async function handleMcp(req,res,url){const key=url.searchParams.get('key')||'';
   if(message.method==='ping'){sendJson(res,200,{jsonrpc:'2.0',id,result:{}});return true}
   if(message.method==='tools/list'){await assistantSession(req,'read',key);sendJson(res,200,{jsonrpc:'2.0',id,result:{tools:MCP_TOOLS}});return true}
   if(message.method==='tools/call'){
-    const name=message.params?.name,args=message.params?.arguments||{},scope=name==='create_week_proposal'?'draft':'read';
+    const name=message.params?.name,args=message.params?.arguments||{},scope=DRAFT_TOOLS.includes(name)?'draft':'read';
     const session=await assistantSession(req,scope,key);
     if(name==='list_athletes'){const rows=await athletes(session.coach_user_id);await audit(session,'mcp_athletes_read',{count:rows.length});sendJson(res,200,mcpResult(id,{athletes:rows}));return true}
     if(name==='get_daily_report'){const report=await dailyReport(session.coach_user_id,safe(args.athlete_id,80),args.date);await audit(session,'mcp_daily_report_read',{athlete_id:args.athlete_id,date:report.date});sendJson(res,200,mcpResult(id,report));return true}
     if(name==='create_week_proposal'){const athleteId=safe(args.athlete_id,80);const proposal=await createProposal(session,athleteId,args);sendJson(res,200,mcpResult(id,{proposal}));return true}
+    if(name==='create_feedback_draft'){const result=await createDraft(session,safe(args.athlete_id,80),args);sendJson(res,200,mcpResult(id,result));return true}
+    if(name==='list_pending_drafts'){const drafts=await listDrafts(session.coach_user_id,args);await audit(session,'mcp_drafts_read',{count:drafts.length});sendJson(res,200,mcpResult(id,{drafts}));return true}
     sendJson(res,200,{jsonrpc:'2.0',id,error:{code:-32601,message:'Herramienta MCP no encontrada.'}});return true
   }
   sendJson(res,200,{jsonrpc:'2.0',id,error:{code:-32601,message:'Método MCP no encontrado.'}});return true
@@ -94,13 +169,18 @@ async function handle(req,res,url){const path=url.pathname,method=req.method||'G
   if(path==='/api/coach/assistant-access'){const session=await coachSession(req,res);if(method==='GET'){sendJson(res,200,{credentials:await listCredentials(session.user.id)});return true}if(method==='POST'){sendJson(res,201,await createCredential(session,await readJson(req)));return true}}
   let match=path.match(/^\/api\/coach\/assistant-access\/([^/]+)$/);if(match&&method==='DELETE'){const session=await coachSession(req,res);await revokeCredential(session.user.id,decodeURIComponent(match[1]));sendJson(res,200,{ok:true});return true}
   if(path==='/api/coach/assistant-proposals'&&method==='GET'){const session=await coachSession(req,res);sendJson(res,200,{proposals:await proposals(session.user.id,url.searchParams.get('status'))});return true}
+  if(path==='/api/coach/assistant-drafts'&&method==='GET'){const session=await coachSession(req,res);sendJson(res,200,{drafts:await listDrafts(session.user.id,Object.fromEntries(url.searchParams))});return true}
   match=path.match(/^\/api\/coach\/assistant-proposals\/([^/]+)$/);if(match&&method==='PATCH'){const session=await coachSession(req,res);const body=await readJson(req);sendJson(res,200,{proposal:await proposalStatus(session.user.id,decodeURIComponent(match[1]),body.status)});return true}
   const assistant=await assistantSession(req,method==='GET'?'read':'draft');
   if(path==='/api/assistant/athletes'&&method==='GET'){const rows=await athletes(assistant.coach_user_id);await audit(assistant,'athletes_read',{count:rows.length});sendJson(res,200,{athletes:rows});return true}
   match=path.match(/^\/api\/assistant\/athletes\/([^/]+)\/daily-report$/);if(match&&method==='GET'){const athleteId=decodeURIComponent(match[1]);const report=await dailyReport(assistant.coach_user_id,athleteId,url.searchParams.get('date'));await audit(assistant,'daily_report_read',{athlete_id:athleteId,date:report.date});sendJson(res,200,report);return true}
   match=path.match(/^\/api\/assistant\/athletes\/([^/]+)\/proposals$/);if(match&&method==='POST'){sendJson(res,201,{proposal:await createProposal(assistant,decodeURIComponent(match[1]),await readJson(req))});return true}
+  if(path==='/api/assistant/drafts'&&method==='GET'){const drafts=await listDrafts(assistant.coach_user_id,Object.fromEntries(url.searchParams));await audit(assistant,'drafts_read',{count:drafts.length});sendJson(res,200,{drafts});return true}
+  match=path.match(/^\/api\/assistant\/athletes\/([^/]+)\/drafts$/);if(match&&method==='POST'){const result=await createDraft(assistant,decodeURIComponent(match[1]),await readJson(req));sendJson(res,result.created?201:200,result);return true}
   throw Object.assign(new Error('Ruta Asistente RunFlow no encontrada.'),{status:404});
 }
 
 const previousCreateServer=http.createServer;
 http.createServer=function assistantApiCreateServer(listener){return previousCreateServer.call(http,async(req,res)=>{try{const url=new URL(req.url,`http://${req.headers.host||'localhost'}`);if(await handle(req,res,url))return}catch(error){if(!res.headersSent){sendJson(res,error.status||500,{error:error.message||'Error interno de Asistente RunFlow.'});return}console.error('[assistant-api]',error)}return listener(req,res)})};
+
+module.exports={cleanDraft,draftKey,saveDraft,filterDrafts,listDrafts,MCP_TOOLS};
