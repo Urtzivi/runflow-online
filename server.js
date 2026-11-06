@@ -1518,6 +1518,47 @@ async function persistWeekWorkouts(savedWeek, athleteId, workouts, publicationSt
   );
 }
 
+// Publica la semana y la sincroniza con Intervals (también borra los eventos de
+// las sesiones quitadas). Lo usan el botón Publicar y el Asistente RunFlow.
+async function publishWeekWithSync(athleteId, body) {
+  const weekStart = validDate(body.week_start) || startOfWeek();
+  const alreadyPublished = await publishedWeekExists(athleteId, weekStart);
+
+  let previousWorkouts = [];
+  if (!DEMO_MODE) {
+    const previousWeeks = await prodRows(
+      'training_weeks',
+      `athlete_id=eq.${encodeURIComponent(athleteId)}&week_start=eq.${weekStart}&select=id&limit=1`
+    );
+    if (previousWeeks[0]) {
+      previousWorkouts = await prodRows(
+        'workouts',
+        `training_week_id=eq.${encodeURIComponent(previousWeeks[0].id)}&select=*`
+      );
+    }
+  }
+
+  let week = await saveWeek(athleteId, body, true);
+  const savedIds = new Set((week.workouts || []).map(item => String(item.id)));
+  const deletedWorkouts = previousWorkouts.filter(item => !savedIds.has(String(item.id)));
+  const intervals = await syncWeekToIntervals(athleteId, week, deletedWorkouts);
+
+  if (!DEMO_MODE && week.id) {
+    const refreshed = await prodRows(
+      'workouts',
+      `training_week_id=eq.${encodeURIComponent(week.id)}&select=*&order=workout_date.asc`
+    );
+    week = { ...week, workouts: refreshed };
+  }
+  return { week, intervals, already_published: alreadyPublished };
+}
+
+// Para los hooks (Asistente RunFlow): escribir semanas con las mismas reglas que el coach.
+globalThis.__runflowWeekWriter = {
+  saveDraft: (athleteId, body) => saveWeek(athleteId, { ...body, status: 'draft' }, false),
+  publish: publishWeekWithSync,
+};
+
 async function saveWeek(athleteId, body, publish = false) {
   const week = normaliseWeek(body, athleteId);
   await assertWorkoutsFitAvailability(athleteId, week.workouts);
@@ -5253,37 +5294,7 @@ async function api(req, res, url) {
   if (publishMatch && method === 'POST') {
     const athleteId = publishMatch[1];
     await ensureCoachAccess(session, athleteId);
-    const body = await readJson(req);
-    const weekStart = validDate(body.week_start) || startOfWeek();
-    const alreadyPublished = await publishedWeekExists(athleteId, weekStart);
-
-    let previousWorkouts = [];
-    if (!DEMO_MODE) {
-      const previousWeeks = await prodRows(
-        'training_weeks',
-        `athlete_id=eq.${encodeURIComponent(athleteId)}&week_start=eq.${weekStart}&select=id&limit=1`
-      );
-      if (previousWeeks[0]) {
-        previousWorkouts = await prodRows(
-          'workouts',
-          `training_week_id=eq.${encodeURIComponent(previousWeeks[0].id)}&select=*`
-        );
-      }
-    }
-
-    let week = await saveWeek(athleteId, body, true);
-    const savedIds = new Set((week.workouts || []).map(item => String(item.id)));
-    const deletedWorkouts = previousWorkouts.filter(item => !savedIds.has(String(item.id)));
-    const intervals = await syncWeekToIntervals(athleteId, week, deletedWorkouts);
-
-    if (!DEMO_MODE && week.id) {
-      const refreshed = await prodRows(
-        'workouts',
-        `training_week_id=eq.${encodeURIComponent(week.id)}&select=*&order=workout_date.asc`
-      );
-      week = { ...week, workouts: refreshed };
-    }
-    return sendJson(res, 200, { week, intervals, already_published: alreadyPublished });
+    return sendJson(res, 200, await publishWeekWithSync(athleteId, await readJson(req)));
   }
 
   const intervalsPreviewMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/intervals-preview$/);

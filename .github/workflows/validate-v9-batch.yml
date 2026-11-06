@@ -100,6 +100,9 @@ jobs:
         run: |
           node --check assistant-planner.js
           node --test scripts/test-assistant-planner.cjs
+          node --check assistant-week-edit.js
+          node --test scripts/test-assistant-week-edit.cjs
+          node --test scripts/test-assistant-week-apply.cjs
       - name: Validate V9/V2 batch
         run: node scripts/validate-v9-batch.mjs
       - name: Check season calendar planner syntax
