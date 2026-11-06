@@ -225,6 +225,7 @@ async function buildWeekEdit(db, athleteId, body, today, verify) {
       changes: summary,
       verification,
       base: { week_id: week?.id || null, published, signature: signature(current) },
+      previous: { title: week?.title || '', week_type: week?.week_type || '', coach_comment: week?.coach_comment || '', status: week?.status || null, workouts: current.map(pickWorkout) },
       week: weekData,
       created_at: new Date().toISOString(),
     },
