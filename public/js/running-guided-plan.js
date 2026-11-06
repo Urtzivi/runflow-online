@@ -309,6 +309,38 @@
       const race2 = (answers.other_races || []).find(item => item.date >= week.start && item.date <= week.end);
       if (race2) week.b_race = race2;
     });
+    // Punto de partida: si en las últimas semanas corría bastante menos de lo que permite su
+    // disponibilidad, el plan empieza cerca de lo que venía haciendo y sube como mucho un 10 % por semana.
+    const history = Number(answers.history_minutes) || 0;
+    if (history > 0 && !options.phaseFrom && !lead.length) {
+      let ceiling = Math.max(60, Math.round(history * 1.1));
+      let ramped = 0;
+      weeks.forEach(week => {
+        if (['taper', 'competition'].includes(week.type)) return;
+        if (week.minutes > ceiling) {
+          week.minutes = Math.round(ceiling / 5) * 5;
+          week.hours = Math.round(week.minutes / 6) / 10;
+          week.load = Math.round(week.minutes * WEEK_TYPES[week.type].rpe);
+          week.why = `Sube poco a poco desde lo que venía corriendo (≈ ${Math.round(history)} min por semana). ${week.why}`;
+          ramped += 1;
+        }
+        if (!['deload', 'recovery'].includes(week.type)) ceiling = Math.round(ceiling * 1.1);
+      });
+      if (ramped) warnings.push(`Venía corriendo ≈ ${Math.round(history)} min por semana: las ${ramped === 1 ? 'primera semana sube' : `${ramped} primeras semanas suben`} poco a poco (como mucho un 10 % cada semana) para no lesionarse.`);
+    }
+
+    // Regla 3: el volumen no sube más de un 10 % sobre la semana más alta anterior (las de descarga no cuentan).
+    let peak = 0;
+    weeks.forEach(week => {
+      if (['deload', 'recovery', 'taper', 'competition'].includes(week.type)) return;
+      const cap = peak ? Math.round(peak * 1.1 / 5) * 5 : Infinity;
+      if (week.minutes > cap) {
+        week.minutes = cap;
+        week.hours = Math.round(week.minutes / 6) / 10;
+        week.load = Math.round(week.minutes * WEEK_TYPES[week.type].rpe);
+      }
+      peak = Math.max(peak, week.minutes);
+    });
 
     const mesos = [];
     phases.forEach(phase => {
@@ -458,11 +490,21 @@
    * Sesiones de una semana. days: [{ day: 0-6, minutes, types: ['run', 'trail', 'bike', 'strength', 'walk'] }]
    */
   const HILL_PHASES = ['umbral', 'terreno', 'resistencia', 'especifico'];
+  const LONG_SHARE = 0.35; // regla 10: la tirada larga, como mucho el 35 % del tiempo de la semana
+  const HARD_SHARE = { nuevo: 0.15, regular: 0.2, experto: 0.2 }; // regla 9: 80/20
+  const hardMinutes = row => Math.max(0, (row.minutes || 0) - (row.warmup || 0) - (row.cooldown || 0));
   function buildWeekSessions(answers, structure, week, libraryRows) {
     const rows = (libraryRows || []).map(libRow).filter(row => row.id && row.name);
     const race = structure.race, level = structure.level, phase = PHASES[week.phase];
     const course = courseOf(answers);
-    const allDays = (answers.days || []).filter(day => Number(day.minutes) > 0).sort((a, b) => a.day - b.day);
+    let allDays = (answers.days || []).filter(day => Number(day.minutes) > 0).sort((a, b) => a.day - b.day);
+    // Regla 11: al menos un día de descanso completo (salvo atletas con experiencia). Mejor el día después de la tirada larga.
+    if (allDays.length >= 7 && answers.level !== 'experto') {
+      const longD = Number(answers.long_day);
+      const rest = allDays.filter(day => day.day !== longD)
+        .sort((a, b) => Number(b.day === (longD + 1) % 7) - Number(a.day === (longD + 1) % 7) || a.minutes - b.minutes)[0];
+      allDays = allDays.filter(day => day !== rest);
+    }
     const trainDays = allDays.filter(runsOn);
     if (!trainDays.length) return [];
     const phaseWeeks = structure.weeks.filter(item => item.phase === week.phase);
@@ -486,7 +528,7 @@
       const family = race.trail && allowTrail(longDay) ? 'Long Trail' : 'Long Run';
       // Si la carrera es más larga que la típica de su tipo, la tirada larga puede crecer (hasta +40 %).
       const longCap = Math.round((race.longCap || 100) * Math.min(1.4, Math.max(1, course.km / race.distance_km)));
-      const cap = Math.min(longDay.minutes, longCap, week.type === 'deload' ? 75 : 999, Math.max(40, Math.round(week.minutes * 0.4)));
+      const cap = Math.min(longDay.minutes, longCap, week.type === 'deload' ? 75 : 999, Math.max(40, Math.round(week.minutes * LONG_SHARE)));
       const row = week.phase === 'prep'
         ? pickRow(rows, runFilter(longDay, r => r.family === 'Easy'), 1, level.maxLib, cap, used)
         : pickRow(rows, runFilter(longDay, r => r.family === family), progress, Math.min(5, level.maxLib + 1), cap, used)
@@ -498,10 +540,13 @@
     let qualityCount = week.b_race ? 0 : level.quality;
     if (answers.goal_mode !== 'marca') qualityCount = Math.min(qualityCount, 1);
     if (trainDays.length <= 3) qualityCount = Math.min(qualityCount, 1);
+    if (week.easier) qualityCount = Math.min(qualityCount, 1); // semana aligerada por cómo viene el atleta
     if (['recovery', 'competition'].includes(week.type)) qualityCount = week.type === 'competition' ? 1 : 0;
     if (week.type === 'deload') qualityCount = Math.min(qualityCount, 1);
     if (week.phase === 'prep' && answers.level === 'nuevo') qualityCount = 0;
-    const free = daysUsable.filter(day => !plan.has(day.day));
+    // Regla 13: los 2 días siguientes a una carrera de preparación no llevan series.
+    const afterRace = day => (answers.other_races || []).some(r => r.date && r.date < dateOf(day.day) && dateOf(day.day) <= addDays(r.date, 2));
+    const free = daysUsable.filter(day => !plan.has(day.day) && !afterRace(day));
     // Fuerza de la semana y días en los que cabe, según dónde caigan las sesiones duras.
     const sp = strengthPlanFor(answers, race, week.phase, week.type);
     const strengthEligible = allDays.filter(day => canDo(day, 'strength') && (raceDay < 0 || day.day < raceDay - 2));
@@ -558,6 +603,27 @@
         || pickRow(rows, runFilter(day, r => ['Easy', 'Recovery'].includes(r.family)), 0, 5, day.minutes, new Set());
       if (row) plan.set(day.day, { row, role: family === 'Recovery' ? 'Rodaje muy suave' : 'Rodaje fácil', priority: 'C', objective: 'Sumar tiempo corriendo sin cansarse.' });
     });
+
+    // Regla 9 (80/20): el tiempo duro no pasa del 20 % del tiempo corriendo (15 % si empieza).
+    // Primero se busca una sesión de calidad más corta; si no la hay, la segunda pasa a rodaje fácil.
+    const hardLimit = HARD_SHARE[answers.level] || 0.2;
+    for (let guard = 0; guard < 4; guard++) {
+      const quality = [...plan.entries()].filter(([, item]) => item.role === 'Sesión de calidad' && week.type !== 'competition');
+      const total = [...plan.values()].reduce((sum, item) => sum + item.row.minutes, 0);
+      const hard = quality.reduce((sum, [, item]) => sum + hardMinutes(item.row), 0);
+      if (!quality.length || hard <= total * hardLimit) break;
+      const [qDay, item] = quality.sort((a, b) => hardMinutes(b[1].row) - hardMinutes(a[1].row))[0];
+      const dayObj = trainDays.find(d => d.day === qDay);
+      const allowed = hardMinutes(item.row) - (hard - total * hardLimit);
+      const shorter = allowed >= 8 && pickRow(rows, runFilter(dayObj, r => r.family === item.row.family && hardMinutes(r) > 0 && hardMinutes(r) <= allowed), 1, level.maxLib, dayObj.minutes, used);
+      if (shorter) { used.add(shorter.id); plan.set(qDay, { ...item, row: shorter }); continue; }
+      if (quality.length < 2) break;
+      const [bDay] = quality.find(([, it]) => it.priority === 'B') || quality[1];
+      const bObj = trainDays.find(d => d.day === bDay);
+      const easy = pickRow(rows, runFilter(bObj, r => r.family === 'Easy'), 1, 5, Math.min(bObj.minutes, easyMinutes + 5), new Set());
+      if (easy) plan.set(bDay, { row: easy, role: 'Rodaje fácil', priority: 'C', objective: 'Sumar tiempo corriendo sin cansarse.' });
+      else plan.delete(bDay);
+    }
 
     [...plan.entries()].sort((a, b) => a[0] - b[0]).forEach(([day, item]) => {
       const session = sessionFromRow(item.row, dateOf(day), {
@@ -1032,7 +1098,7 @@
     const num = value => (Number(value) > 0 ? Math.round(Number(value) * 10) / 10 : null);
     return {
       v: 1, race: a.race, race_date: a.race_date, race_name: a.race_name || '', race_km: num(a.race_km), race_elevation: num(a.race_elevation), goal_mode: a.goal_mode, target_time: a.target_time || '',
-      level: a.level, injuries: a.injuries || '', long_day: a.long_day, strength: a.strength, equipment: a.equipment || 'gimnasio', start_date: a.start_date,
+      level: a.level, injuries: a.injuries || '', history_minutes: num(a.history_minutes), long_day: a.long_day, strength: a.strength, equipment: a.equipment || 'gimnasio', start_date: a.start_date,
       days: (a.days || []).map(d => ({ day: d.day, minutes: d.minutes, types: dayTypes(d) })), other_races: (a.other_races || []).map(r => ({ name: r.name || '', date: r.date || '', km: num(r.km), elevation: num(r.elevation) })),
     };
   }
@@ -1054,8 +1120,149 @@
     return `${Number(value.slice(8, 10))} ${months[Number(value.slice(5, 7)) - 1]}`;
   }
 
+  // ---------- Historial del atleta: punto de partida y ajuste de cada semana ----------
+  const isRunSport = sport => /run|trail|correr/i.test(String(sport || ''));
+  /*
+   * Minutos de carrera por semana en las 6 semanas antes de `start` (actividades de Intervals).
+   * Solo cuenta si hay datos en 3 semanas o más; si no, no se usa.
+   */
+  function historyFromActivities(activities, start, weeksBack = 6) {
+    const first = addDays(mondayOf(start), -7 * weeksBack);
+    const weeks = Array.from({ length: weeksBack }, (_, i) => ({ start: addDays(first, 7 * i), minutes: 0, runs: 0 }));
+    (activities || []).forEach(item => {
+      const date = String(item.activity_date || item.start_date_local || '').slice(0, 10);
+      if (!isRunSport(item.sport || item.type)) return;
+      const week = weeks.find(w => date >= w.start && date <= addDays(w.start, 6));
+      if (!week) return;
+      week.minutes += (Number(item.duration_sec ?? item.moving_time) || 0) / 60;
+      week.runs += 1;
+    });
+    weeks.forEach(w => { w.minutes = Math.round(w.minutes); });
+    const withData = weeks.filter(w => w.runs > 0);
+    // Media de las 4 últimas semanas (una semana suelta muy baja no manda).
+    const recent = weeks.slice(-4);
+    const avg = Math.round(recent.reduce((sum, w) => sum + w.minutes, 0) / recent.length);
+    const runsPerWeek = Math.round(recent.reduce((sum, w) => sum + w.runs, 0) / recent.length * 10) / 10;
+    return { weeks, weeks_with_data: withData.length, avg_minutes: withData.length >= 3 ? avg : null, runs_per_week: runsPerWeek };
+  }
+
+  const ADJUST_PREFIX = 'RUNFLOW_GUIDED_ADJUST:';
+  const ADJUST = {
+    subir: { label: 'Puede dar algo más', short: 'Subir un poco', factor: 1.08 },
+    mantener: { label: 'Mantener lo previsto', short: 'Mantener', factor: 1 },
+    bajar: { label: 'Pedirle menos', short: 'Bajar', factor: 0.8 },
+  };
+  // RPE esperado de una sesión planificada: el que pone RunFlow en el resumen ("RPE 3-4 de 10").
+  function expectedRpe(workout) {
+    const text = `${workout?.summary || ''} ${workout?.structured_description || ''}`;
+    const match = text.match(/RPE\s*(\d+(?:[.,]\d+)?)(?:\s*[-–a]\s*(\d+(?:[.,]\d+)?))?/i);
+    if (!match) return null;
+    const hi = Number(String(match[2] || match[1]).replace(',', '.'));
+    return Number.isFinite(hi) ? hi : null;
+  }
+  const avg = list => (list.length ? list.reduce((sum, n) => sum + n, 0) / list.length : null);
+  /*
+   * ¿Puede dar más o hay que pedirle menos? Mira las 2 semanas antes de hoy:
+   *   - cumplimiento: lo que hizo de lo planificado (las opcionales no cuentan),
+   *   - esfuerzo: el RPE que puso frente al que se esperaba,
+   *   - dolor y sensaciones que apuntó,
+   *   - recuperación de los últimos 7 días frente a su media: sueño, VFC, pulso en reposo, fatiga (forma).
+   * Devuelve subir / mantener / bajar con las razones. Nunca sube en descarga, afinamiento o carrera.
+   */
+  function weekAdvice({ week, calendarWeeks, recovery, today }) {
+    const from = addDays(today, -14), to = addDays(today, -1);
+    const workouts = (calendarWeeks || []).flatMap(w => w.workouts || [])
+      .filter(w => String(w.workout_date) >= from && String(w.workout_date) <= to && !/^Opcional\s*·/i.test(String(w.title || '')) && !w.optional);
+    const score = { completed: 1, partial: 0.5, changed: 0.75 };
+    const done = workouts.reduce((sum, w) => sum + (score[w.execution_status] || 0), 0);
+    const compliance = workouts.length >= 2 ? done / workouts.length : null;
+    const rpeDiffs = workouts.map(w => {
+      const rpe = Number(w.manual_log?.rpe), expected = expectedRpe(w);
+      return Number.isFinite(rpe) && rpe > 0 && expected ? rpe - expected : null;
+    }).filter(n => n !== null);
+    const rpeDelta = rpeDiffs.length >= 2 ? avg(rpeDiffs) : null;
+    const logs = workouts.map(w => w.manual_log).filter(Boolean);
+    const pain = Math.max(0, ...logs.map(l => Number(l.pain) || 0));
+    const painArea = logs.find(l => Number(l.pain) === pain && l.pain_area)?.pain_area || '';
+    const badFeel = logs.filter(l => l.feeling === 'mal').length;
+
+    // Recuperación: últimos 7 días frente a las 4 semanas anteriores.
+    const rows = (recovery || []).filter(r => r.metric_date <= today);
+    const last7 = rows.filter(r => r.metric_date >= addDays(today, -7));
+    const baseRows = rows.filter(r => r.metric_date < addDays(today, -7) && r.metric_date >= addDays(today, -35));
+    const mean = (list, key, scale = 1) => avg(list.map(r => Number(r[key])).filter(n => Number.isFinite(n) && n > 0).map(n => n / scale));
+    const sleep = mean(last7, 'sleep_sec', 3600), sleepBase = mean(baseRows, 'sleep_sec', 3600);
+    const hrv = mean(last7, 'hrv'), hrvBase = mean(baseRows, 'hrv');
+    const rhr = mean(last7, 'resting_hr'), rhrBase = mean(baseRows, 'resting_hr');
+    const formRow = [...rows].reverse().find(r => Number.isFinite(Number(r.form)) && r.form !== null);
+    const form = formRow ? Number(formRow.form) : null;
+    const recoveryBad = [], recoveryOk = [];
+    if (sleep !== null && sleepBase !== null) (sleep < sleepBase - 0.75 ? recoveryBad : recoveryOk).push(sleep < sleepBase - 0.75 ? `Duerme menos de lo normal (${sleep.toFixed(1).replace('.', ',')} h frente a ${sleepBase.toFixed(1).replace('.', ',')} h).` : 'Duerme como siempre.');
+    if (hrv !== null && hrvBase !== null) (hrv < hrvBase * 0.9 ? recoveryBad : recoveryOk).push(hrv < hrvBase * 0.9 ? `VFC más baja de lo normal (${Math.round(hrv)} frente a ${Math.round(hrvBase)}).` : 'VFC normal.');
+    if (rhr !== null && rhrBase !== null) (rhr > rhrBase + 5 ? recoveryBad : recoveryOk).push(rhr > rhrBase + 5 ? `Pulso en reposo más alto (${Math.round(rhr)} frente a ${Math.round(rhrBase)}).` : 'Pulso en reposo normal.');
+    if (form !== null && form < -25) recoveryBad.push(`Mucha fatiga acumulada (forma ${Math.round(form)}).`);
+
+    // Regla 17: carga de los últimos 7 días frente a la media semanal de las 4 últimas semanas.
+    const loads = [];
+    (calendarWeeks || []).forEach(w => {
+      (w.workouts || []).forEach(x => { const l = Number(x.actual?.load); if (l > 0) loads.push({ date: String(x.workout_date).slice(0, 10), load: l }); });
+      (w.unplanned_activities || []).forEach(x => { const l = Number(x.load); if (l > 0) loads.push({ date: String(x.activity_date).slice(0, 10), load: l }); });
+    });
+    const sumLoad = (a, b) => loads.filter(x => x.date >= a && x.date <= b).reduce((sum, x) => sum + x.load, 0);
+    const acute = sumLoad(addDays(today, -7), addDays(today, -1));
+    const older = sumLoad(addDays(today, -28), addDays(today, -8));
+    const acwr = older > 0 ? acute / ((acute + older) / 4) : null;
+
+    const reasons = [];
+    const add = (sign, text) => reasons.push({ sign, text });
+    if (compliance !== null) add(compliance >= 0.9 ? 'ok' : compliance >= 0.6 ? 'mid' : 'bad', `Hizo ${String(Math.round(done * 10) / 10).replace('.', ',')} de ${workouts.length} sesiones de las 2 últimas semanas.`);
+    if (rpeDelta !== null) add(rpeDelta <= -0.5 ? 'ok' : rpeDelta < 1 ? 'mid' : 'bad', rpeDelta <= -0.5 ? 'Le costaron menos de lo esperado (RPE más bajo del previsto).' : rpeDelta < 1 ? 'El esfuerzo fue el esperado.' : 'Le costaron más de lo esperado (RPE más alto del previsto).');
+    if (pain >= 3) add('bad', `Apuntó dolor ${pain}/10${painArea ? ` (${painArea})` : ''}.`);
+    if (badFeel >= 2) add('bad', `Malas sensaciones en ${badFeel} sesiones.`);
+    if (acwr !== null) add(acwr > 1.5 ? 'bad' : acwr > 1.3 ? 'mid' : 'ok', acwr > 1.5 ? `La carga de esta semana es mucho más alta de lo habitual (${acwr.toFixed(1).replace('.', ',')} veces su media).` : acwr > 1.3 ? `La carga ha subido bastante respecto a lo habitual (${acwr.toFixed(1).replace('.', ',')} veces su media).` : 'La carga va en línea con lo habitual.');
+    recoveryBad.forEach(text => add('bad', text));
+    recoveryOk.forEach(text => add('ok', text));
+
+    const hasData = compliance !== null || rpeDelta !== null || recoveryBad.length + recoveryOk.length > 0 || pain > 0 || acwr !== null;
+    const protectedWeek = ['deload', 'recovery', 'taper', 'competition'].includes(week?.type);
+    let decision = 'mantener', why;
+    if (!hasData) why = 'No hay datos suficientes de las 2 últimas semanas: se prepara como estaba previsto.';
+    else if (pain >= 3 || recoveryBad.length >= 2 || (rpeDelta !== null && rpeDelta >= 1.5) || (acwr !== null && acwr > 1.5)) {
+      decision = 'bajar';
+      why = pain >= 5 ? 'Con ese dolor conviene aflojar. Si sigue, usa «Ha pasado algo».' : 'Viene cargado: semana algo más corta y con una sola sesión dura.';
+    } else if (compliance !== null && compliance >= 0.9 && rpeDelta !== null && rpeDelta <= -0.5 && !recoveryBad.length && badFeel < 2 && !(acwr > 1.3)) {
+      decision = protectedWeek ? 'mantener' : 'subir';
+      why = protectedWeek ? 'Viene bien, pero esta semana toca aflojar: se respeta.' : 'Viene bien: lo hace todo y le cuesta menos de lo previsto. Se puede subir un poco.';
+    } else if (compliance !== null && compliance >= 0.9 && rpeDelta === null && !recoveryBad.length) {
+      why = 'Lo está haciendo todo. Para saber si puede más, pídele que apunte el RPE de cada sesión.';
+    } else if (compliance !== null && compliance < 0.6) {
+      why = 'Está haciendo bastante menos de lo planificado: mejor no subir hasta que lo complete.';
+    } else why = 'Va según lo previsto.';
+    return {
+      decision, ...ADJUST[decision], why, reasons, has_data: hasData, suggest_incident: pain >= 5,
+      lessQuality: decision === 'bajar',
+      data: { compliance, done, planned: workouts.length, rpe_delta: rpeDelta, pain, acwr, sleep, sleep_base: sleepBase, hrv, hrv_base: hrvBase, rhr, rhr_base: rhrBase, form },
+    };
+  }
+  // La semana con el ajuste aplicado (más o menos minutos y, si se baja, una sola sesión dura).
+  function adjustWeek(week, advice) {
+    if (!advice || advice.decision === 'mantener') return week;
+    const minutes = Math.round(week.minutes * advice.factor / 5) * 5;
+    return { ...week, minutes, hours: Math.round(minutes / 6) / 10, load: Math.round(week.load * advice.factor), easier: Boolean(advice.lessQuality) };
+  }
+  function adjustNote(advice) {
+    return advice && advice.decision !== 'mantener' ? `${ADJUST_PREFIX}${advice.decision}|${Math.round((advice.factor - 1) * 100)}` : '';
+  }
+  function readAdjust(notes) {
+    const line = String(notes || '').split('\n').find(item => item.startsWith(ADJUST_PREFIX));
+    if (!line) return null;
+    const [decision, pct] = line.slice(ADJUST_PREFIX.length).split('|');
+    return ADJUST[decision] ? { decision, pct: Number(pct) || 0, ...ADJUST[decision] } : null;
+  }
+
   return {
     courseOf, courseText,
+    historyFromActivities, weekAdvice, adjustWeek, adjustNote, readAdjust, expectedRpe, ADJUST, ADJUST_PREFIX,
     DAYS, DAYS_SHORT, PHASES, RACES, LEVELS, WEEK_TYPES, REASONS, MARKER, STRENGTH, EQUIPMENT, STRENGTH_RULES, ACTIVITIES,
     strengthPlanFor, equipmentOk, dayTypes, canDo, runsOn,
     addDays, mondayOf, nextMonday, dayIndex, formatDate, rpeExplain, parseMain, parseTime,

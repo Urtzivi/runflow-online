@@ -35,7 +35,7 @@
   const WEEK_TYPE_LABEL = { adaptation: 'Adaptación', load: 'Carga', development: 'Construcción', overload: 'Sobrecarga', deload: 'Descarga', recovery: 'Vuelta suave', taper: 'Afinamiento', competition: 'Carrera' };
   const MICRO_TYPE_LABEL = { ...WEEK_TYPE_LABEL };
 
-  const ui = { installed: false, selected: null, busy: '', library: null, legacy: false, modal: null };
+  const ui = { installed: false, selected: null, busy: '', library: null, legacy: false, modal: null, advice: {} };
 
   // ---------- Datos ----------
   function guidedMacro() {
@@ -107,9 +107,9 @@
 
   // ---------- Acciones ----------
   // Notas de la semana: se marca si es una semana adaptada (lesión, enfermedad…) para pintarla distinta.
-  function weekNotes(micro, adaptedState) {
-    const clean = String(micro.notes || '').split('\n').filter(line => !line.startsWith(P.ADAPTED_PREFIX)).join('\n').trim();
-    return adaptedState ? `${clean}\n${P.ADAPTED_PREFIX}${adaptedState}`.trim() : clean;
+  function weekNotes(micro, adaptedState, adjust = '') {
+    const clean = String(micro.notes || '').split('\n').filter(line => !line.startsWith(P.ADAPTED_PREFIX) && !line.startsWith(P.ADJUST_PREFIX)).join('\n').trim();
+    return [clean, adaptedState ? `${P.ADAPTED_PREFIX}${adaptedState}` : '', adjust].filter(Boolean).join('\n');
   }
   // Guarda las sesiones de una semana. Si ya estaba publicada, se vuelve a publicar (así Intervals
   // borra las sesiones que ya no están); si no, queda en borrador.
@@ -143,12 +143,13 @@
       const longest = days.filter(P.runsOn).sort((a, b) => b.minutes - a.minutes)[0];
       if (longest) answers.long_day = longest.day;
     }
-    const target = overrides.week || week;
+    // Ajuste según cómo viene el atleta (más o menos minutos; al bajar, una sola sesión dura).
+    const target = overrides.adjust ? P.adjustWeek(overrides.week || week, overrides.adjust) : overrides.week || week;
     // Una semana cambiada (p. ej. a descarga) ocupa el sitio de la original en la temporada.
     const structure = target === week ? model.structure : { ...model.structure, weeks: model.structure.weeks.map(item => item === week ? target : item) };
     const workouts = P.buildWeekSessions(answers, structure, target, library);
     if (!workouts.length) throw new Error('No hay días para correr en su disponibilidad. Revisa la ficha del atleta.');
-    return { workouts, adapted: null, fromDate: null };
+    return { workouts, adapted: null, fromDate: null, adjust: overrides.adjust ? P.adjustNote(overrides.adjust) : '' };
   }
   // Lo ya pasado de la semana no se toca.
   const keepPast = (week, fromDate, workouts) => fromDate ? [...week.workouts.filter(w => String(w.workout_date) < fromDate), ...workouts] : workouts;
@@ -161,11 +162,11 @@
     try {
       const proposal = await proposalFor(model, week, overrides);
       const workouts = keepPast(week, proposal.fromDate, proposal.workouts);
-      const response = await saveWeekWorkouts(week, workouts, { notes: weekNotes(week.micro, proposal.adapted), republish: true });
+      const response = await saveWeekWorkouts(week, workouts, { notes: weekNotes(week.micro, proposal.adapted, proposal.adjust), republish: true });
       ui.busy = '';
       await reload();
       if (response) notify(`Semana cambiada y publicada de nuevo.${response.intervals?.skipped ? ` ${response.intervals.reason || ''}` : ''}`, 'success');
-      else notify(proposal.adapted ? 'Semana adaptada en borrador. Revísala y publícala.' : 'Semana preparada en borrador. Revísala y publícala cuando esté bien.', 'success');
+      else notify(proposal.adapted ? 'Semana adaptada en borrador. Revísala y publícala.' : proposal.adjust ? 'Semana preparada con el ajuste, en borrador. Revísala y publícala cuando esté bien.' : 'Semana preparada en borrador. Revísala y publícala cuando esté bien.', 'success');
     } catch (error) { ui.busy = ''; render(); notify(error.message, 'error'); }
   }
   async function removeWorkout(week, workoutId) {
@@ -276,6 +277,41 @@
   }
   const PHASE_NAME = key => P.PHASES[key]?.name || key;
   const STATUS_TEXT = { published: 'publicada', draft: 'preparada, sin publicar', empty: 'por preparar' };
+  // ---------- Cómo viene el atleta (historial) ----------
+  const adviceKey = week => `${athleteId()}|${week.start}`;
+  const adviceApplies = (model, week) => week.status === 'empty' && !week.past && !week.inIncident && week.start <= P.addDays(model.today, 13);
+  async function loadAdvice(model, week) {
+    const key = adviceKey(week);
+    if (ui.advice[key]) return;
+    ui.advice[key] = { loading: true };
+    const today = model.today;
+    try {
+      const [calendar, recovery] = await Promise.all([
+        apiCall(`${base()}/calendar?oldest=${P.addDays(today, -28)}&newest=${today}`),
+        apiCall(`${base()}/recovery?oldest=${P.addDays(today, -40)}&newest=${today}`).catch(() => ({ rows: [] })),
+      ]);
+      ui.advice[key] = { result: P.weekAdvice({ week, calendarWeeks: calendar.weeks || [], recovery: recovery.rows || [], today }) };
+    } catch (error) { ui.advice[key] = { error: error.message }; }
+    if (ui.selected === week.start) render();
+  }
+  const SIGN_ICON = { ok: '✓', mid: '•', bad: '!' };
+  function renderAdvice(model, week) {
+    const state = ui.advice[adviceKey(week)];
+    const prepareBtn = (label, cls = 'primary') => `<button class="btn ${cls}" data-sp-act="prepare" ${ui.busy ? 'disabled' : ''}>${label}</button>`;
+    const intro = '<p>RunFlow prepara las sesiones de esta semana con la biblioteca, el bloque en el que está y lo que el atleta puede hacer cada día según su ficha. Se guardan en borrador: tú decides cuándo se publican.</p>';
+    if (!state || state.loading) return `<div class="sp-prepare">${intro}<div class="sp-advice loading">Mirando cómo viene el atleta (últimas 2 semanas)…</div>${prepareBtn('Preparar esta semana')}</div>`;
+    if (state.error) return `<div class="sp-prepare">${intro}<div class="sp-note">No se ha podido leer su historial (${esc(state.error)}).</div>${prepareBtn('Preparar esta semana')}</div>`;
+    const r = state.result;
+    const pct = Math.round((r.factor - 1) * 100);
+    const list = r.reasons.length ? `<ul class="sp-reasons">${r.reasons.map(item => `<li class="r-${item.sign}"><span>${SIGN_ICON[item.sign]}</span>${esc(item.text)}</li>`).join('')}</ul>` : '';
+    const buttons = r.decision === 'mantener'
+      ? prepareBtn('Preparar esta semana')
+      : `<button class="btn primary" data-sp-act="prepare-adjusted" ${ui.busy ? 'disabled' : ''}>Preparar con el ajuste (${pct > 0 ? '+' : ''}${pct} %${r.lessQuality ? ', 1 sesión dura' : ''})</button>${prepareBtn('Preparar como estaba', 'soft')}`;
+    return `<div class="sp-prepare">${intro}
+      <div class="sp-advice a-${esc(r.decision)}"><span class="sp-eyebrow">Cómo viene el atleta</span><h4>${esc(r.label)}</h4><p>${esc(r.why)}</p>${list}
+        ${r.suggest_incident ? '<p><button class="btn soft small" data-sp-act="incident" type="button">Ha pasado algo</button></p>' : ''}</div>
+      <div class="sp-actions">${buttons}</div></div>`;
+  }
   function renderBlock(model, week) {
     const meso = model.structure.mesos.find(item => item.weeks.includes(week));
     if (!meso) return '';
@@ -295,6 +331,10 @@
         <div class="sp-session-actions"><button class="btn soft small" data-sp-edit="${esc(workout.id)}" type="button">Editar</button>${week.published ? '' : `<button class="btn soft small" data-sp-remove="${esc(workout.id)}" type="button" title="Quitar de la semana">Quitar</button>`}</div></div>
     </li>`;
   }
+  function adjustText(week) {
+    const adj = P.readAdjust(week.micro?.notes);
+    return adj ? ` <b class="sp-adjusted a-${esc(adj.decision)}">Ajustada: ${esc(adj.label.toLowerCase())} (${adj.pct > 0 ? '+' : ''}${adj.pct} %)</b>` : '';
+  }
   function renderWeek(model, week) {
     const minutes = week.workouts.filter(w => !isOptional(w)).reduce((sum, w) => sum + (Number(w.planned_duration_min) || 0), 0);
     const badge = `<span class="sp-badge s-${week.status}">${week.published ? 'Publicada' : week.status === 'draft' ? 'Borrador' : 'Por preparar'}</span>`;
@@ -304,6 +344,7 @@
       body = week.past
         ? '<div class="sp-note">Esta semana ya ha pasado sin sesiones planificadas.</div>'
         : week.inIncident ? renderAdaptedPrepare(model, week)
+        : adviceApplies(model, week) ? renderAdvice(model, week)
         : `<div class="sp-prepare"><p>RunFlow prepara las sesiones de esta semana con la biblioteca, el bloque en el que está y lo que el atleta puede hacer cada día según su ficha. Se guardan en borrador: tú decides cuándo se publican.</p>
           <button class="btn primary" data-sp-act="prepare" ${ui.busy ? 'disabled' : ''}>Preparar esta semana</button></div>`;
     } else {
@@ -316,7 +357,7 @@
     return `<section class="sp-card sp-week">
       <div class="sp-week-head"><div><span class="sp-eyebrow">Semana ${week.index} de ${model.structure.weeks.length}${week.current ? ' · esta semana' : ''}</span>
         <h3>${esc(dayName(week.start))} ${esc(fmt(week.start))} – ${esc(dayName(week.end))} ${esc(fmt(week.end))} ${badge}</h3>
-        <p>${week.inIncident || week.adapted ? `<b>Semana adaptada</b> · ${esc(P.STATES[model.active?.state]?.label || 'mientras dura el problema')}. ` : ''}<b>${esc(WEEK_TYPE_LABEL[week.type] || week.label)}</b> · ≈ ${week.minutes} min previstos${week.inIncident ? ' en el plan' : ''}. ${esc(week.why)}${week.b_race ? ` Esta semana hay carrera de preparación (${esc(week.b_race.name || 'objetivo B')}).` : ''}</p></div>
+        <p>${week.inIncident || week.adapted ? `<b>Semana adaptada</b> · ${esc(P.STATES[model.active?.state]?.label || 'mientras dura el problema')}. ` : ''}<b>${esc(WEEK_TYPE_LABEL[week.type] || week.label)}</b> · ≈ ${week.minutes} min previstos${week.inIncident ? ' en el plan' : ''}.${adjustText(week)} ${esc(week.why)}${week.b_race ? ` Esta semana hay carrera de preparación (${esc(week.b_race.name || 'objetivo B')}).` : ''}</p></div>
         <div class="sp-nav"><button class="btn soft small" data-sp-week="${esc(prev?.start || '')}" ${prev ? '' : 'disabled'} aria-label="Semana anterior">←</button><button class="btn soft small" data-sp-week="${esc(next?.start || '')}" ${next ? '' : 'disabled'} aria-label="Semana siguiente">→</button></div></div>
       ${busy}${body}</section>`;
   }
@@ -658,6 +699,7 @@
     if (!model) { root.innerHTML = renderEmpty() + legacyLink(); return; }
     let week = model.structure.weeks.find(item => item.start === ui.selected);
     if (!week) { week = defaultWeek(model); ui.selected = week.start; }
+    if (adviceApplies(model, week) && !ui.advice[adviceKey(week)]) loadAdvice(model, week);
     root.innerHTML = `${renderHeader(model)}${renderIncident(model)}${renderBar(model)}<div class="sp-grid">${renderWeek(model, week)}${renderBlock(model, week)}</div>${legacyLink()}`;
     renderModal(model);
   }
@@ -687,7 +729,9 @@
     if (act === 'incident') return openIncident();
     if (act === 'incident-cancel') return cancelIncident();
     if (act === 'return') return openReturn();
-    if (act === 'prepare') return prepareWeek(week, model);
+    if (act === 'prepare-adjusted') return prepareWeek(week, model, { adjust: ui.advice[adviceKey(week)]?.result });
+    // «Hacer otra propuesta» mantiene el ajuste que ya tenía la semana.
+    if (act === 'prepare') { const adj = P.readAdjust(week?.micro?.notes); return prepareWeek(week, model, adj && !week.inIncident ? { adjust: { ...adj, lessQuality: adj.decision === 'bajar' } } : {}); }
     if (act === 'publish') return publishWeek(week);
     if (act === 'add') return editWorkout(week, null);
   }

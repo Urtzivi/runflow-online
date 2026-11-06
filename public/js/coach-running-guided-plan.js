@@ -45,6 +45,15 @@
     catch { ui.profile = null; }
     return ui.profile;
   }
+  // Lo que ha corrido las últimas semanas (Intervals): el plan empieza cerca de eso.
+  async function loadHistory() {
+    ui.history = null;
+    try {
+      const data = await apiCall(`${base()}/activities?oldest=${P.addDays(today(), -49)}&newest=${today()}`);
+      ui.history = P.historyFromActivities(data.activities || [], P.mondayOf(today()));
+    } catch { ui.history = null; }
+    return ui.history;
+  }
   const profileDays = profile => P.daysFromProfile(profile);
   const guidedGym = profile => (profile?.availability?.days || []).some(day => (day.activity_types || []).includes('gym') || day.activity_type === 'gym');
   function defaults() {
@@ -55,6 +64,7 @@
       race: '', race_date: '', race_name: '', race_km: '', race_elevation: '', goal_mode: 'terminar', target_time: '', other_races: [],
       level: 'regular', injuries: '', days, long_day: longest ? longest.day : 6, strength: 2, equipment: guidedGym(ui.profile) ? 'gimnasio_guiado' : 'gimnasio',
       start_date: P.nextMonday(P.addDays(today(), 1)), from_profile: Boolean(fromProfile),
+      history_minutes: ui.history?.avg_minutes || null, ignore_history: false,
     };
   }
 
@@ -104,7 +114,8 @@
         <button type="button" class="rgp-btn" data-rgp-act="other-add">＋ Añadir carrera</button>`;
     } else if (step.key === 'athlete') {
       body = `<div class="rgp-opts">${Object.entries(P.LEVELS).map(([key, level]) => option('level', key, level.label, levelHint(key), a.level)).join('')}</div>
-        <label class="rgp-f">¿Alguna molestia o lesión a vigilar? (opcional)<input type="text" data-rgp-field="injuries" value="${esc(a.injuries)}" placeholder="Fascitis el año pasado, rodilla derecha…"></label>`;
+        <label class="rgp-f">¿Alguna molestia o lesión a vigilar? (opcional)<input type="text" data-rgp-field="injuries" value="${esc(a.injuries)}" placeholder="Fascitis el año pasado, rodilla derecha…"></label>
+        ${renderHistory()}`;
     } else if (step.key === 'week') {
       body = `${a.from_profile ? '<div class="rgp-info">Rellenado con la disponibilidad de su ficha. Si lo cambias aquí, también se actualizará la ficha.</div>' : '<div class="rgp-info">Su ficha todavía no tiene disponibilidad: lo que marques aquí se guardará en ella.</div>'}
         <h3>¿Qué puede hacer cada día?</h3>
@@ -135,6 +146,14 @@
   function refreshFooter() {
     const el = q('#rgpBody .rgp-actions');
     if (el) el.outerHTML = footer();
+  }
+  function renderHistory() {
+    const h = ui.history;
+    if (!h?.avg_minutes) return `<div class="rgp-info">${h ? 'En Intervals hay menos de 3 semanas con carreras en el último mes y medio' : 'No se ha podido leer su historial de Intervals'}: el plan empieza según su disponibilidad.</div>`;
+    const bars = h.weeks.map(w => `<i style="height:${Math.max(4, Math.round(w.minutes / Math.max(...h.weeks.map(x => x.minutes), 1) * 36))}px" title="Semana del ${P.formatDate(w.start)}: ${w.minutes} min"></i>`).join('');
+    return `<div class="rgp-history"><div class="rgp-bars" aria-hidden="true">${bars}</div><div><b>Lo que viene corriendo</b><span>Últimas 4 semanas: ≈ ${h.avg_minutes} min por semana, ${String(h.runs_per_week).replace('.', ',')} salidas por semana.</span>
+      <span>${ui.a.ignore_history ? 'No se tiene en cuenta: el plan empieza según su disponibilidad.' : 'El plan empezará cerca de eso y subirá como mucho un 10 % por semana.'}</span>
+      <label class="rgp-check"><input type="checkbox" data-rgp-check="ignore_history" ${ui.a.ignore_history ? 'checked' : ''}> No tenerlo en cuenta (por ejemplo, si estas semanas no son normales)</label></div></div>`;
   }
   function raceHint(key) {
     return ({ '5K': 'Velocidad y ritmo alto.', '10K': 'Umbral y velocidad.', media: 'Resistencia y umbral.', maraton: 'Mucha base y tiradas largas.', trail_corto: 'Cuestas y ritmo en montaña.', trail_largo: 'Horas en montaña, subir y bajar.' })[key] || '';
@@ -199,7 +218,7 @@
     if (!athleteId()) return notify('Selecciona primero un deportista.', 'error');
     ui.open = true; ui.step = 0; ui.status = ''; ui.preview = null; ui.busy = false;
     ui.a = defaults(); render();
-    await loadProfile();
+    await Promise.all([loadProfile(), loadHistory()]);
     ui.a = { ...defaults(), race: ui.a.race };
     render();
     loadLibrary().then(() => { if (ui.open && STEPS[ui.step].key === 'summary') render(); }).catch(error => { ui.status = `Error: no se pudo cargar la biblioteca (${error.message}).`; render(); });
@@ -236,6 +255,11 @@
     // Textos, números y fechas se guardan al escribir (onInput). Repintar aquí se come el siguiente clic,
     // y en una fecha tecleada corta el año a medias (se quedaba en 0002).
     if (['text', 'number', 'date'].includes(el.type)) { onInput(event); return; }
+    if (el.dataset.rgpCheck) {
+      a[el.dataset.rgpCheck] = el.checked;
+      if (el.dataset.rgpCheck === 'ignore_history') a.history_minutes = el.checked ? null : ui.history?.avg_minutes || null;
+      render(); return;
+    }
     if (el.dataset.rgpField) { a[el.dataset.rgpField] = el.value; render(); return; }
     if (el.dataset.rgpDay !== undefined) {
       const day = a.days.find(item => item.day === Number(el.dataset.rgpDay));

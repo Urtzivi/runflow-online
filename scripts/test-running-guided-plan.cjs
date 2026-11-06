@@ -321,3 +321,107 @@ test('con mucho desnivel, la tirada larga de las fases fuertes va con cuestas y 
   assert.doesNotMatch(flatLong.title,/cuestas/);
   assert.ok(st.mesos.find(m=>m.key==='umbral').strength.families.includes('Trail Eccentric'));
 });
+
+// ---------- Historial del atleta ----------
+const today='2026-11-18';
+const wk=(date,status,rpe,extra={})=>({workout_date:date,title:'Rodaje',summary:'Rodaje fácil · RPE 2-4 de 10',execution_status:status,manual_log:rpe==null?null:{status:'completed',rpe,...extra}});
+const cal=list=>[{week_start:'2026-11-02',workouts:list}];
+const recov=(sleepLast,hrvLast)=>Array.from({length:35},(_,i)=>{const d=P.addDays(today,-35+i);const recent=d>=P.addDays(today,-7);return {metric_date:d,sleep_sec:(recent?sleepLast:7.5)*3600,hrv:recent?hrvLast:60,resting_hr:50,form:-5};});
+
+test('historial: puede dar más si lo hace todo con menos esfuerzo y recupera bien',()=>{
+  const w=[wk('2026-11-05','completed',2),wk('2026-11-07','completed',3),wk('2026-11-10','completed',3),wk('2026-11-12','completed',2),wk('2026-11-14','completed',3)];
+  const r=P.weekAdvice({week:{type:'load'},calendarWeeks:cal(w),recovery:recov(7.5,61),today});
+  assert.equal(r.decision,'subir'); assert.ok(r.factor>1);
+  // En descarga no se sube.
+  assert.equal(P.weekAdvice({week:{type:'deload'},calendarWeeks:cal(w),recovery:recov(7.5,61),today}).decision,'mantener');
+});
+
+test('historial: pide menos con dolor, con esfuerzo alto o con mala recuperación',()=>{
+  const ok=[wk('2026-11-05','completed',3),wk('2026-11-07','completed',3),wk('2026-11-10','completed',3)];
+  assert.equal(P.weekAdvice({week:{type:'load'},calendarWeeks:cal([...ok,wk('2026-11-12','completed',4,{pain:4,pain_area:'pubis'})]),recovery:[],today}).decision,'bajar');
+  const hard=[wk('2026-11-05','completed',6),wk('2026-11-07','completed',6),wk('2026-11-10','completed',5)];
+  assert.equal(P.weekAdvice({week:{type:'load'},calendarWeeks:cal(hard),recovery:[],today}).decision,'bajar');
+  const r=P.weekAdvice({week:{type:'load'},calendarWeeks:cal(ok),recovery:recov(6.2,48),today});
+  assert.equal(r.decision,'bajar'); assert.ok(r.reasons.some(x=>/Duerme menos/.test(x.text)));
+  // Sin datos, se mantiene.
+  assert.equal(P.weekAdvice({week:{type:'load'},calendarWeeks:[],recovery:[],today}).has_data,false);
+  // Las opcionales y lo de hoy en adelante no cuentan.
+  const opt=P.weekAdvice({week:{type:'load'},calendarWeeks:cal([{...wk('2026-11-10','planned',null),title:'Opcional · Paseo'},wk('2026-11-18','planned',null),...ok]),recovery:[],today});
+  assert.equal(opt.data.planned,3);
+});
+
+test('historial: la semana ajustada cambia minutos y deja una sola sesión dura al bajar',()=>{
+  const a={...answers,goal_mode:'marca',level:'experto',days:[{day:1,minutes:60},{day:2,minutes:60},{day:3,minutes:60},{day:4,minutes:60},{day:6,minutes:120}]};
+  const st=P.buildStructure(a);
+  const week=st.weeks.find(w=>w.phase==='umbral'&&w.type!=='deload');
+  const down=P.adjustWeek(week,{decision:'bajar',factor:0.8,lessQuality:true});
+  assert.ok(down.minutes<week.minutes);
+  const hardOf=list=>list.filter(s=>/calidad/i.test(s.summary)).length;
+  const normal=P.buildWeekSessions(a,st,week,library);
+  const lighter=P.buildWeekSessions(a,{...st,weeks:st.weeks.map(w=>w===week?down:w)},down,library);
+  assert.ok(hardOf(normal)>=2); assert.equal(hardOf(lighter),1);
+  assert.equal(P.readAdjust(`hola\n${P.adjustNote({decision:'subir',factor:1.08})}`).pct,8);
+  assert.equal(P.adjustNote({decision:'mantener',factor:1}),'');
+});
+
+test('historial: el plan empieza cerca de lo que venía corriendo y sube como mucho un 10 %',()=>{
+  const acts=[];
+  for(let i=0;i<6;i++){const mon=P.addDays('2026-10-26',-7*(6-i));acts.push({activity_date:mon,sport:'Run',duration_sec:40*60},{activity_date:P.addDays(mon,3),sport:'Run',duration_sec:40*60},{activity_date:P.addDays(mon,2),sport:'Ride',duration_sec:90*60});}
+  const h=P.historyFromActivities(acts,'2026-10-26');
+  assert.equal(h.avg_minutes,80); assert.equal(h.runs_per_week,2);
+  assert.equal(P.historyFromActivities(acts.slice(0,4),'2026-10-26').avg_minutes,null,'con menos de 3 semanas no se usa');
+  const plain=P.buildStructure(answers);
+  const st=P.buildStructure({...answers,history_minutes:80});
+  assert.ok(st.weeks[0].minutes<=90&&st.weeks[0].minutes<plain.weeks[0].minutes);
+  for(let i=1;i<st.weeks.length;i++){const prev=Math.max(...st.weeks.slice(0,i).map(w=>w.minutes));assert.ok(st.weeks[i].minutes<=Math.round(prev*1.1/5)*5+5,`semana ${i+1}: ${st.weeks[i].minutes} tras ${prev}`);}
+  assert.ok(st.warnings.some(w=>/poco a poco/.test(w)));
+  assert.equal(P.readAnswers(P.macroPayload({...answers,history_minutes:80},st,'g').notes).history_minutes,80);
+});
+
+// ---------- Reglas expertas ----------
+test('regla 3: el volumen no sube más de un 10 % sobre la semana más alta anterior',()=>{
+  for(const level of ['nuevo','regular','experto']){
+    const st=P.buildStructure({...answers,level});
+    let peak=0;
+    st.weeks.forEach(w=>{ if(['deload','recovery','taper','competition'].includes(w.type)) return; if(peak) assert.ok(w.minutes<=Math.round(peak*1.1/5)*5,`${level} semana ${w.index}: ${w.minutes} tras ${peak}`); peak=Math.max(peak,w.minutes); });
+  }
+});
+
+test('reglas 9, 10 y 11: 80/20, tirada larga ≤35 % y un día de descanso',()=>{
+  const a={...answers,level:'regular',goal_mode:'marca',days:[0,1,2,3,4,5,6].map(day=>({day,minutes:day===6?120:50,types:['run','strength']}))};
+  const st=P.buildStructure(a);
+  for(const week of st.weeks){
+    const s=P.buildWeekSessions(a,st,week,library);
+    const days=new Set(s.map(x=>x.workout_date));
+    assert.ok(days.size<=6,`semana ${week.index}: un día de descanso`);
+    const runs=s.filter(x=>!x.is_strength&&!/^Opcional/.test(x.title));
+    const total=runs.reduce((t,x)=>t+x.planned_duration_min,0);
+    const long=runs.find(x=>/Tirada larga/.test(x.summary));
+    if(long) assert.ok(long.planned_duration_min<=Math.max(40,Math.round(week.minutes*0.35)),`semana ${week.index}: tirada ${long.planned_duration_min} de ${week.minutes}`);
+    const quality=runs.filter(x=>/Sesión de calidad/.test(x.summary));
+    if(quality.length>1&&week.type!=='competition'){
+      const lib=Object.fromEntries(library.map(r=>[r.ID||r.i,P.libRow(r)]));
+      const hard=quality.reduce((t,x)=>{const r=lib[x.runflow_library_id];return t+Math.max(0,r.minutes-r.warmup-r.cooldown)},0);
+      assert.ok(hard<=total*0.2+0.5,`semana ${week.index}: duro ${hard} de ${total}`);
+    }
+  }
+  // Con experiencia puede entrenar los 7 días.
+  const e={...a,level:'experto'}; const se=P.buildStructure(e);
+  assert.equal(new Set(P.buildWeekSessions(e,se,se.weeks[3],library).map(x=>x.workout_date)).size,7);
+});
+
+test('regla 13: los 2 días después de una carrera de preparación no llevan series',()=>{
+  const a={...answers,level:'experto',goal_mode:'marca',days:[{day:0,minutes:60},{day:1,minutes:60},{day:2,minutes:60},{day:3,minutes:60},{day:5,minutes:60},{day:6,minutes:120}],other_races:[{name:'10K',date:'2026-12-13'}]};
+  const st=P.buildStructure(a);
+  const week=st.weeks.find(w=>w.start==='2026-12-14');
+  const s=P.buildWeekSessions(a,st,week,library);
+  s.filter(x=>/Sesión de calidad/.test(x.summary)).forEach(x=>assert.ok(x.workout_date>'2026-12-15',`${x.title} el ${x.workout_date}`));
+});
+
+test('regla 17: con la carga de la semana muy por encima de su media, propone bajar',()=>{
+  const act=(date,load)=>({activity_date:date,load});
+  const weeks=[{week_start:'2026-10-19',workouts:[],unplanned_activities:[act('2026-10-22',100),act('2026-10-25',100),act('2026-10-29',100),act('2026-11-02',100),act('2026-11-05',100),act('2026-11-09',400),act('2026-11-12',400),act('2026-11-15',300)]}];
+  const r=P.weekAdvice({week:{type:'load'},calendarWeeks:weeks,recovery:[],today});
+  assert.ok(r.data.acwr>1.5); assert.equal(r.decision,'bajar');
+  assert.ok(r.reasons.some(x=>/mucho más alta/.test(x.text)));
+});
