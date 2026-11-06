@@ -842,9 +842,16 @@ function workoutAvailabilityError(availability, workout) {
     return `No puedes colocar “${title}” el ${dayName}: ese día admite ${types.map(type => labels[type] || type).join(' o ')}.`;
   }
   const duration = numberOrNull(workout.planned_duration_min, 0, 2000);
-  const maximum = numberOrNull(day.max_minutes, 0, 2000);
+  // Días con fuerza y minutos de fuerza en la ficha: la fuerza tiene sus minutos y la otra actividad los suyos.
+  const strengthDay = numberOrNull(day.strength_minutes, 1, 2000) !== null;
+  const maximum = numberOrNull(strengthDay ? (kind === 'strength' ? day.strength_minutes : (day.extra_minutes ?? day.max_minutes)) : day.max_minutes, 0, 2000);
   if (duration !== null && maximum !== null && duration > maximum) {
-    return `“${title}” dura ${duration} min, pero el ${dayName} solo dispone de ${maximum} min.`;
+    const what = strengthDay ? (kind === 'strength' ? ' de fuerza' : ' para la otra actividad') : '';
+    return `“${title}” dura ${duration} min, pero el ${dayName} solo dispone de ${maximum} min${what}.`;
+  }
+  if (strengthDay && kind !== 'strength' && day.double_session === true && day.extra_intensity !== 'libre'
+    && /series|intervalos|umbral|threshold|fartlek|tempo|vo2|cuestas|ritmo (de )?carrera|tirada larga|long run|rpe\s*(7|8|9|10)/i.test(`${title} ${workout.summary || ''}`)) {
+    return `“${title}” es una sesión intensa y el ${dayName}, además de la fuerza, solo admite algo suave (descarga).`;
   }
   return null;
 }

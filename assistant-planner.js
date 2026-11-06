@@ -40,6 +40,7 @@ const RULES = [
   'Ninguna semana pide más minutos de los que el atleta tiene libres para correr.',
   'Si hay historial, la primera semana de carga sale como mucho un 10 % por encima de lo que venía corriendo.',
   'Semana: sesiones dentro de la semana, solo en días libres, sin pasar los minutos de cada día, nunca dos días duros seguidos (tirada larga o calidad), y con semáforo rojo ninguna sesión dura.',
+  'Días con fuerza en la ficha: strength_minutes son los minutos de fuerza; guided_gym = fuerza guiada en el gimnasio, cita fija. Solo si double_session hay otra actividad ese día, como mucho minutes; con extra_easy_only, solo suave (descarga): nada de calidad ni tirada larga.',
   'La disponibilidad sale de la ficha del atleta: no la cambies; si no cuadra, díselo al entrenador.',
 ];
 const WEEK_TYPE_LIST = Object.entries(P.WEEK_TYPES).map(([key, info]) => ({ key, label: info.label, why: info.why }));
@@ -147,7 +148,10 @@ async function planningContext(db, athleteId, today) {
   const advice = P.weekAdvice({ week: current, calendarWeeks: recent.calendar, recovery: recent.recovery, today });
   return {
     today,
-    availability: days ? days.map(d => ({ day: d.day, day_name: P.DAYS[d.day], minutes: d.minutes, types: P.dayTypes(d) })) : null,
+    availability: days ? days.map(d => ({
+      day: d.day, day_name: P.DAYS[d.day], minutes: d.minutes, types: P.dayTypes(d), text: P.dayText(d),
+      ...(d.strength_minutes ? { strength_minutes: d.strength_minutes, guided_gym: Boolean(d.gym), double_session: Boolean(d.double), extra_easy_only: Boolean(d.extra_easy) } : {}),
+    })) : null,
     availability_note: days ? 'day: 0 = lunes … 6 = domingo. Es la disponibilidad de la ficha; el plan la usa tal cual.' : 'El atleta no tiene la disponibilidad rellenada: no se puede planificar hasta que el entrenador la complete.',
     history,
     seasons, goals,
