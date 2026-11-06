@@ -16,7 +16,7 @@ const id=n=>`00000000-0000-4000-8000-00000000000${n}`;
 const availability={configured:true,days:[1,2,3,4,5,6,7].map(d=>({day:d,can_train:[2,4,7].includes(d),activity_types:[2,4,7].includes(d)?['run']:['unavailable'],max_minutes:{2:60,4:60,7:120}[d]||null}))};
 
 const token=(()=>{const payload=Buffer.from(JSON.stringify({id:CRED,coach_user_id:COACH,scopes:['read','draft'],exp:Math.floor(Date.now()/1000)+3600})).toString('base64url');return `rfa1.${payload}.${crypto.createHmac('sha256',process.env.APP_ENCRYPTION_KEY).update(payload).digest('base64url')}`})();
-const db={scopes:['read','draft'],weekStatus:'published',posted:[]};
+const db={scopes:['read','draft'],applyDisabled:true,weekStatus:'published',posted:[]};
 const workouts=()=>[
   {id:id(1),workout_date:day(1),sport:'Run',title:'Rodaje',summary:'40 min',planned_duration_min:40,planned_load:30,blocks:[],updated_at:'a'},
   {id:id(2),workout_date:day(6),sport:'Run',title:'Tirada larga',summary:'90 min',planned_duration_min:90,planned_load:80,blocks:[],updated_at:'b'},
@@ -26,7 +26,7 @@ global.fetch=async(url,options={})=>{
   const ok=data=>({ok:true,status:200,text:async()=>JSON.stringify(data)});
   if(method==='POST'){const body=JSON.parse(options.body);db.posted.push(body);return ok([body])}
   if(method==='PATCH')return ok([]);
-  if(table==='workout_templates'&&q.includes(CRED))return ok([{id:CRED,template_data:{status:'active',scopes:db.scopes,token_hash:crypto.createHash('sha256').update(token).digest('hex')}}]);
+  if(table==='workout_templates'&&q.includes(CRED))return ok([{id:CRED,template_data:{status:'active',scopes:db.scopes,apply_disabled:db.applyDisabled,token_hash:crypto.createHash('sha256').update(token).digest('hex')}}]);
   if(table==='workout_templates')return ok([]);
   if(table==='coach_athletes')return ok([{athlete_id:ATH}]);
   if(table==='training_weeks')return ok([{id:'w-1',week_start:WEEK,title:'Semana',week_type:'Carga',coach_comment:'',status:db.weekStatus}]);
@@ -49,15 +49,15 @@ async function call(name,args){
 }
 const change={athlete_id:ATH,week_start:WEEK,reason:'Pubis cargado',coach_confirmation:'sí, cámbialo',changes:[{action:'modify',workout_id:id(2),workout:{title:'Rodaje largo suave',planned_duration_min:60}}]};
 
-test('sin el permiso de modo directo no aplica nada',async()=>{
+test('si el entrenador apaga el modo directo no aplica nada',async()=>{
   const r=await call('apply_week_changes',change);
   assert.equal(r.error.status,403);
   assert.match(r.error.message,/modo directo/i);
   assert.equal(writes.length,0);
 });
 
-test('con el permiso, una semana publicada se publica (llega al atleta) y queda en el historial',async()=>{
-  db.scopes=['read','draft','apply'];db.posted=[];
+test('por defecto (modo directo), una semana publicada se publica (llega al atleta) y queda en el historial',async()=>{
+  db.applyDisabled=undefined;db.posted=[];
   const r=await call('apply_week_changes',change);
   assert.equal(r.data.result.isError,false,JSON.stringify(r.data));
   const out=r.data.result.structuredContent;
@@ -81,12 +81,12 @@ test('una semana en borrador queda en borrador salvo publish=true',async()=>{
   db.weekStatus='published';
 });
 
-test('el Verificador y la confirmación siguen mandando',async()=>{
+test('el Verificador sigue mandando y la frase del entrenador es opcional',async()=>{
   const before=writes.length;
   const blocked=await call('apply_week_changes',{...change,changes:[{action:'move',workout_id:id(1),workout_date:day(2)}]});
   assert.equal(blocked.data.result.isError,true);
   assert.match(blocked.data.result.content[0].text,/no puede entrenar/);
-  const noOk=await call('apply_week_changes',{...change,coach_confirmation:''});
-  assert.equal(noOk.error.status,400);
   assert.equal(writes.length,before);
+  const sinFrase=await call('apply_week_changes',{...change,coach_confirmation:''});
+  assert.equal(sinFrase.data.result.structuredContent.applied,true);
 });

@@ -59,7 +59,7 @@ Si algo falla, la herramienta no guarda nada y devuelve la lista de fallos para 
 | `create_week_proposal` | Guarda la semana como propuesta (si pasa el Verificador). Acepta `semaforo`. |
 | `get_week_sessions` | La semana tal como está en el calendario: cada sesión con su `workout_id`, si está hecha y si se puede tocar. |
 | `propose_week_changes` | Propone cambios en esa semana (`changes` con add/modify/move/remove, `clear_week`, `week`). El Verificador bloquea solo los fallos **nuevos** que traiga el cambio; los que la semana ya tenía se avisan. Sustituye a otra propuesta de cambios pendiente de la misma semana. |
-| `apply_week_changes` | **Modo directo.** Solo funciona si el entrenador activa “Puede aplicar y publicar cambios” en la credencial (Conexiones). Aplica en el momento lo que el entrenador acaba de confirmar (`coach_confirmation`); si la semana está publicada, llega al atleta y a Intervals. Mismo Verificador y mismas protecciones. Queda en “Últimos cambios aplicados por Claude”. |
+| `apply_week_changes` | **Modo directo** (activado por defecto; se apaga con “Puede aplicar y publicar cambios” en la credencial, Conexiones). Aplica en el momento los cambios que el entrenador ha pedido o decidido en la conversación (`coach_confirmation` opcional); si la semana está publicada, llega al atleta y a Intervals. Mismo Verificador y mismas protecciones. Queda en “Últimos cambios aplicados por Claude”. |
 | `get_daily_report`, `create_feedback_draft`, `list_pending_drafts` | Las del Analista. |
 
 ## Cómo conectarlo en Claude
@@ -96,7 +96,7 @@ CAMBIOS SOBRE LO QUE YA ESTÁ (cuando el entrenador y tú decidís en la convers
 1. get_week_sessions de esa semana para ver qué hay y los workout_id.
 2. propose_week_changes con solo los cambios decididos, un reason corto y, si aplica, el semáforo. Para vaciar la semana, clear_week. No reescribas sesiones que no habéis hablado.
 3. Si el Verificador lo bloquea, explica el fallo y propón una alternativa. Si pasa, dile al entrenador que lo apruebe en Conexiones › Propuestas pendientes (y si la semana está publicada, que al aprobarlo le llega al atleta).
-4. Modo directo: si el entrenador lo tiene activado, enséñale primero los cambios en el chat y, cuando diga que sí, usa apply_week_changes con su frase en coach_confirmation. Sin ese sí, nunca: usa propose_week_changes.
+4. Modo directo (por defecto): lo que el entrenador pide o decidís juntos en el chat, aplícalo con apply_week_changes y dile qué ha cambiado. Lo que se te ocurra a ti sin que lo haya pedido va como propose_week_changes. Si el modo directo está apagado, todo va como propuesta.
 
 REGLAS DURAS (el Verificador las comprueba y bloquea si no se cumplen):
 - Fecha de carrera fija; puesta a punto al final y por debajo de la semana más alta.
