@@ -849,10 +849,6 @@ function workoutAvailabilityError(availability, workout) {
     const what = strengthDay ? (kind === 'strength' ? ' de fuerza' : ' para la otra actividad') : '';
     return `“${title}” dura ${duration} min, pero el ${dayName} solo dispone de ${maximum} min${what}.`;
   }
-  if (strengthDay && kind !== 'strength' && day.double_session === true && day.extra_intensity !== 'libre'
-    && /series|intervalos|umbral|threshold|fartlek|tempo|vo2|cuestas|ritmo (de )?carrera|tirada larga|long run|rpe\s*(7|8|9|10)/i.test(`${title} ${workout.summary || ''}`)) {
-    return `“${title}” es una sesión intensa y el ${dayName}, además de la fuerza, solo admite algo suave (descarga).`;
-  }
   return null;
 }
 

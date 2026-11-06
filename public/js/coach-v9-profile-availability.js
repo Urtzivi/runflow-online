@@ -16,8 +16,9 @@
     flexible: 'Flexible',
   };
   // Opciones que se pueden marcar a la vez en cada día.
-  const CHOICES = ['run', 'trail', 'bike', 'strength', 'gym', 'walk'];
-  const CHIP = { run: 'Correr', trail: 'Trail', bike: 'Bici', strength: 'Fuerza RunFlow', gym: 'Fuerza en gimnasio (guiada)', walk: 'Paseo' };
+  // Una sola opción de fuerza: al marcarla se elige si es guiada en el gimnasio ('gym') o libre ('strength', la planifica RunFlow).
+  const CHOICES = ['run', 'trail', 'bike', 'strength', 'walk'];
+  const CHIP = { run: 'Correr', trail: 'Trail', bike: 'Bici', strength: 'Fuerza', walk: 'Paseo' };
   let current = null;
   let currentAthleteId = '';
 
@@ -70,7 +71,7 @@
 
   function selectedChoices(modes) {
     if (modes[0] === 'flexible') return ['run', 'bike', 'strength'];
-    return modes.filter(mode => CHOICES.includes(mode));
+    return modes.filter(mode => CHOICES.includes(mode) || mode === 'gym');
   }
 
   const STRENGTH_TYPES = ['strength', 'gym'];
@@ -86,45 +87,48 @@
     // En días con fuerza, el tiempo máximo es el de la otra actividad; la fuerza lleva sus propios minutos.
     const otherMinutes = strength ? (stored.strength_minutes ? stored.extra_minutes ?? '' : others.length ? stored.max_minutes ?? '' : '') : stored.max_minutes ?? '';
     const strengthMinutes = stored.strength_minutes ?? (strength ? stored.max_minutes ?? '' : '');
-    const extra = { strengthMinutes, double: stored.double_session === true, intensity: stored.extra_intensity === 'libre' ? 'libre' : 'suave' };
+    const extra = { strengthMinutes, double: stored.double_session === true };
+    const gym = selected.includes('gym');
     return `<div class="v9-h-availability-row" data-v9h-day="${day[0]}" data-v9h-defined="${modes[0] === 'undefined' ? 'no' : 'yes'}">
       <b>${day[1]}</b>
       <div class="v9h-mode v9h-chips" role="group" aria-label="Qué puede hacer el ${day[1].toLowerCase()}">
-        ${CHOICES.map(value => `<label class="v9h-chip"><input type="checkbox" data-v9h-type value="${value}" ${selected.includes(value) ? 'checked' : ''}><span>${CHIP[value]}</span></label>`).join('')}
+        ${CHOICES.map(value => `<label class="v9h-chip"><input type="checkbox" data-v9h-type value="${value}" ${selected.includes(value) || (value === 'strength' && gym) ? 'checked' : ''}><span>${CHIP[value]}</span></label>`).join('')}
       </div>
       <label><span data-v9h-minutes-label>${strength ? 'Otra actividad' : 'Tiempo máximo'}</span>
         <span class="v9h-minutes"><input type="number" min="5" max="1440" step="5" data-v9h-minutes value="${otherMinutes}" ${selected.length && (!strength || others.length) ? '' : 'disabled'}><i>min</i></span>
       </label>
       <span class="v9h-rule">${ruleText(state, otherMinutes, extra)}</span>
       <div class="v9h-strength ${strength ? '' : 'hidden'}" data-v9h-strength>
+        <label>Tipo de fuerza
+          <select data-v9h-strength-kind>
+            <option value="gym" ${gym ? 'selected' : ''}>Gimnasio guiado</option>
+            <option value="strength" ${gym ? '' : 'selected'}>Libre (RunFlow)</option>
+          </select>
+        </label>
         <label>Minutos de fuerza
           <span class="v9h-minutes"><input type="number" min="10" max="240" step="5" data-v9h-strength-minutes value="${strengthMinutes}"><i>min</i></span>
         </label>
-        <label class="v9h-double"><input type="checkbox" data-v9h-double ${extra.double ? 'checked' : ''} ${others.length ? '' : 'disabled'}><span>Sesión doble<small>fuerza + otra actividad el mismo día</small></span></label>
-        <label>Intensidad de la otra
-          <select data-v9h-intensity ${extra.double && others.length ? '' : 'disabled'}>
-            <option value="suave" ${extra.intensity === 'suave' ? 'selected' : ''}>Solo suave</option>
-            <option value="libre" ${extra.intensity === 'libre' ? 'selected' : ''}>Puede ser intensa</option>
-          </select>
-        </label>
+        <label class="v9h-double"><input type="checkbox" data-v9h-double ${extra.double ? 'checked' : ''} ${others.length ? '' : 'disabled'}><span>Puede doblar<small>RunFlow propondrá una salida regenerativa opcional solo cuando ayude</small></span></label>
       </div>
     </div>`;
   }
 
-  const rowChoices = row => qa('[data-v9h-type]:checked', row).map(input => input.value);
+  // El chip Fuerza se guarda como 'gym' (guiada en gimnasio) o 'strength' (libre, RunFlow) según el tipo elegido.
+  const rowChoices = row => qa('[data-v9h-type]:checked', row).map(input => (
+    input.value === 'strength' && q('[data-v9h-strength-kind]', row)?.value === 'gym' ? 'gym' : input.value
+  ));
   const rowExtra = row => ({
     strengthMinutes: q('[data-v9h-strength-minutes]', row)?.value || '',
     double: Boolean(q('[data-v9h-double]', row)?.checked),
-    intensity: q('[data-v9h-intensity]', row)?.value === 'libre' ? 'libre' : 'suave',
   });
 
   function strengthRuleText(modes, minutes, extra) {
     const gym = modes.includes('gym');
     const others = otherTypes(modes).map(item => MODES[item].toLowerCase());
-    const strength = `${gym ? 'Fuerza guiada en gimnasio' : 'Fuerza RunFlow'}${extra.strengthMinutes ? ` ${extra.strengthMinutes} min` : ''}`;
+    const strength = `${gym ? 'Fuerza guiada en gimnasio' : 'Fuerza libre (RunFlow)'}${extra.strengthMinutes ? ` ${extra.strengthMinutes} min` : ''}`;
     if (!others.length) return `${strength}. Ese día no hace nada más.`;
-    if (extra.double) return `Sesión doble: ${strength} + ${others.join(' o ')}${minutes ? ` ${minutes} min` : ''}${extra.intensity === 'suave' ? ', solo suave (descarga)' : ''}.`;
-    if (gym) return 'Con fuerza guiada en gimnasio no hará otra cosa: marca “Sesión doble” si además puede ' + others.join(' o ') + ', o desmarca el resto.';
+    if (extra.double) return `${strength}. Puede doblar: si ayuda a la preparación, RunFlow propone una salida regenerativa opcional (${others.join(' o ')}${minutes ? `, hasta ${minutes} min` : ''}).`;
+    if (gym) return 'Con fuerza guiada en gimnasio no hará otra cosa: marca “Puede doblar” si además puede ' + others.join(' o ') + ', o desmarca el resto.';
     return `${strength} o ${others.join(' o ')}${minutes ? ` ${minutes} min` : ''}: una cosa u otra.`;
   }
 
@@ -158,7 +162,8 @@
         strength_minutes: strengthMinutes,
         extra_minutes: otherMinutes,
         double_session: double,
-        extra_intensity: double ? extra.intensity : null,
+        // Doblar es siempre una salida regenerativa (suave) y opcional.
+        extra_intensity: double ? 'suave' : null,
       };
     }
     const exclusive = !clean.length || clean[0] === 'unavailable' || clean[0] === 'undefined';
@@ -200,9 +205,6 @@
     return 'run';
   }
 
-  // Lo mismo que el Verificador entiende por sesión dura.
-  const HARD = /series|intervalos|umbral|threshold|fartlek|tempo|vo2|cuestas|ritmo (de )?carrera|tirada larga|long run|rpe\s*(7|8|9|10)/i;
-
   function validateWithProfile(workout, data = current) {
     const availability = data?.availability || {};
     const days = Array.isArray(availability.days) ? availability.days : [];
@@ -234,9 +236,6 @@
     if (Number.isFinite(duration) && Number.isFinite(maximum) && maximum > 0 && duration > maximum) {
       const what = strengthDay ? (kind === 'strength' ? ' de fuerza' : ' para la otra actividad') : '';
       return { ok: false, error: `“${title}” dura ${duration} min, pero el ${dayName} solo dispone de ${maximum} min${what}.` };
-    }
-    if (strengthDay && kind !== 'strength' && day.double_session && day.extra_intensity !== 'libre' && HARD.test(`${title} ${workout?.summary || ''}`)) {
-      return { ok: false, error: `“${title}” es una sesión intensa y el ${dayName}, además de la fuerza, solo admite algo suave (descarga).` };
     }
     return { ok: true };
   }
@@ -295,12 +294,10 @@
     qa('[data-v9h-type]', card).forEach(input => input.addEventListener('change', () => {
       const row = input.closest('[data-v9h-day]');
       const minutes = q('[data-v9h-minutes]', row);
-      // Fuerza RunFlow y fuerza guiada en gimnasio son dos formas de lo mismo: solo una por día.
-      if (input.checked && ['strength', 'gym'].includes(input.value)) qa('[data-v9h-type]', row).forEach(other => { if (other !== input && ['strength', 'gym'].includes(other.value)) other.checked = false; });
       row.dataset.v9hDefined = 'yes';
       refreshRow(row);
     }));
-    qa('[data-v9h-minutes],[data-v9h-strength-minutes],[data-v9h-double],[data-v9h-intensity]', card).forEach(input => {
+    qa('[data-v9h-minutes],[data-v9h-strength-minutes],[data-v9h-double],[data-v9h-strength-kind]', card).forEach(input => {
       input.addEventListener(input.type === 'number' ? 'input' : 'change', () => refreshRow(input.closest('[data-v9h-day]')));
     });
     q('#v9hSaveAvailability').onclick = save;
@@ -319,7 +316,6 @@
     const double = q('[data-v9h-double]', row);
     double.disabled = !others.length;
     if (!others.length) double.checked = false;
-    q('[data-v9h-intensity]', row).disabled = !double.checked;
     q('.v9h-rule', row).textContent = ruleText(choices.length ? choices : ['unavailable'], minutes.value, rowExtra(row));
   }
 
@@ -339,7 +335,7 @@
         return notify(`Indica el tiempo disponible del ${dayName}${strength ? ' para la otra actividad' : ''}.`, 'error');
       }
       if (choices.includes('gym') && others.length && !extra.double) {
-        return notify(`El ${dayName} tiene fuerza guiada en gimnasio: marca “Sesión doble” si además puede ${others.map(item => MODES[item].toLowerCase()).join(' o ')}, o desmarca el resto.`, 'error');
+        return notify(`El ${dayName} tiene fuerza guiada en gimnasio: marca “Puede doblar” si además puede ${others.map(item => MODES[item].toLowerCase()).join(' o ')}, o desmarca el resto.`, 'error');
       }
     }
     const days = rows.map(row => {

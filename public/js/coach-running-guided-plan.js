@@ -285,6 +285,18 @@
 
   // ---------- Crear ----------
   // Asistente → ficha. Mismo formato que la disponibilidad de la ficha (activity_types + banderas antiguas).
+  // Fuerza con minutos propios y si puede doblar (vienen de la ficha): se conservan al guardar.
+  function strengthFields(day, types) {
+    const extraTypes = day.double ? day.extra.types : types.filter(type => !['strength', 'gym'].includes(type));
+    const all = [...new Set([...types, ...extraTypes])];
+    const extraMinutes = day.double ? day.extra.minutes : extraTypes.length ? day.minutes : null;
+    return {
+      activity_types: all, activity_type: all.length > 1 ? 'flexible' : all[0],
+      run: all.some(type => ['run', 'trail'].includes(type)), bike: all.includes('bike'), walk: all.includes('walk'), mountain: all.includes('trail'),
+      max_minutes: Math.max(day.strength_minutes, extraMinutes || 0), strength_minutes: day.strength_minutes, extra_minutes: extraMinutes,
+      double_session: Boolean(day.double), extra_intensity: day.double ? 'suave' : null,
+    };
+  }
   function availabilityPayload(a) {
     const days = a.days.map(day => {
       const types = P.dayTypes(day).map(type => type === 'strength' && (day.gym || a.equipment === 'gimnasio_guiado') ? 'gym' : type);
@@ -294,13 +306,7 @@
         run: types.some(type => ['run', 'trail'].includes(type)), bike: types.includes('bike'), strength: types.some(type => ['strength', 'gym'].includes(type)),
         gym: types.includes('gym'), mountain: types.includes('trail'), walk: types.includes('walk'), max_minutes: day.minutes,
         // Fuerza con minutos propios y sesión doble (vienen de la ficha): se conservan.
-        ...(day.strength_minutes && types.some(type => ['strength', 'gym'].includes(type)) ? {
-          max_minutes: Math.max(day.minutes, day.strength_minutes),
-          strength_minutes: day.strength_minutes,
-          extra_minutes: types.some(type => !['strength', 'gym'].includes(type)) ? day.minutes : null,
-          double_session: Boolean(day.double),
-          extra_intensity: day.double ? (day.extra_easy ? 'suave' : 'libre') : null,
-        } : {}),
+        ...(day.strength_minutes && types.some(type => ['strength', 'gym'].includes(type)) ? strengthFields(day, types) : {}),
       };
     });
     const external = days.filter(day => day.gym).map(day => day.day);

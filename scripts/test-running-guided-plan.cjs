@@ -426,52 +426,55 @@ test('regla 17: con la carga de la semana muy por encima de su media, propone ba
   assert.ok(r.reasons.some(x=>/mucho más alta/.test(x.text)));
 });
 
-// Ficha con fuerza guiada en el gimnasio y sesión doble (lunes y miércoles gimnasio 60' + como mucho 30' suaves).
+// Ficha con fuerza: gimnasio guiado o libre, sus minutos y si puede doblar (salida regenerativa opcional).
 const gymProfile=()=>({availability:{configured:true,days:[
-  {day:1,activity_types:['gym','run'],max_minutes:60,strength_minutes:60,double_session:true,extra_minutes:30,extra_intensity:'suave'},
+  {day:1,activity_types:['gym','run'],max_minutes:60,strength_minutes:60,extra_minutes:30,double_session:true,extra_intensity:'suave'},
   {day:2,activity_types:['run'],max_minutes:60},
-  {day:3,activity_types:['gym','run'],max_minutes:60,strength_minutes:60,double_session:true,extra_minutes:30,extra_intensity:'suave'},
-  {day:4,activity_types:['run'],max_minutes:60},
+  {day:3,activity_types:['gym','run'],max_minutes:60,strength_minutes:60,extra_minutes:30,double_session:true,extra_intensity:'suave'},
+  {day:4,activity_types:['run','strength'],max_minutes:60,strength_minutes:40,extra_minutes:60,double_session:false},
   {day:5,activity_types:['gym'],max_minutes:45,strength_minutes:45},
   {day:6,activity_types:['run'],max_minutes:120},
   {day:7,activity_types:['unavailable'],can_train:false},
 ]}});
 
-test('la ficha lee fuerza guiada, sus minutos y la sesión doble',()=>{
+test('la ficha lee el tipo de fuerza, sus minutos y si puede doblar',()=>{
   const days=P.daysFromProfile(gymProfile());
-  assert.deepEqual(days[0],{day:0,minutes:30,types:['strength','run'],strength_minutes:60,gym:true,double:true,extra_easy:true});
+  assert.deepEqual(days[0],{day:0,minutes:60,types:['strength'],strength_minutes:60,gym:true,double:true,extra:{types:['run'],minutes:30}});
+  assert.equal(P.runsOn(days[0]),false,'el día de gimnasio no lleva carrera obligatoria');
+  assert.deepEqual(days[3],{day:3,minutes:60,types:['run','strength'],strength_minutes:40,gym:false});
   assert.deepEqual(days[4],{day:4,minutes:45,types:['strength'],strength_minutes:45,gym:true});
-  assert.equal(P.runsOn(days[4]),false);
-  assert.match(P.dayText(days[0]),/Fuerza guiada en gimnasio 60 min \+ correr 30 min suave \(sesión doble\)/);
-  // Gimnasio y correr sin sesión doble: el gimnasio manda, ese día no corre.
-  const single=P.daysFromProfile({availability:{configured:true,days:[{day:1,activity_types:['gym','run'],max_minutes:60,strength_minutes:60,double_session:false}]}});
-  assert.deepEqual(single[0].types,['strength']);
-  // Fichas antiguas (sin minutos de fuerza) se leen como antes.
+  assert.match(P.dayText(days[0]),/Fuerza guiada en gimnasio 60 min; puede doblar con una salida regenerativa opcional \(correr, hasta 30 min\)/);
+  assert.match(P.dayText(days[3]),/Fuerza libre 40 min o correr 60 min/);
   const old=P.daysFromProfile({availability:{configured:true,days:[{day:1,activity_types:['gym','run'],max_minutes:60}]}});
-  assert.deepEqual(old[0],{day:0,minutes:60,types:['strength','run']});
+  assert.deepEqual(old[0],{day:0,minutes:60,types:['strength','run']},'las fichas antiguas se leen como antes');
 });
 
-test('días de gimnasio fijos y, en la sesión doble, solo un trote suave corto',()=>{
-  const a={...answers,strength:1,days:P.daysFromProfile(gymProfile())};
-  const st=P.buildStructure(a);
-  for(const week of st.weeks){
-    const sessions=P.buildWeekSessions(a,st,week,library);
-    const on=d=>sessions.filter(s=>s.workout_date===P.addDays(week.start,d));
-    const v=P.verifyWeek({weekStart:week.start,workouts:sessions,days:a.days});
-    assert.ok(v.ok,`${week.start}: ${JSON.stringify(v.failures)}`);
-    if(week.type==='competition') continue;
-    for(const d of [0,2,4]){
-      const gym=on(d).filter(s=>s.is_strength);
-      assert.equal(gym.length,1,`${week.start} día ${d}: fuerza guiada fija`);
-      assert.match(gym[0].title,/Fuerza guiada en el gimnasio/);
-      assert.equal(gym[0].planned_duration_min,d===4?45:60);
+test('doblar es una posibilidad: salida regenerativa opcional, pocas y solo cuando ayuda',()=>{
+  for(const level of ['nuevo','regular','experto']){
+    const a={...answers,level,strength:2,days:P.daysFromProfile(gymProfile())};
+    const st=P.buildStructure(a);
+    let regenWeeks=0;
+    for(const week of st.weeks){
+      const sessions=P.buildWeekSessions(a,st,week,library);
+      const on=d=>sessions.filter(s=>s.workout_date===P.addDays(week.start,d));
+      const v=P.verifyWeek({weekStart:week.start,workouts:sessions,days:a.days});
+      assert.ok(v.ok,`${level} ${week.start}: ${JSON.stringify(v.failures)}`);
+      const regen=sessions.filter(s=>s.regenerative);
+      regen.forEach(s=>{ assert.ok(s.optional); assert.ok(s.planned_duration_min<=30); assert.match(s.title,/^Opcional · Trote regenerativo/); });
+      assert.ok(regen.length<= {nuevo:0,regular:1,experto:2}[level],`${level} ${week.start}: ${regen.length} salidas regenerativas`);
+      if(['recovery','deload','taper','competition'].includes(week.type)) assert.equal(regen.length,0,`${week.type}: sin doblar`);
+      if(regen.length) regenWeeks++;
+      if(week.type==='competition') continue;
+      for(const d of [0,2,4]){
+        const gym=on(d).filter(s=>s.is_strength);
+        assert.equal(gym.length,1,`${week.start} día ${d}: fuerza guiada fija`);
+        assert.equal(gym[0].planned_duration_min,d===4?45:60);
+        assert.equal(on(d).filter(s=>!s.is_strength&&!s.optional).length,0,'en el gimnasio nada más obligatorio');
+      }
+      // Jueves fuerza libre sin doblar: si hay fuerza, no hay carrera ese día.
+      if(on(3).some(s=>s.is_strength)) assert.equal(on(3).filter(s=>!s.is_strength).length,0,'jueves: una cosa u otra');
     }
-    for(const d of [0,2]) on(d).filter(s=>!s.is_strength).forEach(s=>{
-      assert.ok(s.planned_duration_min<=30,`${week.start} día ${d}: ${s.title} ${s.planned_duration_min}'`);
-      assert.equal(P.isHardWorkout(s),false,`${week.start} día ${d}: ${s.title} es suave`);
-      assert.ok(!s.optional,'el trote de la sesión doble cuenta');
-    });
-    assert.equal(on(4).filter(s=>!s.is_strength).length,0,'viernes solo gimnasio');
+    if(level!=='nuevo') assert.ok(regenWeeks>0,`${level}: alguna semana propone doblar`);
   }
 });
 
@@ -479,11 +482,11 @@ test('el Verificador frena lo que la ficha no permite en días de fuerza',()=>{
   const days=P.daysFromProfile(gymProfile());
   const weekStart='2026-11-09';
   const gym=(date,min=60)=>({workout_date:date,title:'Fuerza guiada en el gimnasio',sport:'Strength',is_strength:true,planned_duration_min:min,priority:'B'});
-  const run=(date,min,title='Rodaje muy suave')=>({workout_date:date,title,sport:'Run',planned_duration_min:min,priority:'C'});
+  const run=(date,min,extra={})=>({workout_date:date,title:'Rodaje',sport:'Run',planned_duration_min:min,priority:'C',...extra});
   const rules=w=>P.verifyWeek({weekStart,workouts:w,days}).failures.map(f=>f.rule);
-  assert.deepEqual(rules([gym('2026-11-09'),run('2026-11-09',30)]),[]);
-  assert.ok(rules([gym('2026-11-09'),run('2026-11-09',50)]).includes('minutos_dia'));
-  assert.ok(rules([gym('2026-11-09'),{...run('2026-11-09',30,'Series 6 x 400'),priority:'A'}]).includes('doble_suave'));
+  assert.deepEqual(rules([gym('2026-11-09'),run('2026-11-09',30,{optional:true})]),[]);
+  assert.ok(rules([gym('2026-11-09'),run('2026-11-09',30)]).includes('sesion_doble'),'doblar nunca es obligatorio');
+  assert.ok(rules([gym('2026-11-09'),run('2026-11-09',50,{optional:true})]).includes('minutos_doble'));
   assert.ok(rules([gym('2026-11-09',90)]).includes('minutos_fuerza'));
-  assert.ok(rules([gym('2026-11-13',45),run('2026-11-13',20)]).includes('tipo_dia'));
+  assert.ok(rules([{...gym('2026-11-12',40),title:'Fuerza'},run('2026-11-12',40)]).includes('sesion_doble'),'jueves: sin doblar');
 });

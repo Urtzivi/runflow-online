@@ -118,7 +118,7 @@
 .v9h-chip input:focus-visible + span { outline: 2px solid #6aa51c; outline-offset: 1px; }
 .v9h-minutes { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 6px; }
 .v9h-minutes i { color: #707970; font-style: normal; }
-.v9h-strength { grid-column: 1 / -1; display: grid; grid-template-columns: 110px minmax(0, 1.3fr) minmax(0, 1fr); gap: 12px; align-items: end; margin-left: 90px; padding: 8px 10px; border-radius: 10px; background: #f6f9ef; border: 1px dashed #cfe3ad; }
+.v9h-strength { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1.3fr) 110px minmax(0, 1.4fr); gap: 12px; align-items: end; margin-left: 90px; padding: 8px 10px; border-radius: 10px; background: #f6f9ef; border: 1px dashed #cfe3ad; }
 .v9h-strength.hidden { display: none; }
 .v9h-strength .v9h-double { display: flex; gap: 8px; align-items: center; align-self: center; font-weight: 700; color: #2e4d0d; }
 .v9h-strength .v9h-double small { display: block; font-weight: 500; color: #5d6b6e; }

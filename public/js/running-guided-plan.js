@@ -527,12 +527,9 @@
     const allowTrail = day => race.trail && canDo(day, 'trail');
     const trailOnly = day => canDo(day, 'trail') && !canDo(day, 'run');
     const runFilter = (day, extra) => row => !isStrengthRow(row) && goalOk(row) && (allowTrail(day) || !isTrailRow(row)) && extra(row);
-    // Sesión doble suave (p. ej. fuerza guiada + trote de descarga): ni tirada larga ni calidad ese día.
-    const easyOnly = day => Boolean(day?.double && day?.extra_easy);
-    const hardUsable = daysUsable.filter(day => !easyOnly(day));
 
     // 1) Tirada larga (desde la base; no en descarga ni en semana de carrera)
-    const longDay = hardUsable.find(day => day.day === Number(answers.long_day)) || hardUsable.slice().sort((a, b) => b.minutes - a.minutes)[0];
+    const longDay = daysUsable.find(day => day.day === Number(answers.long_day)) || daysUsable.slice().sort((a, b) => b.minutes - a.minutes)[0];
     const quietWeek = ['recovery', 'competition'].includes(week.type);
     const plan = new Map();
     if (longDay && !quietWeek && week.phase !== 'taper') {
@@ -563,13 +560,14 @@
     // Fuerza guiada en el gimnasio: cita fija de la ficha (salvo la semana de la carrera).
     const fixedGym = week.type === 'competition' ? [] : strengthEligible.filter(day => day.gym && day.strength_minutes);
     const afterGym = day => fixedGym.some(gym => gym.day === day.day - 1);
-    let free = hardUsable.filter(day => !plan.has(day.day) && !afterRace(day));
+    let free = daysUsable.filter(day => !plan.has(day.day) && !afterRace(day));
     // Mejor que la calidad no caiga el día siguiente al gimnasio, si hay otros días.
     if (free.filter(day => !afterGym(day)).length >= Math.min(qualityCount, free.length)) free = free.filter(day => !afterGym(day));
     const strengthDaysFor = quality => {
       if (fixedGym.length) {
         const chosen = fixedGym.slice();
-        const extra = strengthEligible.filter(day => !day.gym && !quality.some(q => q.day === day.day + 1) && !chosen.some(other => Math.abs(other.day - day.day) < 2));
+        const hardDays = new Set([...quality.map(d => d.day), longDay && plan.has(longDay.day) ? longDay.day : undefined]);
+        const extra = strengthEligible.filter(day => !day.gym && !hardDays.has(day.day) && !hardDays.has(day.day + 1) && !chosen.some(other => Math.abs(other.day - day.day) < 2));
         for (const day of extra) { if (chosen.length >= sp.perWeek) break; chosen.push(day); }
         return chosen;
       }
@@ -579,7 +577,8 @@
       // Primero un día solo de fuerza o de rodaje fácil; si no hay, el mismo día de la calidad (después de correr) salvo en atletas que empiezan.
       const dayBeforeHard = day => hard.has(day.day + 1);
       const easy = strengthEligible.filter(day => !hard.has(day.day) && !dayBeforeHard(day)).sort((a, b) => Number(runsOn(a)) - Number(runsOn(b)) || a.day - b.day);
-      const onQuality = answers.level === 'nuevo' ? [] : strengthEligible.filter(day => quality.some(q => q.day === day.day) && !dayBeforeHard(day));
+      // Con minutos de fuerza en la ficha, fuerza y calidad el mismo día solo si puede doblar.
+      const onQuality = answers.level === 'nuevo' ? [] : strengthEligible.filter(day => quality.some(q => q.day === day.day) && !dayBeforeHard(day) && (day.double || !day.strength_minutes));
       const chosen = [];
       for (const day of [...easy, ...onQuality]) {
         if (chosen.length >= sp.perWeek) break;
@@ -619,8 +618,8 @@
     // 3) El resto, rodajes fáciles (los más cortos en descarga/vuelta)
     const easyMinutes = Math.max(25, Math.round((week.minutes - [...plan.values()].reduce((s, p) => s + p.row.minutes, 0)) / Math.max(1, daysUsable.length - plan.size)));
     daysUsable.filter(day => !plan.has(day.day)).forEach(day => {
-      const limit = easyOnly(day) ? day.minutes : Math.min(day.minutes, easyMinutes + 5);
-      const family = easyOnly(day) || ['recovery', 'deload'].includes(week.type) || week.phase === 'taper' ? 'Recovery' : 'Easy';
+      const limit = Math.min(day.minutes, easyMinutes + 5);
+      const family = ['recovery', 'deload'].includes(week.type) || week.phase === 'taper' ? 'Recovery' : 'Easy';
       const row = pickRow(rows, runFilter(day, r => r.family === family), 1, 5, limit, new Set())
         || pickRow(rows, runFilter(day, r => ['Easy', 'Recovery'].includes(r.family)), 0, 5, day.minutes, new Set());
       if (row) plan.set(day.day, { row, role: family === 'Recovery' ? 'Rodaje muy suave' : 'Rodaje fácil', priority: 'C', objective: 'Sumar tiempo corriendo sin cansarse.' });
@@ -668,8 +667,11 @@
     const chosen = strengthDaysFor(qualityDays);
     if (chosen.length) {
       chosen.sort((a, b) => a.day - b.day).forEach((day, i) => {
-        // El rodaje de ese día pasa a ser una propuesta: lo importante es la fuerza (salvo sesión doble: caben las dos).
-        if (!day.double) sessions.filter(s => s.easy && s.workout_date === dateOf(day.day)).forEach(makeOptional);
+        // El rodaje de ese día: con la ficha nueva (minutos de fuerza) se quita, y si puede doblar se valora
+        // después una salida regenerativa opcional; con fichas antiguas pasa a ser una propuesta.
+        const easyToday = sessions.filter(s => s.easy && s.workout_date === dateOf(day.day));
+        if (day.strength_minutes) easyToday.forEach(s => sessions.splice(sessions.indexOf(s), 1));
+        else easyToday.forEach(makeOptional);
         const ranToday = sessions.filter(s => !s.optional && !s.is_strength && s.workout_date === dateOf(day.day)).reduce((sum, s) => sum + (Number(s.planned_duration_min) || 0), 0);
         const strengthMinutes = Number(day.strength_minutes) || 0;
         if (day.gym && strengthMinutes) { sessions.push(guidedStrengthSession(sp, dateOf(day.day), strengthMinutes, ranToday > 0, day)); return; }
@@ -687,6 +689,21 @@
           sessions.push(session);
         }
       });
+    }
+
+    // 4b) Doblar no es obligatorio: en días de fuerza en los que puede doblar, una salida regenerativa
+    // opcional solo si ayuda (semana de construcción, no antes de un día duro y pocas por semana).
+    const regenMax = { nuevo: 0, regular: 1, experto: 2 }[answers.level] ?? 1;
+    const buildWeek = ['adaptation', 'load', 'development', 'overload'].includes(week.type) && week.phase !== 'taper' && !week.easier;
+    if (regenMax && buildWeek) {
+      const hardDates = new Set(sessions.filter(s => !s.is_strength && !s.optional && ['A', 'B'].includes(s.priority)).map(s => s.workout_date));
+      const strengthDates = new Set(sessions.filter(s => s.is_strength).map(s => s.workout_date));
+      const candidates = allDays.filter(day => day.double && day.extra && strengthDates.has(dateOf(day.day))
+        && !hardDates.has(dateOf(day.day)) && !hardDates.has(dateOf(day.day + 1))
+        && !sessions.some(s => !s.is_strength && !s.optional && s.workout_date === dateOf(day.day)));
+      // Mejor lejos de las sesiones duras: primero el que tiene el día siguiente libre o fácil.
+      candidates.sort((a, b) => Number(hardDates.has(dateOf(a.day - 1))) - Number(hardDates.has(dateOf(b.day - 1))) || a.day - b.day)
+        .slice(0, regenMax).forEach(day => sessions.push(regenSession(day, dateOf(day.day))));
     }
 
     // 5) Días sin carrera ni fuerza en los que puede hacer bici o pasear: una propuesta suave, nunca obligatoria.
@@ -707,6 +724,23 @@
     session.title = `${OPTIONAL} · ${session.title}`;
     session.summary = `Propuesta, no obligatorio: solo si tiene ganas y tiempo · ${session.summary}`;
     session.structured_description = `Opcional. Hoy lo importante es la fuerza; si corre, que sea muy suave y antes de la fuerza o en otro momento del día.\n${session.structured_description}`;
+  }
+  // Salida regenerativa del día de fuerza en que puede doblar: siempre opcional y muy suave.
+  function regenSession(day, date) {
+    const types = day.extra?.types || [];
+    const kind = types.includes('run') || types.includes('trail') ? 'run' : types.includes('bike') ? 'bike' : 'walk';
+    const duration = Math.max(15, Math.min(Number(day.extra?.minutes) || 30, kind === 'run' ? 30 : 45));
+    const label = { run: 'Trote regenerativo', bike: 'Bici regenerativa', walk: 'Paseo regenerativo' }[kind];
+    return {
+      sport: { run: 'Run', bike: 'Ride', walk: 'Walk' }[kind], is_strength: false, optional: true, regenerative: true,
+      title: `${OPTIONAL} · ${label} ${duration}'`, priority: 'C', workout_date: date,
+      planned_duration_min: duration, planned_load: Math.round(duration * (kind === 'run' ? 1.5 : kind === 'bike' ? 0.6 : 0.3)),
+      session_objective: 'Soltar piernas y recuperar el día de fuerza, sin sumar cansancio.', adaptation_target: 'Recovery',
+      summary: `Propuesta, no obligatorio · Salida regenerativa · RPE 2-3 de 10: muy suave, puedes hablar sin esfuerzo`,
+      structured_description: `Opcional. Hoy lo importante es la fuerza: si te apetece, una salida regenerativa en otro momento del día.\nCómo debe sentirse: RPE 2-3 de 10, muy suave. Nada de series ni cambios de ritmo.\nSi notas las piernas cargadas o has dormido mal, mejor no salir.`,
+      blocks: [{ type: 'steady', name: label, duration_min: duration, target: 'Z1' }, { type: 'runflow_meta', library_id: null, guided_plan: true, optional: true, regenerative: true }],
+      runflow_library_id: null,
+    };
   }
   function crossSession(kind, date, minutes) {
     const bike = kind === 'bike';
@@ -736,7 +770,6 @@
       `Esfuerzo: ${sp.effort}`,
       'Es un corredor: piernas y tronco primero; si propone mucho volumen de piernas, mejor menos series y con buena técnica.',
       afterRun && 'Hoy también corre: la fuerza, después de correr.',
-      day.double && day.extra_easy && `Sesión doble: además puede moverse como mucho ${day.minutes} min, siempre suave (descarga), nunca series ni tirada larga.`,
     ].filter(Boolean);
     return {
       sport: 'Strength', is_strength: true, title: `Fuerza guiada en el gimnasio · ${sp.name}`, priority: 'B', workout_date: date,
@@ -768,40 +801,39 @@
   }
   /*
    * Días con fuerza y minutos de fuerza en la ficha (strength_minutes):
-   * - gym: fuerza guiada en el gimnasio. Es una cita fija: ese día va la fuerza.
-   * - double: además de la fuerza puede hacer otra actividad (sesión doble) de extra_minutes,
-   *   suave (extra_intensity 'suave', por defecto) o sin límite de intensidad ('libre').
-   * - Sin sesión doble: con fuerza guiada no hace nada más; con fuerza RunFlow, una cosa u otra.
-   * day.minutes sigue siendo el tiempo para correr/bici/paseo ese día.
+   * - gym: fuerza guiada en el gimnasio (la pone su entrenador). Es una cita fija: ese día va la fuerza y nada más obligatorio.
+   * - libre ('strength'): la planifica RunFlow. Con otras actividades marcadas y sin doblar, una cosa u otra.
+   * - double (puede doblar): además de la fuerza cabe una salida regenerativa (extra.types, hasta extra.minutes).
+   *   Es una posibilidad, no una obligación: el motor solo la propone, opcional, cuando ayuda.
+   * day.minutes es el tiempo para correr/bici/paseo como sesión principal (en el gimnasio, los minutos de fuerza).
    */
   function withStrengthSlot(day, stored, listed) {
     const strengthMinutes = Number(stored.strength_minutes) > 0 ? Math.round(Number(stored.strength_minutes)) : 0;
     if (!strengthMinutes || !day.types.includes('strength')) return day;
     const gym = listed.includes('gym');
     const others = day.types.filter(type => type !== 'strength');
-    const extra = Number(stored.extra_minutes) > 0 ? Math.round(Number(stored.extra_minutes)) : 0;
-    const double = stored.double_session === true && others.length > 0 && extra > 0;
+    const extraMinutes = Number(stored.extra_minutes) > 0 ? Math.round(Number(stored.extra_minutes)) : 0;
     day.strength_minutes = strengthMinutes;
     day.gym = gym;
-    if (double) {
+    if (stored.double_session === true && others.length && extraMinutes) {
       day.double = true;
-      day.minutes = extra;
-      day.extra_easy = stored.extra_intensity !== 'libre';
-    } else if (gym || !others.length) {
+      day.extra = { types: others, minutes: extraMinutes };
+    }
+    if (gym || !others.length) {
       day.types = ['strength'];
       day.minutes = strengthMinutes;
-    }
+    } else if (extraMinutes) day.minutes = extraMinutes;
     return day;
   }
   const strengthOnly = day => dayTypes(day).length === 1 && dayTypes(day)[0] === 'strength';
   function dayText(day) {
     if (!(Number(day?.minutes) > 0) || !dayTypes(day).length) return 'No entrena';
-    const types = dayTypes(day).filter(type => type !== 'strength').map(type => ACTIVITIES[type].toLowerCase());
     if (!day.strength_minutes) return `${dayTypes(day).map(type => ACTIVITIES[type]).join(' o ')} · ${day.minutes} min`;
-    const strength = `${day.gym ? 'Fuerza guiada en gimnasio' : 'Fuerza'} ${day.strength_minutes} min`;
-    if (day.double) return `${strength} + ${types.join(' o ')} ${day.minutes} min${day.extra_easy ? ' suave' : ''} (sesión doble)`;
-    if (strengthOnly(day)) return `${strength}, nada más`;
-    return `${strength} o ${types.join(' o ')} ${day.minutes} min`;
+    const strength = `${day.gym ? 'Fuerza guiada en gimnasio' : 'Fuerza libre'} ${day.strength_minutes} min`;
+    const others = dayTypes(day).filter(type => type !== 'strength').map(type => ACTIVITIES[type].toLowerCase());
+    const regen = day.double ? `; puede doblar con una salida regenerativa opcional (${day.extra.types.map(type => ACTIVITIES[type].toLowerCase()).join(' o ')}, hasta ${day.extra.minutes} min)` : '';
+    if (strengthOnly(day)) return `${strength}${regen || ', nada más'}`;
+    return `${strength} o ${others.join(' o ')} ${day.minutes} min${regen}`;
   }
   function phaseOfMeso(meso) {
     const text = String(meso?.notes || '');
@@ -1427,15 +1459,16 @@
         if (minutes > Number(day.minutes) + 10) fail('minutos_dia', `${DAYS[dayIndex(date)]} ${formatDate(date)}: ${minutes} min y el atleta tiene ${day.minutes} min ese día.`, date);
         if (required.some(w => !isStrengthWorkout(w)) && !runsOn(day)) fail('tipo_dia', `${DAYS[dayIndex(date)]} ${formatDate(date)}: ese día no puede correr.`, date);
         if (required.some(isStrengthWorkout) && !canDo(day, 'strength') && !runsOn(day)) fail('tipo_dia', `${DAYS[dayIndex(date)]} ${formatDate(date)}: ese día no puede hacer fuerza.`, date);
-        // Días con fuerza y minutos de fuerza en la ficha (fuerza guiada en gimnasio / sesión doble).
+        // Días con fuerza y minutos de fuerza en la ficha (gimnasio guiado o libre, y si puede doblar).
         if (day.strength_minutes) {
           const label = `${DAYS[dayIndex(date)]} ${formatDate(date)}`;
           const strength = required.filter(isStrengthWorkout);
           const other = required.filter(w => !isStrengthWorkout(w));
           const strengthMin = strength.reduce((sum, w) => sum + (Number(w.planned_duration_min) || 0), 0);
           if (strengthMin > day.strength_minutes + 10) fail('minutos_fuerza', `${label}: ${strengthMin} min de fuerza y la ficha dice ${day.strength_minutes} min.`, date);
-          if (strength.length && other.length && !day.double) fail('sesion_doble', `${label}: ese día hace fuerza y la ficha no permite sesión doble (fuerza y otra actividad el mismo día).`, date);
-          if (day.double && day.extra_easy && other.some(isHardWorkout)) fail('doble_suave', `${label}: en la sesión doble solo cabe algo suave (descarga) además de la fuerza, nada de calidad ni tirada larga.`, date);
+          if (strength.length && other.length) fail('sesion_doble', `${label}: fuerza y otra sesión obligatoria el mismo día. ${day.double ? 'Al doblar solo cabe una salida regenerativa opcional.' : 'La ficha no permite doblar ese día.'}`, date);
+          const extra = items.filter(w => w.optional && !isStrengthWorkout(w));
+          if (strength.length && extra.length && day.double && extra.some(w => Number(w.planned_duration_min) > day.extra.minutes + 5)) fail('minutos_doble', `${label}: la salida regenerativa pasa de los ${day.extra.minutes} min que permite la ficha.`, date);
         }
       });
       const total = list.filter(w => !w.optional && !isStrengthWorkout(w)).reduce((sum, w) => sum + (Number(w.planned_duration_min) || 0), 0);
