@@ -304,6 +304,7 @@
   }
 
   // ---------- Ajustes ----------
+  let settingsTab = 'general';
   async function renderSettings() {
     const root = q('#rdSettingsRoot'); if (!root) return;
     let me = null; try { me = (await api('/api/auth/me')).user; } catch {}
@@ -312,8 +313,20 @@
     const connected = athletes.filter(a => /connect|ok|active/i.test(a.intervals_status || ''));
     const notConnected = athletes.filter(a => !connected.includes(a));
     const appPending = athletes.filter(a => a.app_access_status === 'pending');
-    root.innerHTML = `
-      <div class="rd-head"><div><p class="rd-eyebrow">Tu cuenta</p><h1>Ajustes</h1><p class="rd-sub">Lo que se toca poco, en un solo sitio.</p></div></div>
+    const tabs = `<div class="rd-tabs rd-settings-tabs" role="tablist">${[['general', 'General'], ['connections', 'Conexiones']].map(([k, label]) => `<button type="button" role="tab" data-rd-settings-tab="${k}" class="${settingsTab === k ? 'on' : ''}">${label}</button>`).join('')}</div>`;
+    const head = `<div class="rd-head"><div><p class="rd-eyebrow">Tu cuenta</p><h1>Ajustes</h1><p class="rd-sub">Lo que se toca poco, en un solo sitio.</p></div></div>${tabs}`;
+    if (settingsTab === 'connections') {
+      root.innerHTML = `${head}
+      <div class="rd-settings-connections">
+        <section class="rd-card"><p class="rd-eyebrow">Intervals.icu</p>
+          <p class="rd-muted">De aquí salen las actividades, la carga y la recuperación de cada atleta. Cada atleta tiene su propia clave.</p>
+          ${athletes.map(a => `<div class="rd-st"><span>${esc(a.display_name)}</span><b>${connected.includes(a) ? 'Conectado' : `<span class="amber">Sin conectar</span>`} · <button type="button" class="rd-link" data-rd-connect-athlete="${esc(a.id)}">${connected.includes(a) ? 'Cambiar la clave' : 'Conectar'}</button></b></div>`).join('') || '<p class="rd-muted">Todavía no hay atletas.</p>'}</section>
+        <div id="rdAssistantHost"></div>
+      </div>`;
+      window.RunFlowAssistantPanel?.mount(q('#rdAssistantHost'));
+      return;
+    }
+    root.innerHTML = `${head}
       <div class="rd-two">
         <section class="rd-card"><p class="rd-eyebrow">Mi cuenta</p>
           <div class="rd-st"><span>Nombre</span><b>${esc(me?.display_name || me?.name || '—')}</b></div>
@@ -322,7 +335,7 @@
         <section class="rd-card"><p class="rd-eyebrow">Intervals.icu</p>
           <div class="rd-st"><span>Atletas conectados</span><b>${connected.length} de ${athletes.length}</b></div>
           <div class="rd-st"><span>Sin conectar</span><b class="${notConnected.length ? 'amber' : ''}">${notConnected.map(a => esc(a.display_name)).join(', ') || 'Ninguno'}</b></div>
-          <div class="rd-st"><span>Conectar o cambiar la clave</span><b><button type="button" class="rd-link" data-rd-connections>Abrir conexiones</button></b></div></section>
+          <div class="rd-st"><span>Conectar o cambiar la clave</span><b><button type="button" class="rd-link" data-rd-settings-tab="connections">Abrir conexiones</button></b></div></section>
         <section class="rd-card"><p class="rd-eyebrow">Atletas</p>
           <div class="rd-st"><span>Activos</span><b>${athletes.length}</b></div>
           <div class="rd-st"><span>Sin acceso a la app todavía</span><b>${appPending.map(a => esc(a.display_name)).join(', ') || 'Ninguno'}</b></div>
@@ -342,6 +355,8 @@
     if (t.hasAttribute('data-rd-classic')) { try { localStorage.setItem(STORE, 'clasica'); } catch {} location.reload(); }
     if (t.hasAttribute('data-rd-manage')) { setActive('athletes'); clickLegacy('athletes'); }
     if (t.hasAttribute('data-rd-connections')) { const first = (teamCache?.athletes || []).find(a => !/connect/i.test(a.intervals_status || '')) || { id: selectedId() }; openFicha(first.id, 'connections'); }
+    if (t.dataset.rdSettingsTab) { settingsTab = t.dataset.rdSettingsTab; renderSettings(); }
+    if (t.dataset.rdConnectAthlete) openFicha(t.dataset.rdConnectAthlete, 'connections');
     if (t.hasAttribute('data-rd-logout')) q('#rfSessionLogout')?.click();
   }
 

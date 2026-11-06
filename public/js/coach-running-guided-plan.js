@@ -316,12 +316,11 @@
     if (!preview?.structure || !ui.library) return;
     const structure = preview.structure;
     ui.busy = true; ui.status = 'Comprobando que no pisa semanas ya planificadas…'; render();
-    let season = null;
     try {
       const taken = await takenWeeks(structure);
       if (taken.length) {
         ui.busy = false;
-        ui.status = `Error: ${taken.length === 1 ? 'la semana' : 'las semanas'} del ${taken.slice(0, 3).map(item => P.formatDate(item.start)).join(', ')} ya ${taken.length === 1 ? 'está planificada' : 'están planificadas'} en “${taken[0].season}”. Borra esa temporada o empieza el plan después.`;
+        ui.status = `Error: ${takenText(taken)}`;
         render(); return;
       }
     } catch { /* si no se puede comprobar, el servidor lo impedirá igualmente */ }
@@ -330,6 +329,18 @@
     try {
       await apiCall(`/api/v9/coach/athletes/${encodeURIComponent(athleteId())}/dynamic-profile`, { method: 'PUT', body: JSON.stringify(availabilityPayload(a)) });
       window.RunFlowAvailability?.invalidate?.();
+      const season = await persist(a, structure, preview.sessions, step);
+      ui.busy = false; ui.open = false; render();
+      await afterCreate(season, structure);
+    } catch (error) {
+      ui.busy = false; ui.status = `Error: ${error.message}`; render();
+    }
+  }
+  // Crea temporada → objetivos → macro → mesos → semanas (las sesiones solo de las semanas en `sessions`).
+  // Si algo falla, borra lo creado. Lo usan el asistente y la aprobación de una propuesta del Planificador.
+  async function persist(a, structure, sessions, step = () => {}) {
+    let season = null;
+    try {
       step('Creando la temporada y el objetivo…');
       season = (await apiCall(`${base()}/seasons`, { method: 'POST', body: JSON.stringify(P.seasonPayload(a, structure)) })).season;
       const goals = [];
@@ -341,28 +352,131 @@
         step(`Creando ${meso.name} (${++done} de ${structure.mesos.length})…`);
         const saved = (await apiCall(`${base()}/macrocycles/${encodeURIComponent(macro.id)}/mesocycles`, { method: 'POST', headers: { 'X-RunFlow-Planning-Origin': 'guided' }, body: JSON.stringify(P.mesoPayload(meso)) })).mesocycle;
         for (const week of meso.weeks) {
-          const planned = preview.sessions.find(item => item.week === week);
+          const planned = (sessions || []).find(item => item.week === week);
           const workouts = planned ? planned.items : null;
           await apiCall(`${base()}/mesocycles/${encodeURIComponent(saved.id)}/microcycles`, { method: 'POST', headers: { 'X-RunFlow-Planning-Origin': 'guided' }, body: JSON.stringify(P.microPayload(meso, week, workouts, a)) });
         }
       }
       step('Plan creado.');
-      ui.busy = false; ui.open = false; render();
-      appState().selectedSeasonId = season.id;
-      if (typeof window.loadPlan === 'function') await window.loadPlan(season.id);
-      notify(`Plan creado: ${structure.weeks.length} semanas en ${structure.mesos.length} bloques, con las sesiones de la primera semana en borrador. Las demás se preparan semana a semana.`, 'success');
+      return season;
     } catch (error) {
       let message = error.message;
       if (season) {
         try { await apiCall(`${base()}/seasons/${encodeURIComponent(season.id)}`, { method: 'DELETE' }); message += ' No se ha guardado nada del plan.'; }
         catch { message += ` Ha quedado a medias la temporada “${season.name}”: bórrala desde Planificación antes de reintentar.`; }
       }
-      ui.busy = false; ui.status = `Error: ${message}`; render();
+      throw new Error(message);
     }
   }
+  async function afterCreate(season, structure) {
+    appState().selectedSeasonId = season.id;
+    if (typeof window.loadPlan === 'function') await window.loadPlan(season.id);
+    notify(`Plan creado: ${structure.weeks.length} semanas en ${structure.mesos.length} bloques, con las sesiones de la primera semana en borrador. Las demás se preparan semana a semana.`, 'success');
+  }
+  function takenText(taken) {
+    return `${taken.length === 1 ? 'la semana' : 'las semanas'} del ${taken.slice(0, 3).map(item => P.formatDate(item.start)).join(', ')} ya ${taken.length === 1 ? 'está planificada' : 'están planificadas'} en “${taken[0].season}”. Borra esa temporada o empieza el plan después.`;
+  }
+
+  // ---------- Propuesta del Planificador (agente en Claude) ----------
+  // El agente guarda la temporada como propuesta (respuestas + retoques por semana + porqué).
+  // Aquí se recalcula con el mismo motor, se vuelve a pasar el Verificador y solo se crea si el coach la aprueba.
+  const agent = { athlete: null, items: [], loading: false, busy: false, status: '', open: false };
+  async function loadProposals() {
+    const id = athleteId();
+    if (!id || agent.loading || agent.athlete === id) return;
+    agent.loading = true;
+    try {
+      const data = await apiCall('/api/coach/assistant-proposals?status=proposed');
+      agent.items = (data.proposals || []).filter(item => item.kind === 'season' && String(item.athlete_id) === String(id));
+    } catch { agent.items = []; }
+    agent.athlete = id; agent.loading = false; agent.status = ''; agent.open = false;
+    q('#rgpAgent')?.remove();
+    mountAgent();
+  }
+  function rebuild(proposal) {
+    const days = profileDays(ui.profile) || proposal.answers.days || [];
+    const a = { ...proposal.answers, days };
+    const structure = P.buildStructure(a);
+    const base = structure.weeks.map(w => ({ type: w.type, minutes: w.minutes }));
+    P.applySeasonAdjustments(structure, proposal.adjustments);
+    return { a, structure, base, verification: P.verifySeason(a, structure) };
+  }
+  function agentCard(proposal) {
+    let plan = null, error = '';
+    try { plan = rebuild(proposal); } catch (e) { error = e.message; }
+    const changed = plan ? plan.structure.weeks.map((w, i) => ({ w, b: plan.base[i] })).filter(({ w }) => w.agent) : [];
+    const ok = plan && plan.verification.ok;
+    const weeks = plan ? plan.structure.weeks.map((w, i) => `<tr class="${w.agent ? 'is-changed' : ''}"><td>${esc(P.formatDate(w.start))}</td><td>${esc(P.PHASES[w.phase]?.name || '')}</td><td>${esc(w.label)}</td><td>${w.minutes} min${w.agent ? ` <small>(RunFlow: ${plan.base[i].minutes})</small>` : ''}</td></tr>`).join('') : '';
+    return `<div class="rgp-agent-head"><div><span class="rgp-eyebrow">Propuesta del Planificador · Claude</span><strong>${esc(proposal.title || 'Temporada propuesta')}</strong>
+        <p>${esc(P.formatDate(proposal.start))} – ${esc(P.formatDate(proposal.end))} · ${proposal.total_weeks || plan?.structure.weeks.length || '?'} semanas · parte del cálculo de RunFlow${changed.length ? ` con ${changed.length} ${changed.length === 1 ? 'retoque' : 'retoques'}` : ' sin retoques'}.</p></div>
+        <span class="rgp-agent-badge ${ok ? 'ok' : 'bad'}">${ok ? '✓ Pasa el Verificador' : '✕ No pasa el Verificador'}</span></div>
+      <div class="rgp-agent-why"><b>Por qué</b><p>${esc(proposal.justification || '')}</p></div>
+      ${changed.length ? `<div class="rgp-agent-changes"><b>Qué cambia respecto a RunFlow</b><ul>${changed.map(({ w, b }) => `<li><span>${esc(P.formatDate(w.start))}</span> ${b.type !== w.type ? `${esc(P.WEEK_TYPES[b.type].label)} → <b>${esc(w.label)}</b>` : esc(w.label)}, ${b.minutes} → <b>${w.minutes} min</b>${w.agent.why ? `: ${esc(w.agent.why)}` : ''}</li>`).join('')}</ul></div>` : ''}
+      ${error ? `<div class="rgp-warn">${esc(error)}</div>` : ''}
+      ${plan && !ok ? `<div class="rgp-warn">${plan.verification.failures.map(f => esc(f.text)).join('<br>')}</div>` : ''}
+      ${plan ? `<details class="rgp-agent-weeks" ${agent.open ? 'open' : ''} data-rgp-agent-details><summary>Ver las ${plan.structure.weeks.length} semanas</summary><table><thead><tr><th>Semana</th><th>Bloque</th><th>Tipo</th><th>Minutos</th></tr></thead><tbody>${weeks}</tbody></table></details>` : ''}
+      ${agent.status ? `<div class="rgp-status ${agent.status.startsWith('Error') ? 'is-error' : ''}">${esc(agent.status)}</div>` : ''}
+      <div class="rgp-agent-actions"><button type="button" class="btn secondary" data-rgp-agent="reject" data-id="${esc(proposal.id)}" ${agent.busy ? 'disabled' : ''}>Rechazar</button><button type="button" class="btn primary" data-rgp-agent="approve" data-id="${esc(proposal.id)}" ${agent.busy || !ok ? 'disabled' : ''}>Aprobar y crear la temporada</button></div>`;
+  }
+  // La tarjeta va en el hueco #spAgentSlot de la pantalla de Planificación (coach-season-plan.js).
+  function mountAgent() {
+    const slot = q('#spAgentSlot');
+    if (!slot) return;
+    if (agent.athlete !== athleteId()) { loadProposals(); return; }
+    if (!agent.items.length) { if (slot.firstChild) slot.innerHTML = ''; return; }
+    if (q('#rgpAgent', slot)) return;
+    slot.innerHTML = `<section id="rgpAgent" class="rgp-entry rgp-agent">${agentCard(agent.items[0])}</section>`;
+  }
+  function renderAgent() {
+    const card = q('#rgpAgent');
+    if (!card) return mountAgent();
+    const proposal = agent.items[0];
+    if (!proposal) { card.remove(); return; }
+    card.innerHTML = agentCard(proposal);
+  }
+  async function approveProposal(id) {
+    const proposal = agent.items.find(item => String(item.id) === String(id));
+    if (!proposal || agent.busy) return;
+    agent.busy = true; agent.status = 'Comprobando la propuesta…'; renderAgent();
+    const step = text => { agent.status = text; const el = q('#rgpAgent .rgp-status'); if (el) el.textContent = text; else renderAgent(); };
+    try {
+      await loadProfile();
+      const plan = rebuild(proposal);
+      if (!plan.verification.ok) throw new Error(`No pasa el Verificador: ${plan.verification.failures.map(f => f.text).join(' ')}`);
+      const taken = await takenWeeks(plan.structure).catch(() => []);
+      if (taken.length) throw new Error(takenText(taken));
+      const library = await loadLibrary();
+      const sessions = plan.structure.weeks.slice(0, SESSION_WEEKS).map(week => ({ week, items: P.buildWeekSessions(plan.a, plan.structure, week, library) }));
+      const season = await persist(plan.a, plan.structure, sessions, step);
+      await apiCall(`/api/coach/assistant-proposals/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ status: 'approved', season_id: season.id }) }).catch(() => {});
+      agent.items = agent.items.filter(item => item !== proposal); agent.busy = false; agent.status = '';
+      q('#rgpAgent')?.remove();
+      await afterCreate(season, plan.structure);
+    } catch (error) {
+      agent.busy = false; agent.status = `Error: ${error.message}`; renderAgent();
+    }
+  }
+  async function rejectProposal(id) {
+    if (agent.busy || !window.confirm('¿Rechazar la propuesta del Planificador? No se crea nada.')) return;
+    agent.busy = true; renderAgent();
+    try {
+      await apiCall(`/api/coach/assistant-proposals/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ status: 'rejected' }) });
+      agent.items = agent.items.filter(item => String(item.id) !== String(id)); agent.status = '';
+      notify('Propuesta rechazada. El Planificador puede hacer otra.', 'success');
+    } catch (error) { agent.status = `Error: ${error.message}`; }
+    agent.busy = false; renderAgent();
+  }
+  document.addEventListener('click', event => {
+    const el = event.target.closest('[data-rgp-agent]');
+    if (!el) return;
+    if (el.dataset.rgpAgent === 'approve') approveProposal(el.dataset.id);
+    if (el.dataset.rgpAgent === 'reject') rejectProposal(el.dataset.id);
+  });
+  document.addEventListener('toggle', event => { if (event.target.matches?.('[data-rgp-agent-details]')) agent.open = event.target.open; }, true);
 
   // ---------- Entrada en Planificación ----------
   function injectEntry() {
+    mountAgent();
     const body = q('#v10PlannerBody');
     if (!body || q('#rgpEntry', body)) return;
     const atSeason = q('[data-v10-action="new-macro"]', body) || q('.v10-empty [data-v10-action="new-season"]', body);
@@ -379,7 +493,7 @@
   document.addEventListener('click', event => { if (event.target.closest('[data-rgp-open]')) open(); });
   const observer = new MutationObserver(() => injectEntry());
   function watch() {
-    const panel = q('#v10SeasonPlanner');
+    const panel = q('#planView') || q('#v10SeasonPlanner');
     if (!panel) return setTimeout(watch, 400);
     observer.observe(panel, { childList: true, subtree: true });
     injectEntry();

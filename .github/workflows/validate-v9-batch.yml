@@ -10,6 +10,10 @@ on:
       - 'scripts/test-session-blocks.cjs'
       - 'athlete-link-recovery-hook.js'
       - 'assistant-api-hook.js'
+      - 'scripts/test-assistant-drafts.cjs'
+      - 'assistant-planner.js'
+      - 'scripts/test-assistant-planner.cjs'
+      - 'docs/AGENTE_PLANIFICADOR.md'
       - 'football-api-hook.js'
       - 'public/football.html'
       - 'public/js/football.js'
@@ -88,6 +92,14 @@ jobs:
         run: |
           node --check public/js/coach-running-guided-plan.js
           node --test scripts/test-running-guided-plan.cjs
+      - name: Test assistant feedback drafts
+        run: |
+          node --check assistant-api-hook.js
+          node --test scripts/test-assistant-drafts.cjs
+      - name: Test agente Planificador (MCP + Verificador)
+        run: |
+          node --check assistant-planner.js
+          node --test scripts/test-assistant-planner.cjs
       - name: Validate V9/V2 batch
         run: node scripts/validate-v9-batch.mjs
       - name: Check season calendar planner syntax

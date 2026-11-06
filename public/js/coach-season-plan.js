@@ -696,11 +696,12 @@
     if (ui.legacy) { root.innerHTML = ''; return; }
     if (!athleteId()) { root.innerHTML = '<div class="sp-card sp-empty"><h2>Selecciona un deportista</h2></div>'; return; }
     const model = seasonModel();
-    if (!model) { root.innerHTML = renderEmpty() + legacyLink(); return; }
+    const slot = '<div id="spAgentSlot"></div>'; // propuesta del agente Planificador (coach-running-guided-plan.js)
+    if (!model) { root.innerHTML = slot + renderEmpty() + legacyLink(); return; }
     let week = model.structure.weeks.find(item => item.start === ui.selected);
     if (!week) { week = defaultWeek(model); ui.selected = week.start; }
     if (adviceApplies(model, week) && !ui.advice[adviceKey(week)]) loadAdvice(model, week);
-    root.innerHTML = `${renderHeader(model)}${renderIncident(model)}${renderBar(model)}<div class="sp-grid">${renderWeek(model, week)}${renderBlock(model, week)}</div>${legacyLink()}`;
+    root.innerHTML = `${slot}${renderHeader(model)}${renderIncident(model)}${renderBar(model)}<div class="sp-grid">${renderWeek(model, week)}${renderBlock(model, week)}</div>${legacyLink()}`;
     renderModal(model);
   }
   const legacyLink = () => '<p class="sp-legacy"><button type="button" class="sp-link" data-sp-act="legacy">Abrir la planificación antigua</button></p>';

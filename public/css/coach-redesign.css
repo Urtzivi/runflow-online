@@ -74,3 +74,8 @@ body.rd-mode #v10ProfileSeason{display:none!important}
 body.rd-mode{--v8-lime:var(--rd-lime);--v8-z2:#4F8FC0;--v8-tempo:#E3B341;--v8-sweet:#E07B39;--v8-threshold:#E07B39;--v8-vo2:#C8402F;--v8-strength:#7A5BB5;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
 body.rd-mode h1,body.rd-mode h2,body.rd-mode .v8-brand strong,body.rd-mode .rd-kpi b,body.rd-mode .rd-acard-top b,body.rd-mode .rd-av{font-family:Manrope,Inter,system-ui,sans-serif;font-weight:800}
 .rd-nav .ico svg{width:20px;height:20px;display:block;margin:auto}
+/* Ajustes › Conexiones */
+.rd-settings-tabs{margin:0 0 14px}
+.rd-settings-connections{display:grid;gap:14px;max-width:920px}
+.rd-settings-connections .rd-st b .amber{color:#9a6a12}
+#rdAssistantHost #runflowAssistantPanel{margin:0}
