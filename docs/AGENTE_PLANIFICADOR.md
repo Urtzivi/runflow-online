@@ -22,6 +22,7 @@ Nunca crea ni publica nada por su cuenta: todo llega al entrenador como **propue
 
   **Aprobar y crear la temporada** la crea igual que el plan guiado: temporada, objetivo, bloques, semanas y las sesiones de la primera semana en borrador. **Rechazar** la descarta.
 - Las semanas propuestas con `create_week_proposal` siguen en **Conexiones › Asistente RunFlow** (*Aprobar y pasar a borrador*).
+- Los **cambios en una semana que ya está en el calendario** (`propose_week_changes`: añadir, cambiar, mover o quitar sesiones, vaciar la semana o cambiar su título/tipo/comentario) salen en el mismo sitio con la lista de cambios. Si la semana está en borrador, *Aprobar y guardar en borrador*; si ya está publicada, *Aprobar y enviar al atleta* (pide confirmación, llega a la app y a Intervals). Si alguien ha tocado la semana después de preparar la propuesta, no se aplica y hay que pedirla de nuevo. Las sesiones ya hechas o de días pasados nunca se tocan.
 
 ## Reglas que comprueba el Verificador
 
@@ -56,6 +57,8 @@ Si algo falla, la herramienta no guarda nada y devuelve la lista de fallos para 
 | `create_season_proposal` | Guarda la temporada como propuesta (si pasa el Verificador). Sustituye a otra pendiente del mismo atleta. |
 | `get_week_plan_base` | Sesiones que propone RunFlow para una semana, ya ajustadas por cómo viene el atleta. |
 | `create_week_proposal` | Guarda la semana como propuesta (si pasa el Verificador). Acepta `semaforo`. |
+| `get_week_sessions` | La semana tal como está en el calendario: cada sesión con su `workout_id`, si está hecha y si se puede tocar. |
+| `propose_week_changes` | Propone cambios en esa semana (`changes` con add/modify/move/remove, `clear_week`, `week`). El Verificador bloquea solo los fallos **nuevos** que traiga el cambio; los que la semana ya tenía se avisan. Sustituye a otra propuesta de cambios pendiente de la misma semana. |
 | `get_daily_report`, `create_feedback_draft`, `list_pending_drafts` | Las del Analista. |
 
 ## Cómo conectarlo en Claude
@@ -87,6 +90,11 @@ SEMANA (cada domingo, o cuando te lo pidan):
 2. Usa el semáforo del Analista (advice y, si lo hay, el borrador semanal): en rojo, nada duro y menos volumen; en ámbar, como mucho una sesión de calidad; en verde, el plan base.
 3. Si cambias algo respecto al plan base, que sea poco: mover una sesión de día, acortarla, cambiar calidad por rodaje suave. Respeta los días y minutos libres.
 4. create_week_proposal con las sesiones, el semáforo y un reason de máximo 5 líneas: qué cambias respecto al plan base y por qué.
+
+CAMBIOS SOBRE LO QUE YA ESTÁ (cuando el entrenador y tú decidís en la conversación quitar, mover, cambiar o añadir algo):
+1. get_week_sessions de esa semana para ver qué hay y los workout_id.
+2. propose_week_changes con solo los cambios decididos, un reason corto y, si aplica, el semáforo. Para vaciar la semana, clear_week. No reescribas sesiones que no habéis hablado.
+3. Si el Verificador lo bloquea, explica el fallo y propón una alternativa. Si pasa, dile al entrenador que lo apruebe en Conexiones › Propuestas pendientes (y si la semana está publicada, que al aprobarlo le llega al atleta).
 
 REGLAS DURAS (el Verificador las comprueba y bloquea si no se cumplen):
 - Fecha de carrera fija; puesta a punto al final y por debajo de la semana más alta.
