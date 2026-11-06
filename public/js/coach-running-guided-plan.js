@@ -287,12 +287,20 @@
   // Asistente → ficha. Mismo formato que la disponibilidad de la ficha (activity_types + banderas antiguas).
   function availabilityPayload(a) {
     const days = a.days.map(day => {
-      const types = P.dayTypes(day).map(type => type === 'strength' && a.equipment === 'gimnasio_guiado' ? 'gym' : type);
+      const types = P.dayTypes(day).map(type => type === 'strength' && (day.gym || a.equipment === 'gimnasio_guiado') ? 'gym' : type);
       if (!day.minutes || !types.length) return { day: day.day + 1, activity_types: ['unavailable'], activity_type: 'unavailable', can_train: false, run: false, bike: false, strength: false, gym: false, mountain: false, walk: false, max_minutes: null };
       return {
         day: day.day + 1, activity_types: types, activity_type: types.length > 1 ? 'flexible' : types[0], can_train: true,
         run: types.some(type => ['run', 'trail'].includes(type)), bike: types.includes('bike'), strength: types.some(type => ['strength', 'gym'].includes(type)),
         gym: types.includes('gym'), mountain: types.includes('trail'), walk: types.includes('walk'), max_minutes: day.minutes,
+        // Fuerza con minutos propios y sesión doble (vienen de la ficha): se conservan.
+        ...(day.strength_minutes && types.some(type => ['strength', 'gym'].includes(type)) ? {
+          max_minutes: Math.max(day.minutes, day.strength_minutes),
+          strength_minutes: day.strength_minutes,
+          extra_minutes: types.some(type => !['strength', 'gym'].includes(type)) ? day.minutes : null,
+          double_session: Boolean(day.double),
+          extra_intensity: day.double ? (day.extra_easy ? 'suave' : 'libre') : null,
+        } : {}),
       };
     });
     const external = days.filter(day => day.gym).map(day => day.day);
