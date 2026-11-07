@@ -73,7 +73,7 @@ for(const rule of ['el primer mesociclo no empieza con el macro','hay hueco o so
 const athleteOfficial=fs.readFileSync(path.join(root,'public/athlete.html'),'utf8');
 const athleteBetaJs=fs.readFileSync(path.join(root,'public/js/athlete-v2-beta.js'),'utf8');
 const athleteFixesJs=fs.readFileSync(path.join(root,'public/js/athlete-v2-fixes.js'),'utf8');
-for(const marker of ['/athlete-base.html','/js/session-blocks.js?v=1.0.0','/js/athlete.js?v=2.4.3.4','/js/athlete-v2-beta.js?v=2.0.5','/js/athlete-v2-complete.js?v=2.2.1','/js/athlete-v2-fixes.js?v=2.1.1','/js/athlete-learning.js?v=2.4.3','/js/athlete-insights.js?v=1.0.0','/js/athlete-nueva-cara.js?v=1.0.0','/css/athlete-nueva-cara.css?v=1.0.0','/js/runflow-notification-owner.js?v=1.0.0','/js/athlete-native-readiness-notifications.js?v=1.1.1','/css/athlete-v4.css?v=4.0.1','/css/athlete-learning.css?v=2.3.2',"location.replace('/login?mode=athlete')","runflowAthleteVersion='2.4.4-session-actions'"])if(!athleteOfficial.includes(marker))throw new Error(`Athlete oficial: falta ${marker}`);
+for(const marker of ['/athlete-base.html','/js/session-blocks.js?v=1.0.0','/js/athlete.js?v=2.4.3.4','/js/athlete-v2-beta.js?v=2.0.5','/js/athlete-v2-complete.js?v=2.2.1','/js/athlete-v2-fixes.js?v=2.1.1','/js/athlete-learning.js?v=2.4.3','/js/athlete-insights.js?v=1.0.0','/js/athlete-nueva-cara.js?v=1.0.0','/css/athlete-nueva-cara.css?v=1.0.1','/js/runflow-notification-owner.js?v=1.0.0','/js/athlete-native-readiness-notifications.js?v=1.1.1','/css/athlete-v4.css?v=4.0.1','/css/athlete-learning.css?v=2.3.2',"location.replace('/login?mode=athlete')","runflowAthleteVersion='2.4.4-session-actions'"])if(!athleteOfficial.includes(marker))throw new Error(`Athlete oficial: falta ${marker}`);
 if(!athleteBetaJs.includes('if(!changedByBaseView)return'))throw new Error('Athlete V2: el observador de actividades puede reaccionar a sus propias tarjetas.');
 for(const marker of ['data-v2-sport="walk"','Paseo / senderismo',"credentials:'include'"])if(!athleteBetaJs.includes(marker))throw new Error(`Actividad manual Athlete incompleta: ${marker}`);
 const athleteCompleteJs=fs.readFileSync(path.join(root,'public/js/athlete-v2-complete.js'),'utf8');
@@ -121,7 +121,7 @@ const footballLive=fs.readFileSync(path.join(root,'public/js/football-live.js'),
 const footballApi=fs.readFileSync(path.join(root,'football-api-hook.js'),'utf8');
 const coachFootball=fs.readFileSync(path.join(root,'public/js/coach-football-integration.js'),'utf8');
 const render=fs.readFileSync(path.join(root,'render.yaml'),'utf8');
-if(!render.includes('-r ./assistant-api-hook.js')||!primaryCoach.includes('/js/coach-assistant.js?v=1.2.3'))throw new Error('Asistente RunFlow no está cargado en producción.');
+if(!render.includes('-r ./assistant-api-hook.js')||!primaryCoach.includes('/js/coach-assistant.js?v=1.3.0'))throw new Error('Asistente RunFlow no está cargado en producción.');
 if(!loginHtml.includes('forgotPassword')||!loginJs.includes('/api/auth/recover')||!render.includes('-r ./auth-recovery-hook.js'))throw new Error('Recuperación de contraseña incompleta.');
 for(const marker of ['/api/athlete/football/summary',"location.replace('/football.html')"])if(!athleteOfficial.includes(marker))throw new Error(`Athlete no enruta Fútbol: falta ${marker}`);
 for(const marker of ['Fuerza total + Potencia','Terraza','Tests & métricas','data:image/jpeg;base64','/js/football-live.js'])if(!footballHtml.includes(marker))throw new Error(`Beta original de Athlete Fútbol incompleta: falta ${marker}`);

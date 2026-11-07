@@ -144,7 +144,15 @@
       const response = await fetch(`/api/coach/athletes/${encodeURIComponent(athleteId)}/activities/${encodeURIComponent(activityId)}`, { credentials: 'same-origin' });
       const detail = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(detail.error || 'No se pudo cargar la actividad.');
-      return render(host, detail, { athleteId, activityId, log });
+      const result = render(host, detail, { athleteId, activityId, log });
+      // Informe del Analista (Claude), si ya ha analizado esta sesión.
+      if (window.RunflowAnalystReport) {
+        window.RunflowAnalystReport.forSession(athleteId, activityId).then(draft => {
+          const top = host.querySelector('.ca-dark');
+          if (draft && top && !host.querySelector('.ar-card')) top.insertAdjacentHTML('afterend', window.RunflowAnalystReport.card(draft));
+        }).catch(() => {});
+      }
+      return result;
     } catch (error) {
       host.innerHTML = `<div class="ca"><p class="ca-mut">No se pudo cargar el análisis: ${esc(error.message)}</p></div>`;
       return null;

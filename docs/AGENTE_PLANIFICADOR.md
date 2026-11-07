@@ -56,11 +56,11 @@ Si algo falla, la herramienta no guarda nada y devuelve la lista de fallos para 
 | `preview_season_plan` | Calcula la temporada con el motor y la pasa por el Verificador. No guarda nada. |
 | `create_season_proposal` | Guarda la temporada como propuesta (si pasa el Verificador). Sustituye a otra pendiente del mismo atleta. |
 | `get_week_plan_base` | Sesiones que propone RunFlow para una semana, ya ajustadas por cómo viene el atleta. |
-| `create_week_proposal` | Guarda la semana como propuesta (si pasa el Verificador). Acepta `semaforo`. |
+| `create_week_proposal` | Guarda la semana como propuesta (si pasa el Verificador). Acepta `semaforo`. Exige el objetivo de la semana: `objetivo_atleta` (una frase, máx. 140 caracteres, es lo que ve el atleta en su app al aprobarla) y `objetivo_coach` (la explicación completa para el entrenador). |
 | `get_week_sessions` | La semana tal como está en el calendario: cada sesión con su `workout_id`, si está hecha y si se puede tocar. |
 | `propose_week_changes` | Propone cambios en esa semana (`changes` con add/modify/move/remove, `clear_week`, `week`). El Verificador bloquea solo los fallos **nuevos** que traiga el cambio; los que la semana ya tenía se avisan. Sustituye a otra propuesta de cambios pendiente de la misma semana. |
 | `apply_week_changes` | **Modo directo** (activado por defecto; se apaga con “Puede aplicar y publicar cambios” en la credencial, Conexiones). Aplica en el momento los cambios que el entrenador ha pedido o decidido en la conversación (`coach_confirmation` opcional); si la semana está publicada, llega al atleta y a Intervals. Mismo Verificador y mismas protecciones. Queda en “Últimos cambios aplicados por Claude”. |
-| `get_daily_report`, `create_feedback_draft`, `list_pending_drafts` | Las del Analista. |
+| `get_daily_report`, `list_sessions_to_analyze`, `get_session_analysis`, `get_week_review`, `create_feedback_draft`, `list_pending_drafts` | Las del Analista (ver docs/AGENTE_ANALISTA.md). |
 
 ## Cómo conectarlo en Claude
 
@@ -88,9 +88,11 @@ TEMPORADA (cuando te pidan planificar una carrera):
 
 SEMANA (cada domingo, o cuando te lo pidan):
 1. get_planning_context y get_week_plan_base para la semana siguiente.
-2. Usa el semáforo del Analista (advice y, si lo hay, el borrador semanal): en rojo, nada duro y menos volumen; en ámbar, como mucho una sesión de calidad; en verde, el plan base.
+2. Lee el informe semanal del Analista de la semana que acaba (list_pending_drafts con status=all, kind=week y el athlete_id; el de week_start = lunes de esa semana): su semáforo, si se cumplieron los objetivos y su sección "Para la semana que viene" son tu base. Usa también advice de get_planning_context. En rojo, nada duro y menos volumen; en ámbar, como mucho una sesión de calidad; en verde, el plan base.
 3. Si cambias algo respecto al plan base, que sea poco: mover una sesión de día, acortarla, cambiar calidad por rodaje suave. Respeta los días y minutos libres.
-4. create_week_proposal con las sesiones, el semáforo y un reason de máximo 5 líneas: qué cambias respecto al plan base y por qué.
+4. create_week_proposal con las sesiones, el semáforo, un reason de máximo 5 líneas (qué cambias respecto al plan base y por qué) y el objetivo de la semana:
+   - objetivo_atleta: UNA frase muy corta (máx. 140 caracteres) que verá el atleta en su app. Ej.: "Esta semana buscamos mejorar la eficiencia en cuestas."
+   - objetivo_coach: para el entrenador, a fondo: tipo de semana y fase, qué buscamos y por qué, qué sesión es la clave y qué tiene que pasar en ella, qué esperamos conseguir al final de la semana, cómo encaja con el informe del Analista y qué vigilar.
 
 CAMBIOS SOBRE LO QUE YA ESTÁ (cuando el entrenador y tú decidís en la conversación quitar, mover, cambiar o añadir algo):
 1. get_week_sessions de esa semana para ver qué hay y los workout_id.
