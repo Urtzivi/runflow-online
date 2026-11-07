@@ -1,0 +1,22 @@
+/* RunFlow Coach · Informes del Analista (runflow-analyst-report.js) */
+.ar-card{background:#fff;border:1px solid #E3E7DF;border-left:6px solid #2F6B1F;border-radius:16px;padding:14px 16px;color:#17201C;min-width:0}
+.ar-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.ar-head small{color:#6B7A70;font-size:12px}
+.ar-k{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#5D6A62}
+.ar-pills{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.ar-pill{font-size:12px;font-weight:700;border-radius:999px;padding:4px 10px;background:#F1F3EF;color:#2E3832}
+.ar-pill.ok{background:#E3F4D6;color:#2F6B1F}.ar-pill.warn{background:#FCF0D2;color:#8A5A00}.ar-pill.bad{background:#FBE1DC;color:#9E2A1F}
+.ar-lead{margin:10px 0 0;font-size:16px;font-weight:600;line-height:1.45}
+.ar-alerts{margin-top:8px;background:#FBE1DC;border-radius:10px;padding:6px 10px;color:#7A1F14;font-size:14px}
+.ar-alerts p{margin:4px 0}
+.ar-details{margin-top:10px}
+.ar-details summary{cursor:pointer;font-weight:700;font-size:14px;color:#2F6B1F}
+.ar-body{font-size:15px;line-height:1.55;overflow-wrap:anywhere}
+.ar-body h3{font-size:17px;margin:16px 0 4px}.ar-body h4{font-size:15px;margin:12px 0 4px}.ar-body h5{font-size:14px;margin:10px 0 4px}
+.ar-body p{margin:6px 0}.ar-body ul,.ar-body ol{margin:6px 0;padding-left:20px}.ar-body li{margin:3px 0}
+.ar-body hr{border:0;border-top:1px solid #E3E7DF;margin:12px 0}
+.ar-msg{margin-top:12px;background:#F6F8F4;border-radius:12px;padding:10px 12px}
+.ar-msg p{margin:6px 0 0;font-size:14px;line-height:1.5}
+.ar-goal{background:#F6F8F4;border-radius:12px;padding:10px 12px;margin:8px 0}
+.ar-goal p{margin:4px 0 0}
+.form-section .ar-card{margin:10px 0}

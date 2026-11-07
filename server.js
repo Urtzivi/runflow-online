@@ -4925,6 +4925,9 @@ async function getActivityDetail(session, athleteId, externalId) {
   };
 }
 
+// Para el Analista (Asistente RunFlow): el mismo detalle que ve el coach al validar.
+globalThis.__runflowActivityDetail = (coachUserId, athleteId, externalId) => getActivityDetail({ user: { id: coachUserId } }, athleteId, externalId);
+
 async function previousComparableDetail(session, athleteId, currentDetail) {
   const currentWorkout = currentDetail && currentDetail.planned;
   const currentActivity = currentDetail && currentDetail.activity;
