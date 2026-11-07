@@ -122,3 +122,10 @@ body.nc-on #athleteActivityPlan{margin:0;font-size:13px}
 .nc-share-img{width:100%;max-width:340px;align-self:center;border-radius:18px;box-shadow:0 10px 30px rgba(0,0,0,.18)}
 .nc-share-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .nc-design-switch .athlete-secondary-cta{width:100%;margin-top:6px}
+/* Objetivo de la semana (lo escribe el Planificador): tarjeta oscura legible en "Tu semana". */
+body.nc-on .athlete-week-summary-card{background:var(--nc-dark)!important;border:0!important;color:#fff!important;padding:18px 20px!important}
+body.nc-on .athlete-week-summary-card #weekType{color:var(--nc-lime)!important;font-size:.72rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase}
+body.nc-on .athlete-week-summary-card h2{color:#fff!important;margin:6px 0 4px}
+body.nc-on .athlete-week-summary-card p{color:#E6EBE7!important;font-size:1rem;line-height:1.45;margin:0}
+body.nc-on .coach-message-card span{color:var(--nc-lime)!important}
+body.nc-on .coach-message-card p{color:#fff!important;font-size:1rem;line-height:1.45}
