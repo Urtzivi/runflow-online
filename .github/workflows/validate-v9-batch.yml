@@ -13,6 +13,8 @@ on:
       - 'scripts/test-assistant-drafts.cjs'
       - 'assistant-planner.js'
       - 'scripts/test-assistant-planner.cjs'
+      - 'scripts/test-assistant-football.cjs'
+      - 'assistant-football.js'
       - 'docs/AGENTE_PLANIFICADOR.md'
       - 'football-api-hook.js'
       - 'public/football.html'
@@ -103,6 +105,8 @@ jobs:
           node --check assistant-week-edit.js
           node --test scripts/test-assistant-week-edit.cjs
           node --test scripts/test-assistant-week-apply.cjs
+          node --check assistant-football.js
+          node --test scripts/test-assistant-football.cjs
       - name: Validate V9/V2 batch
         run: node scripts/validate-v9-batch.mjs
       - name: Check season calendar planner syntax
