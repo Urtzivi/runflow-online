@@ -1110,20 +1110,19 @@ async function listCoachAthletes(session, options = {}) {
   const rows = await prodRows('athletes', query);
   let result = rows.map(item => ({ ...item, lifecycle_status: item.lifecycle_status || 'active', app_access_status: item.user_id && item.lifecycle_status !== 'inactive' ? 'active' : item.user_id ? 'suspended' : 'pending' }));
   if (!detailed || !result.length) return result;
-  const detailedRows = [];
-  for (const item of result) {
+  // Todos los atletas a la vez: antes se pedían de uno en uno.
+  return Promise.all(result.map(async item => {
     const [activityRows, goalRows] = await Promise.all([
       prodRows('activities', `athlete_id=eq.${encodeURIComponent(item.id)}&select=activity_date&order=activity_date.desc&limit=1`).catch(() => []),
       prodRows('goals', `athlete_id=eq.${encodeURIComponent(item.id)}&status=eq.active&select=name,goal_date,priority_code,priority&order=goal_date.asc`).catch(() => []),
     ]);
-    detailedRows.push({
+    return {
       ...item,
       last_activity_date: activityRows[0]?.activity_date || null,
       active_goal_count: goalRows.length,
       next_goal: goalRows[0] ? { name: goalRows[0].name, goal_date: goalRows[0].goal_date, priority_code: goalRows[0].priority_code || null, priority: goalRows[0].priority || null } : null,
-    });
-  }
-  return detailedRows;
+    };
+  }));
 }
 
 async function setAthleteLifecycle(session, athleteId, status) {
@@ -4838,6 +4837,28 @@ async function activityReview(session, athleteId, activityId) {
   return rows[0] || null;
 }
 
+async function activityReviewsByExternalIds(session, athleteId, externalIds) {
+  const result = Object.fromEntries(externalIds.map(id => [id, null]));
+  if (!externalIds.length) return result;
+  if (DEMO_MODE) {
+    for (const externalId of externalIds) {
+      const activity = demo.activities.find(item => item.athlete_id === athleteId && item.intervals_activity_id === externalId);
+      if (activity) result[externalId] = await activityReview(session, athleteId, activity.id);
+    }
+    return result;
+  }
+  const quoted = externalIds.map(id => `"${id.replace(/["\\]/g, '')}"`).join(',');
+  const activities = await prodRows('activities', `athlete_id=eq.${encodeURIComponent(athleteId)}&intervals_activity_id=in.(${encodeURIComponent(quoted)})&select=id,intervals_activity_id`);
+  if (!activities.length) return result;
+  const reviews = await prodRows(
+    'activity_reviews',
+    `athlete_id=eq.${encodeURIComponent(athleteId)}&coach_user_id=eq.${encodeURIComponent(session.user.id)}&activity_id=in.(${activities.map(item => encodeURIComponent(item.id)).join(',')})&select=*`
+  );
+  const reviewByActivity = new Map(reviews.map(item => [String(item.activity_id), item]));
+  for (const activity of activities) result[activity.intervals_activity_id] = reviewByActivity.get(String(activity.id)) || null;
+  return result;
+}
+
 async function athleteZonesForBlocks(athleteId) {
   if (DEMO_MODE) {
     const athlete = demo.athletes.find(item => item.id === athleteId);
@@ -5605,6 +5626,15 @@ async function api(req, res, url) {
       ai_analysis: { ...generated.analysis, meta: { source: generated.source, model: generated.source === 'openai' ? OPENAI_MODEL : 'runflow-rules', usage: generated.usage, response_id: generated.response_id, openai_error: generated.openai_error || null, generated_at: new Date().toISOString() } },
     });
     return sendJson(res, 200, { analysis: review.ai_analysis, review });
+  }
+
+  // Revisiones de varias actividades en una sola petición (antes: una por actividad).
+  const activityReviewsMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/activity-reviews$/);
+  if (activityReviewsMatch && method === 'GET') {
+    const athleteId = activityReviewsMatch[1];
+    await ensureCoachAccess(session, athleteId);
+    const ids = [...new Set(String(url.searchParams.get('ids') || '').split(',').map(item => sanitiseText(item, 80)).filter(Boolean))].slice(0, 200);
+    return sendJson(res, 200, { reviews: await activityReviewsByExternalIds(session, athleteId, ids) });
   }
 
   const reviewActivityMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/activities\/([^/]+)\/review$/);
