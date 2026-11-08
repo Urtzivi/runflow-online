@@ -985,6 +985,9 @@ async function listCalendarWeeks(athleteId, oldest, newest, sync = false) {
     activities = (demo.activities || []).filter(item => item.athlete_id === athleteId && String(item.activity_date).slice(0, 10) >= rangeStart && String(item.activity_date).slice(0, 10) <= rangeEnd);
     manualLogs = (demo.manual_logs || []).filter(item => item.athlete_id === athleteId);
   } else {
+    // Las actividades no dependen de las semanas: se piden a la vez.
+    const activitiesPromise = listStoredActivities(athleteId, rangeStart, rangeEnd);
+    activitiesPromise.catch(() => {});
     weeks = await prodRows(
       'training_weeks',
       `athlete_id=eq.${encodeURIComponent(athleteId)}&week_start=gte.${rangeStart}&week_start=lte.${rangeEnd}&select=*&order=week_start.asc`
@@ -993,7 +996,7 @@ async function listCalendarWeeks(athleteId, oldest, newest, sync = false) {
     workouts = ids.length
       ? await prodRows('workouts', `training_week_id=in.(${ids.join(',')})&select=*&order=workout_date.asc`)
       : [];
-    activities = await listStoredActivities(athleteId, rangeStart, rangeEnd);
+    activities = await activitiesPromise;
     const workoutIds = workouts.map(item => item.id);
     manualLogs = workoutIds.length
       ? await prodRows('manual_session_logs', `athlete_id=eq.${encodeURIComponent(athleteId)}&workout_id=in.(${workoutIds.join(',')})&select=*`)
@@ -2758,6 +2761,34 @@ async function loadExecutionForRange(athleteId, oldest, newest, workouts) {
   return calculateExecutionMetrics(workouts, activities, manualLogs);
 }
 
+// Una sola consulta de actividades y registros manuales para todo un rango (p. ej. la temporada);
+// después cada semana / mesociclo / macrociclo se calcula en memoria. Antes se hacía una consulta
+// por cada semana, una detrás de otra, y la Planificación tardaba varios segundos.
+async function preloadExecution(athleteId, oldest, newest) {
+  if (DEMO_MODE || !oldest || !newest) return null;
+  const [activities, manualLogs] = await Promise.all([
+    prodRows(
+      'activities',
+      `athlete_id=eq.${encodeURIComponent(athleteId)}&activity_date=gte.${oldest}T00:00:00&activity_date=lte.${newest}T23:59:59&select=id,workout_id,activity_date,sport,duration_sec,distance_m,elevation_gain_m,load`
+    ),
+    prodRows('manual_session_logs', `athlete_id=eq.${encodeURIComponent(athleteId)}&workout_id=not.is.null&select=*`),
+  ]);
+  return { oldest, newest, activities, manualLogs };
+}
+
+function executionFromPreload(preload, athleteId, oldest, newest, workouts) {
+  if (!preload || !oldest || !newest || oldest < preload.oldest || newest > preload.newest) {
+    return loadExecutionForRange(athleteId, oldest, newest, workouts);
+  }
+  const ids = new Set((workouts || []).map(item => String(item.id)));
+  const activities = preload.activities.filter(item => {
+    const date = String(item.activity_date || '').slice(0, 10);
+    return date >= oldest && date <= newest;
+  });
+  const manualLogs = ids.size ? preload.manualLogs.filter(item => ids.has(String(item.workout_id))) : [];
+  return calculateExecutionMetrics(workouts, activities, manualLogs);
+}
+
 function clampPct(value) {
   const n = Number(value);
   return Number.isFinite(n) ? Math.max(0, Math.round(n * 10) / 10) : null;
@@ -2992,12 +3023,11 @@ async function updateCycleEvaluation(session, evaluationId, athleteId, body) {
 }
 
 async function getPlan(athleteId, requestedSeasonId = null) {
-  const seasons = await listSeasons(athleteId);
+  const [seasons, allGoals] = await Promise.all([listSeasons(athleteId), listGoals(athleteId)]);
   const season = requestedSeasonId
     ? await getSeasonForAthlete(athleteId, requestedSeasonId)
     : seasons.find(item => item.status === 'active') || seasons[0] || null;
 
-  const allGoals = await listGoals(athleteId);
   if (!season) {
     return {
       season: null,
@@ -3050,10 +3080,28 @@ async function getPlan(athleteId, requestedSeasonId = null) {
     workoutsByMicro.get(workout.training_week_id).push(workout);
   });
 
+  // Rango que cubre la temporada y todos sus ciclos: se carga una vez y se reparte en memoria.
+  const rangeDates = [season.start_date, season.end_date]
+    .concat(macroRows.flatMap(row => [row.start_date, row.end_date]))
+    .concat(mesoRows.flatMap(row => [row.start_date, row.end_date]))
+    .concat(microRows.flatMap(row => [row.week_start, row.end_date || addDays(row.week_start, 6)]))
+    .map(value => validDate(String(value || '').slice(0, 10)))
+    .filter(Boolean)
+    .sort();
+  const [execution, evaluations, unassignedRows] = await Promise.all([
+    preloadExecution(athleteId, rangeDates[0], rangeDates[rangeDates.length - 1]),
+    getCycleEvaluations(athleteId),
+    DEMO_MODE ? Promise.resolve([]) : prodRows(
+      'training_weeks',
+      `athlete_id=eq.${encodeURIComponent(athleteId)}&mesocycle_id=is.null&week_start=gte.${season.start_date}&week_start=lte.${season.end_date}&select=*&order=week_start.asc`
+    ),
+  ]);
+  const loadExecution = (oldest, newest, workouts) => executionFromPreload(execution, athleteId, oldest, newest, workouts);
+
   const microApiByMeso = new Map();
   for (const row of microRows) {
     const workouts = workoutsByMicro.get(row.id) || row.workouts || [];
-    const actual = await loadExecutionForRange(athleteId, row.week_start, row.end_date || addDays(row.week_start, 6), workouts);
+    const actual = await loadExecution(row.week_start, row.end_date || addDays(row.week_start, 6), workouts);
     const shaped = microcycleFromRow(row, workouts, actual);
     if (!microApiByMeso.has(row.mesocycle_id)) microApiByMeso.set(row.mesocycle_id, []);
     microApiByMeso.get(row.mesocycle_id).push(shaped);
@@ -3063,13 +3111,12 @@ async function getPlan(athleteId, requestedSeasonId = null) {
   for (const row of mesoRows) {
     const microcycles = microApiByMeso.get(row.id) || [];
     const workouts = microcycles.flatMap(item => item.workouts || []);
-    const actual = await loadExecutionForRange(athleteId, row.start_date, row.end_date, workouts);
+    const actual = await loadExecution(row.start_date, row.end_date, workouts);
     const shaped = mesocycleApi(row, microcycles, actual);
     if (!mesoApiByMacro.has(row.macrocycle_id)) mesoApiByMacro.set(row.macrocycle_id, []);
     mesoApiByMacro.get(row.macrocycle_id).push(shaped);
   }
 
-  const evaluations = await getCycleEvaluations(athleteId);
   const latestEvaluation = cycleId => evaluations.find(item =>
     item.macrocycle_id === cycleId || item.mesocycle_id === cycleId || item.microcycle_id === cycleId
   ) || null;
@@ -3090,7 +3137,7 @@ async function getPlan(athleteId, requestedSeasonId = null) {
       acc.strength_sessions += Number(meso.planned?.strength_sessions || 0);
       return acc;
     }, { hours: 0, distance_km: 0, elevation_m: 0, load: 0, strength_sessions: 0 });
-    const actual = await loadExecutionForRange(athleteId, row.start_date, row.end_date, workouts);
+    const actual = await loadExecution(row.start_date, row.end_date, workouts);
     macrocycles.push({
       ...row,
       planned,
@@ -3104,10 +3151,7 @@ async function getPlan(athleteId, requestedSeasonId = null) {
   const goals = allGoals.filter(goal => goal.season_id === season.id);
   let unassignedMicrocycles = [];
   if (!DEMO_MODE) {
-    const rows = await prodRows(
-      'training_weeks',
-      `athlete_id=eq.${encodeURIComponent(athleteId)}&mesocycle_id=is.null&week_start=gte.${season.start_date}&week_start=lte.${season.end_date}&select=*&order=week_start.asc`
-    );
+    const rows = unassignedRows;
     if (rows.length) {
       const ids = rows.map(item => item.id);
       const workouts = await prodRows('workouts', `training_week_id=in.(${ids.join(',')})&select=*&order=workout_date.asc`);
@@ -3129,7 +3173,7 @@ async function getPlan(athleteId, requestedSeasonId = null) {
     return acc;
   }, { hours: 0, distance_km: 0, elevation_m: 0, load: 0, strength_sessions: 0 });
   const seasonWorkouts = macrocycles.flatMap(macro => (macro.mesocycles || []).flatMap(meso => (meso.microcycles || []).flatMap(micro => micro.workouts || [])));
-  const seasonActual = await loadExecutionForRange(athleteId, season.start_date, season.end_date, seasonWorkouts);
+  const seasonActual = await loadExecution(season.start_date, season.end_date, seasonWorkouts);
 
   return {
     season: { ...season, planned: seasonPlanned, actual: seasonActual, progress: cycleProgress(seasonPlanned, seasonActual, season.start_date, season.end_date, seasonWorkouts) },
