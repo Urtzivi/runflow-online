@@ -105,6 +105,8 @@ jobs:
           node --check assistant-week-edit.js
           node --test scripts/test-assistant-week-edit.cjs
           node --test scripts/test-assistant-week-apply.cjs
+          node --check supabase-cache-hook.js
+          node --test scripts/test-supabase-cache.cjs
           node --check assistant-football.js
           node --test scripts/test-assistant-football.cjs
       - name: Validate V9/V2 batch

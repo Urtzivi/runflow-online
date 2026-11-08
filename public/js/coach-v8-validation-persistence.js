@@ -19,7 +19,7 @@
     try{
       const list=await api('/api/coach/athletes?include_inactive=0');const athletes=list.athletes||[];
       await Promise.all(athletes.map(async athlete=>{try{const bundle=await api(`/api/coach/athletes/${encodeURIComponent(athlete.id)}`);const full=bundle.athlete||bundle;for(const value of fieldValues(full.profile||{})){const key=keyFromCompact(athlete.id,value);if(key)originalSetItem.call(localStorage,key,'1');}}catch{}}));
-      setTimeout(()=>document.querySelector('#v8RefreshDashboard')?.click(),300);
+      setTimeout(()=>{if(window.RunFlowV8Dashboard)window.RunFlowV8Dashboard.refresh();else document.querySelector('#v8RefreshDashboard')?.click();},300);
     }catch(error){console.warn('[V8 validation hydrate]',error.message);}
   }
   let tries=0;const timer=setInterval(()=>{tries++;if(document.querySelector('#athleteSelect')){clearInterval(timer);hydrate();}else if(tries>100)clearInterval(timer);},100);

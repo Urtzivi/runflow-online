@@ -129,10 +129,22 @@
   async function pendingForResult(result, lookbackDays=21){
     const minDate=addDays(today(),-lookbackDays);
     const candidates=training.records(result).filter(item=>item.date>=minDate && item.date<=today());
+    // Una sola petición por atleta con todas sus actividades (antes: una por actividad).
+    const ids=[...new Set(candidates.filter(item=>item.type!=='manual'&&item.activity?.intervals_activity_id).map(item=>String(item.activity.intervals_activity_id)))];
+    let reviews=null;
+    if(ids.length){
+      try { reviews=(await api('/api/coach/athletes/'+encodeURIComponent(result.athlete.id)+'/activity-reviews?ids='+encodeURIComponent(ids.join(',')))).reviews||{}; }
+      catch { reviews=null; }
+    }
     return (await Promise.all(candidates.map(async item=>{
       if(item.type==='manual') return localStorage.getItem(manualValidationKey(item.athlete.id,item.workout))==='1'?null:item;
+      const externalId=String(item.activity?.intervals_activity_id||'');
+      if(reviews&&Object.prototype.hasOwnProperty.call(reviews,externalId)){
+        const review=reviews[externalId];
+        return review?.decision?null:{...item,review};
+      }
       try {
-        const detail=await api('/api/coach/athletes/'+encodeURIComponent(item.athlete.id)+'/activities/'+encodeURIComponent(item.activity.intervals_activity_id)+'/review');
+        const detail=await api('/api/coach/athletes/'+encodeURIComponent(item.athlete.id)+'/activities/'+encodeURIComponent(externalId)+'/review');
         return detail.review?.decision?null:{...item,review:detail.review};
       } catch { return {...item,reviewUnavailable:true}; }
     }))).filter(Boolean).sort((a,b)=>b.date.localeCompare(a.date));
@@ -226,17 +238,39 @@
     qa('[data-v8-validate],[data-review-record]',dashboard).forEach(b=>b.onclick=()=>openRecord(pending[Number(b.dataset.v8Validate??b.dataset.reviewRecord)],true));
   }
 
-  async function renderTeamDashboard(){
+  // La visión del equipo se pide desde varios sitios al arrancar (inicio, validaciones guardadas,
+  // cambio de atleta). Se comparte una sola carga en curso y los datos se reutilizan 30 s;
+  // el botón "↻ Actualizar" fuerza una carga nueva.
+  let teamRender=null, teamRenderQueued=false, teamDataCache=null;
+  function renderTeamDashboard(force=false){
+    if(teamRender){ if(force) teamRenderQueued=true; return teamRender; }
+    teamRender=renderTeamDashboardNow(force).finally(()=>{
+      teamRender=null;
+      if(teamRenderQueued){ teamRenderQueued=false; renderTeamDashboard(true).catch(showRuntimeError); }
+    });
+    return teamRender;
+  }
+  async function teamDashboardData(force){
+    if(!force&&teamDataCache&&Date.now()-teamDataCache.at<30000) return teamDataCache;
+    const {results,current}=await athleteCalendars(4);
+    const pendingLists=await Promise.all(results.map(r=>pendingForResult(r,21)));
+    teamDataCache={at:Date.now(),results,current,pendingLists};
+    return teamDataCache;
+  }
+  window.RunFlowV8Dashboard={refresh:(options={})=>renderTeamDashboard(Boolean(options.force))};
+
+  async function renderTeamDashboardNow(force=false){
     const summary=q('#summaryView'); if(!summary)return;
     let dashboard=q('#v8TeamDashboard');
     if(!dashboard){ dashboard=document.createElement('div'); dashboard.id='v8TeamDashboard'; summary.prepend(dashboard); const legacy=[...summary.children].find(x=>x!==dashboard); if(legacy) legacy.style.display='none'; }
-    dashboard.innerHTML='<div class="v8-empty">Cargando visión del equipo…</div>';
-    const {results,current}=await athleteCalendars(4);
+    if(force||!teamDataCache||Date.now()-teamDataCache.at>=30000) dashboard.innerHTML='<div class="v8-empty">Cargando visión del equipo…</div>';
+    const {results,current,pendingLists:cachedPending}=await teamDashboardData(force);
     const publishedWorkouts=results.flatMap(r=>(r.weeks||[]).filter(training.published).flatMap(w=>w.workouts||[])).filter(w=>w.workout_date>=current&&w.workout_date<=addDays(current,6));
     const planned=publishedWorkouts.length;
     const completed=publishedWorkouts.filter(w=>['completed','partial'].includes(w.execution_status)&&!(w.activities||[]).some(a=>training.mismatch(w.sport,a.sport))).length;
     const compliance=planned?Math.round((completed/planned)*100):0;
-    const pendingLists=await Promise.all(results.map(r=>pendingForResult(r,21)));
+    // Las validaciones manuales se guardan en este navegador: se vuelven a mirar sin pedir nada al servidor.
+    const pendingLists=cachedPending.map(list=>list.filter(item=>item.type!=='manual'||localStorage.getItem(manualValidationKey(item.athlete.id,item.workout))!=='1'));
     const pending=pendingLists.flat().filter(item=>!validatedHere.has(reviewKey(item))).sort((a,b)=>String(b.date).localeCompare(String(a.date)));
     dashboardPending=pending;
     const recent=results.flatMap(training.records).sort((a,b)=>b.date.localeCompare(a.date));
@@ -246,7 +280,7 @@
       <section class="v8-team-card" id="v8ValidationQueue"><div class="v8-team-card-head"><div><div class="v8-team-kicker">Control del entrenador</div><h3>Sesiones pendientes de validar</h3><p class="muted" style="font-size:11px;margin:3px 0 0">Una sesión realizada cuenta para la carga, pero permanece aquí hasta que el entrenador la revisa.</p></div><span class="badge pending">${pending.length} pendientes</span></div><div class="v8-team-card-body"><div class="v8-validation-list">${pending.map(validationRow).join('')||'<div class="v8-empty">✓ Todas las sesiones recientes están revisadas.</div>'}</div></div></section>
       <section class="v8-team-card" id="v8TodaySessions"><div class="v8-team-card-head"><div><div class="v8-team-kicker">Programación</div><h3>Sesiones planificadas hoy</h3></div><span class="badge">${todays.length} sesi${todays.length===1?'ón':'ones'}</span></div><div class="v8-team-card-body v8-live-list">${todays.map((x,index)=>`<button data-today-record="${index}" class="v8-live-item" style="width:100%;text-align:left"><div class="v8-attention-avatar">${esc(initials(x.athlete.display_name))}</div><div><b>${esc(x.athlete.display_name)} · ${esc(x.activity?.name||x.workout.title||'Sesión')}</b><small>${esc(x.workout.sport||'')} · carga ${Math.round(Number(x.workout.planned_load||0))}</small></div><span class="badge pending">${x.workout.execution_status==='completed'?'Hecha':'Plan'}</span></button>`).join('')||'<div class="v8-empty">Sin sesiones hoy.</div>'}</div></section>`;
     q('#v8ScrollValidation')?.addEventListener('click',()=>q('#v8ValidationQueue')?.scrollIntoView({behavior:'smooth'}));
-    q('#v8RefreshDashboard')?.addEventListener('click',()=>renderTeamDashboard().catch(showRuntimeError));
+    q('#v8RefreshDashboard')?.addEventListener('click',()=>renderTeamDashboard(true).catch(showRuntimeError));
     renderValidationState();
     qa('[data-today-record]',dashboard).forEach(b=>b.onclick=()=>{const scheduled=todays[Number(b.dataset.todayRecord)];openRecord(recent.find(r=>r.athlete.id===scheduled.athlete.id&&r.linked&&r.workout.id===scheduled.workout.id)||scheduled);});
   }
