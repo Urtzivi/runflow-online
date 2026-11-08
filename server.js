@@ -5884,6 +5884,17 @@ validateRuntimeConfig();
 setTimeout(() => maybeRefreshDailyPerformance('startup'), 12000);
 setInterval(() => maybeRefreshDailyPerformance('timer'), 30 * 60 * 1000);
 
+// Render (plan gratis) apaga el servidor tras 15 min sin visitas. El servidor se visita
+// a sí mismo cada 10 min por su dirección pública para que el Coach abra al momento.
+// El aviso de GitHub (.github/workflows/keep-render-awake.yml) queda como respaldo.
+const KEEP_AWAKE_URL = String(process.env.RENDER_EXTERNAL_URL || '').replace(/\/$/, '');
+if (!DEMO_MODE && KEEP_AWAKE_URL.startsWith('https://') && process.env.RUNFLOW_KEEP_AWAKE !== '0') {
+  const keepAwake = () => fetch(`${KEEP_AWAKE_URL}/health`, { cache: 'no-store' })
+    .then(response => { if (!response.ok) console.warn(`[keep-awake] /health respondió ${response.status}`); })
+    .catch(error => console.warn(`[keep-awake] ${error.message}`));
+  setInterval(keepAwake, 10 * 60 * 1000).unref?.();
+}
+
 server.listen(PORT, HOST, () => {
   console.log(`RunFlow ${APP_VERSION} · ${DEMO_MODE ? 'MODO DEMO' : 'ONLINE'} · ${APP_BASE_URL}`);
 });
