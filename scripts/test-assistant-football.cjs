@@ -44,3 +44,32 @@ test('la herramienta MCP es de solo lectura',()=>{
   const tool=MCP_TOOLS.find(t=>t.name==='get_football_matches');
   assert.ok(tool);assert.equal(tool.annotations.readOnlyHint,true);assert.deepEqual(tool.inputSchema.required,['athlete_id']);
 });
+
+const meta=m=>'RF_FOOTBALL|'+JSON.stringify(m);
+const logs=[
+  {id:'l1',created_at:'2026-11-14T19:00:00Z',rpe:8,pain:5,pain_area:'rodilla derecha',feeling:'bien',actual_duration_min:60,
+   comment:meta({kind:'match',plan_date:'2026-11-14',minutes_played:60,note:'Cansado al final',body_state:2,mood:4,match:{result:'win',goals_for:3,goals_against:1,role:'starter',rating:7,best:'Presión',improve:'Pase largo',q1:'Bien'}})},
+  {id:'l2',created_at:'2026-11-13T18:00:00Z',rpe:5,comment:meta({kind:'wellbeing',energy:4,soreness:2})},
+  {id:'l3',created_at:'2026-11-13T18:00:00Z',comment:'texto libre de running'},
+];
+
+test('valoraciones: resume el partido, avisa del dolor y marca lo que falta por valorar',()=>{
+  const r=football.feedbackSummary(logs,program,'2026-11-13','2026-11-21');
+  assert.equal(r.valoraciones.length,2);
+  const p=r.valoraciones.find(v=>v.kind==='match');
+  assert.equal(p.minutos_jugados,60);assert.equal(p.rpe_1_10,8);assert.equal(p.comentario,'Cansado al final');
+  assert.equal(p.partido.resultado,'ganado');assert.equal(p.partido.rol,'titular');assert.equal(p.partido.a_mejorar,'Pase largo');assert.deepEqual(p.partido.mi_partido_por_dentro,{q1:'Bien'});
+  assert.deepEqual(r.alertas,['Dolor 5/10 en rodilla derecha (Partido, 2026-11-14).']);
+  assert.deepEqual(r.partidos.map(x=>[x.fecha,x.valorado]),[['2026-11-14',true],['2026-11-21',false]]);
+  assert.equal(r.partidos_sin_valorar.length,1);
+});
+
+test('valoraciones: lee logs y programa del atleta',async()=>{
+  const calls=[];
+  const sb=async(table,query)=>{calls.push([table,query]);return table==='workout_templates'?[{template_data:program}]:logs};
+  const r=await football.footballFeedback(sb,'ath-1',{},'2026-11-14');
+  assert.equal(r.desde,'2026-11-12');assert.equal(r.hasta,'2026-11-14');
+  assert.ok(calls.some(([t,q])=>t==='manual_session_logs'&&/athlete_id=eq\.ath-1/.test(q)));
+  assert.equal(r.partidos_sin_valorar.length,0);
+  const tool=MCP_TOOLS.find(t=>t.name==='get_football_feedback');assert.equal(tool.annotations.readOnlyHint,true);
+});
