@@ -101,3 +101,10 @@
 .evo-src{display:inline-block;padding:3px 8px;border-radius:999px;font-size:10px;font-weight:800;white-space:nowrap;border:1px solid var(--v8-line,#dde1da);background:#fff;color:inherit;text-decoration:none;cursor:pointer}
 .evo-src.intervals{background:#fff4ec;border-color:#f3c9a8;color:#b3541e}
 .evo-src:hover{border-color:#9ccf3c}
+/* Paseos estimados por pasos (rayas verdes = color "andar" del libro de estilo) */
+.evo-walk-swatch,.evo-legend i.evo-walk-swatch{display:inline-block;width:10px;height:10px;border-radius:3px;background:repeating-linear-gradient(135deg,#5FA58C 0 3px,#8cc4b0 3px 6px);flex:none;vertical-align:-1px}
+.evo-sname i.evo-walk-swatch{width:6px;height:30px;display:block;background:repeating-linear-gradient(135deg,#5FA58C 0 3px,#8cc4b0 3px 6px)}
+.evo-walk-txt{color:#3f8a70}
+.evo-walk-note{display:flex;gap:6px;align-items:center;color:#3f8a70;font-weight:700}
+.evo-walk-row{cursor:default}
+.evo-walk-why{margin-top:10px;background:#f3f4ef;border-radius:12px;padding:10px 12px;font-size:12px;line-height:1.5;color:#3f4741}
