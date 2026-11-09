@@ -60,6 +60,8 @@ Si algo falla, la herramienta no guarda nada y devuelve la lista de fallos para 
 | `get_week_sessions` | La semana tal como está en el calendario: cada sesión con su `workout_id`, si está hecha y si se puede tocar. |
 | `propose_week_changes` | Propone cambios en esa semana (`changes` con add/modify/move/remove, `clear_week`, `week`). El Verificador bloquea solo los fallos **nuevos** que traiga el cambio; los que la semana ya tenía se avisan. Sustituye a otra propuesta de cambios pendiente de la misma semana. |
 | `apply_week_changes` | **Modo directo** (activado por defecto; se apaga con “Puede aplicar y publicar cambios” en la credencial, Conexiones). Aplica en el momento los cambios que el entrenador ha pedido o decidido en la conversación (`coach_confirmation` opcional); si la semana está publicada, llega al atleta y a Intervals. Mismo Verificador y mismas protecciones. Queda en “Últimos cambios aplicados por Claude”. |
+| `list_races` | Carreras del atleta: objetivos (con `goal_id` y estado), carreras intermedias de la temporada guiada y sesiones futuras que se han quedado fuera de la temporada en curso (restos de planes anteriores, con `workout_id`). |
+| `remove_race` | **Modo directo**, solo cuando el entrenador lo pide: borra el objetivo (`goal_id`) y quita la carrera de las carreras intermedias de la temporada guiada (`name`/`date`), para que el plan deje de tenerla en cuenta. Una sesión suelta de la carrera se quita con `apply_week_changes` (remove). |
 | `get_daily_report`, `list_sessions_to_analyze`, `get_session_analysis`, `get_week_review`, `create_feedback_draft`, `list_pending_drafts` | Las del Analista (ver docs/AGENTE_ANALISTA.md). |
 
 ## Cómo conectarlo en Claude

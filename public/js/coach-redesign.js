@@ -209,6 +209,7 @@
   }
 
   // ---------- Para revisar ----------
+  let proposalCount = 0;
   function greeting() { const h = new Date().getHours(); return h < 13 ? 'Buenos días' : h < 21 ? 'Buenas tardes' : 'Buenas noches'; }
   async function renderReview() {
     const view = q('#summaryView'); if (!view) return;
@@ -222,14 +223,16 @@
       const prepare = athletes.filter(a => a.plan.state === 'prepare' || a.plan.state === 'none');
       const planned = athletes.reduce((s, a) => s + a.week.planned, 0), done = athletes.reduce((s, a) => s + a.week.done, 0);
       const pending = pendingCount();
-      const total = pending + alerts.length + prepare.length;
+      const proposals = proposalCount;
+      const total = pending + proposals + alerts.length + prepare.length;
       const d = new Date();
       head.innerHTML = `
         <div class="rd-head"><div><p class="rd-eyebrow">${DAYS[d.getDay()]} ${d.getDate()} de ${['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'][d.getMonth()]}</p>
           <h1>${greeting()}. ${total ? `Tienes ${total} cosa${total === 1 ? '' : 's'} para hoy` : 'Todo al día'}</h1>
-          <p class="rd-sub">${pending} sesi${pending === 1 ? 'ón' : 'ones'} por validar, ${alerts.length} alerta${alerts.length === 1 ? '' : 's'} y ${prepare.length} atleta${prepare.length === 1 ? '' : 's'} con la planificación por preparar.</p></div>
+          <p class="rd-sub">${proposals ? `${proposals} propuesta${proposals === 1 ? '' : 's'} del Planificador por aprobar, ` : ''}${pending} sesi${pending === 1 ? 'ón' : 'ones'} por validar, ${alerts.length} alerta${alerts.length === 1 ? '' : 's'} y ${prepare.length} atleta${prepare.length === 1 ? '' : 's'} con la planificación por preparar.</p></div>
           <button type="button" class="btn secondary" data-rd-refresh>↻ Actualizar</button></div>
         <div class="rd-kpis">
+          <div class="rd-kpi ${proposals ? 'warn' : ''}"><b>${proposals}</b><span>Propuestas por aprobar</span></div>
           <div class="rd-kpi"><b>${pending}</b><span>Sesiones por validar</span></div>
           <div class="rd-kpi ${alerts.some(a => a.level === 'r') ? 'bad' : ''}"><b>${alerts.length}</b><span>Alertas</span></div>
           <div class="rd-kpi"><b>${prepare.length}</b><span>Planificación por preparar</span></div>
@@ -253,11 +256,15 @@
         grid.innerHTML = '<div id="rdReviewMain"></div><aside id="rdReviewSide"></aside>';
         dash.before(grid); q('#rdReviewMain').appendChild(dash);
       }
+      if (!q('#rdProposals')) { const box = document.createElement('div'); box.id = 'rdProposals'; box.hidden = true; q('#rdReviewMain').prepend(box); }
       side = q('#rdReviewSide');
       return true;
     };
     layout();
     paint(teamCache);
+    // Propuestas pendientes del Planificador: arriba de la cola, para aprobarlas sin ir a Ajustes.
+    if (!window.__rdProposalsListen) { window.__rdProposalsListen = true; window.addEventListener('runflow:proposals', e => { proposalCount = e.detail?.count || 0; counters(); if (current === 'review') paint(teamCache); }); }
+    window.RunFlowAssistantPanel?.mountReview?.(q('#rdProposals')).catch(() => {});
     head.onclick = e => { if (e.target.closest('[data-rd-refresh]')) { q('#v8RefreshDashboard')?.click(); loadTeam(true).then(paint).catch(() => {}); } };
     try { paint(await loadTeam()); } catch (error) { if (side) side.innerHTML = `<section class="rd-card"><p class="rd-muted">${esc(error.message)}</p></section>`; }
     // La cola de validación se rellena aparte (coach-v8-runtime): actualizamos los números cuando cambia.
@@ -404,7 +411,7 @@
   function counters() {
     const pending = qa('#v8ValidationQueue .v8-validation-row').length;
     const set = (el, text) => { if (el && el.textContent !== text) el.textContent = text; };
-    set(q('#rdReviewCount'), pending ? String(pending) : '');
+    set(q('#rdReviewCount'), pending + proposalCount ? String(pending + proposalCount) : '');
     const n = q('#athleteSelect')?.options.length || 0;
     set(q('#rdAthleteCount'), n ? String(n) : '');
   }

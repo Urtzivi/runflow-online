@@ -32,7 +32,7 @@
   <link rel="stylesheet" href="/css/coach-season-plan.css?v=1.2.0">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@600;700;800&display=swap">
-  <link rel="stylesheet" href="/css/coach-redesign.css?v=1.1.0">
+  <link rel="stylesheet" href="/css/coach-redesign.css?v=1.2.0">
   <script src="/js/modal-outside-click-guard.js?v=1.0.0"></script>
 </head>
 <body class="coach-v8-loading coach-v9-beta">
@@ -93,9 +93,9 @@
           '/js/football-schedule.js?v=1.4.0',
           '/js/football-strength-program.js?v=1.1.0',
           '/js/coach-football-week.js?v=1.3.0',
-          '/js/coach-assistant.js?v=1.3.0',
+          '/js/coach-assistant.js?v=1.4.0',
           '/js/session-controls.js?v=1.0.0',
-          '/js/coach-redesign.js?v=1.1.1'
+          '/js/coach-redesign.js?v=1.2.1'
         ];
         await Promise.all(scripts.map(src=>new Promise(resolve=>{const p=document.createElement('link');p.rel='preload';p.as='script';p.href=src;p.onload=resolve;p.onerror=resolve;document.head.appendChild(p)})));
         window.fetch=(input,init)=>{
