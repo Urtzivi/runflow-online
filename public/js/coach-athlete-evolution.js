@@ -137,7 +137,31 @@
     ui.data.model = buildModel(ui.data);
     if (isActive()) render();
     loadReviewStates(ui.data);
+    loadWalks(ui.data, sync);
   }
+
+  // Paseos no registrados estimados con los pasos del reloj (Intervals). Llegan después para no frenar la vista.
+  async function loadWalks(data, sync) {
+    try {
+      const walks = await api(`/api/coach/athletes/${encodeURIComponent(data.athleteId)}/walks?oldest=${data.firstWeek}&newest=${data.now}${sync ? '&sync=1' : ''}`);
+      if (ui.data !== data) return;
+      data.walks = walks;
+      applyWalks(data);
+      if (isActive()) render();
+    } catch { /* sin pasos: la vista sigue igual */ }
+  }
+
+  function applyWalks(data) {
+    const days = (data.walks?.days || []).filter(d => d.walk);
+    for (const w of data.model.weekRows) {
+      const list = days.filter(d => d.date >= w.start && d.date <= w.end);
+      w.walkDays = list;
+      w.walkLoad = list.reduce((s, d) => s + d.load, 0);
+      w.walkMin = list.reduce((s, d) => s + d.walk_min, 0);
+    }
+  }
+  const walkLabel = min => { const m = Math.round(min / 10) * 10; return m >= 60 ? `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60}` : ''}` : `${m} min`; };
+  const fmtSteps = n => num(n) === null ? '—' : Math.round(n).toLocaleString('es-ES', { useGrouping: true }).replace(/(\d)(?=(\d{3})+$)/, '$1.');
 
   function buildModel(data) {
     const { athlete, weeks, recovery, performance, now, monday, firstWeek } = data;
@@ -165,6 +189,7 @@
         doneCount: planned.filter(done).length,
         km: recs.reduce((s, r) => s + (num(r.activity?.distance_m) || 0), 0) / 1000,
         ctl: ctlRow ? num(ctlRow.fitness) : null,
+        walkLoad: 0, walkMin: 0, walkDays: [],
       });
     }
 
@@ -262,7 +287,7 @@
       <div class="evo-grid evo-kpis">${kpis(data)}</div>
       <div class="evo-grid evo-row2">
         <section class="evo-card"><div class="evo-card-head"><div><h3>Últimas semanas</h3><p class="evo-sub">Carga planificada frente a realizada y evolución de la aptitud</p></div>
-          <div class="evo-legend"><span><i style="background:#dfe3db"></i>Planificada</span><span><i style="background:var(--v8-lime)"></i>Realizada</span><span><i class="line"></i>Aptitud</span></div></div>
+          <div class="evo-legend"><span><i style="background:#dfe3db"></i>Planificada</span><span><i style="background:var(--v8-lime)"></i>Realizada</span>${data.walks?.walk_days ? '<span><i class="evo-walk-swatch"></i>Paseos (estimado)</span>' : ''}<span><i class="line"></i>Aptitud</span></div></div>
           <svg id="evoWeeksChart" class="evo-chart" height="200" role="img" aria-label="Carga semanal planificada y realizada. Pulsa una semana para ver sus sesiones."></svg>
           <div class="evo-table-wrap">${weeksTable(data)}</div>
           <p class="evo-note evo-week-hint">Pulsa una semana del gráfico para ver sus sesiones.</p>
@@ -319,10 +344,18 @@
     const upcoming = data.weeks.filter(w => (w.publication_status || w.status) === 'published').flatMap(w => w.workouts || [])
       .filter(w => !isRest(w) && w.workout_date > data.now && w.workout_date >= week.start && w.workout_date <= week.end)
       .map(w => ({ type: 'planned', workout: w, date: w.workout_date, status: 'planned' }));
-    const rows = [...list, ...upcoming].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    const walkRows = (week.walkDays || []).map(d => ({ type: 'walk', walkDay: d, date: d.date, status: 'walk' }));
+    const rows = [...list, ...upcoming, ...walkRows].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    const walkInfo = walkRows.length && data.walks ? `<div class="evo-walk-why"><b>Paseos estimados por pasos.</b> Sus pasos normales son unos ${fmtSteps(data.walks.baseline)} al día (lo típico de las 4 semanas anteriores, sin contar sus actividades). Cuenta como paseo el día que sobran 3.000 pasos o más (unos 30 min andando), después de quitar los pasos normales y los de las actividades registradas: unos 1,7 de carga por cada 1.000 pasos extra, con un máximo de 25. No cambia la aptitud, la fatiga ni la forma, que siguen viniendo de Intervals.</div>` : '';
     target.innerHTML = `<div class="evo-week-detail">
-      <div class="evo-week-detail-head"><div><b>Semana del ${shortDate(week.start)} al ${shortDate(week.end)}</b><small>${fmtNum(Math.round(week.doneLoad))} realizada / ${fmtNum(Math.round(week.plannedLoad))} planificada · ${rows.filter(r => r.status === 'done').length} sesiones hechas</small></div><button type="button" class="evo-btn small" data-evo-week-close>Cerrar</button></div>
+      <div class="evo-week-detail-head"><div><b>Semana del ${shortDate(week.start)} al ${shortDate(week.end)}</b><small>${fmtNum(Math.round(week.doneLoad))} realizada${week.walkLoad ? ` + ${fmtNum(week.walkLoad)} de paseos` : ''} / ${fmtNum(Math.round(week.plannedLoad))} planificada · ${rows.filter(r => r.status === 'done').length} sesiones hechas</small></div><button type="button" class="evo-btn small" data-evo-week-close>Cerrar</button></div>
       ${rows.length ? `<table class="evo-sessions evo-week-sessions"><thead><tr><th>Fecha</th><th>Sesión</th><th>Origen</th><th class="n">Carga</th><th>Estado</th></tr></thead><tbody>${rows.map((s, i) => {
+        if (s.type === 'walk') {
+          const d = s.walkDay;
+          return `<tr class="evo-walk-row"><td class="d">${esc(dayDate(s.date))}</td>
+          <td><div class="evo-sname"><i class="evo-walk-swatch"></i><div><b>Paseo (estimado)</b><small>${fmtSteps(d.steps)} pasos en el día · paseo ≈ ${walkLabel(d.walk_min)}</small></div></div></td>
+          <td><span class="evo-src">Pasos del reloj</span></td><td class="n"><b class="evo-walk-txt">+${fmtNum(d.load)}</b></td><td><span class="evo-pill n">No registrado</span></td></tr>`;
+        }
         const w = s.workout || {}, a = s.activity || null;
         const title = a?.name || w.title || 'Sesión';
         const status = s.status === 'planned' ? '<span class="evo-pill n">Programada</span>' : sessionStatus(data, s);
@@ -331,10 +364,12 @@
           <td><div class="evo-sname"><i style="background:${sessionColor(s)}"></i><div><b>${esc(title)}</b><small>${esc(sessionSubtitle(s))}</small></div></div></td>
           <td>${sourcePill(s)}</td><td class="n"><b>${load}</b>${s.estimated ? '<small title="Carga estimada a partir de la duración registrada">*</small>' : ''}</td><td>${status}</td></tr>`;
       }).join('')}</tbody></table>` : '<div class="evo-empty">No hay sesiones en esta semana.</div>'}
+      ${walkInfo}
     </div>`;
     target.querySelector('[data-evo-week-close]')?.addEventListener('click', () => selectWeek(week.start));
     target.querySelectorAll('[data-evo-week-row]').forEach(row => {
       const s = rows[Number(row.dataset.evoWeekRow)];
+      if (s.type === 'walk') return;
       row.addEventListener('click', event => { if (event.target.closest('a')) return; openSession(s); });
       row.addEventListener('keydown', event => { if (event.key === 'Enter') openSession(s); });
     });
@@ -406,7 +441,7 @@
       </section>
       <section class="evo-card evo-kpi"><p class="evo-eyebrow">Carga esta semana</p>
         <div class="evo-val">${fmtNum(tw ? Math.round(tw.doneLoad) : null)} <small>/ ${fmtNum(tw ? Math.round(tw.plannedLoad) : null)} plan.</small></div>
-        <div class="evo-bar"><i style="width:${loadPct}%"></i></div><p class="evo-note">28 días: ${fmtNum(Math.round(md.load28))} puntos</p>
+        <div class="evo-bar"><i style="width:${loadPct}%"></i></div>${tw && tw.walkLoad ? `<p class="evo-note evo-walk-note"><i class="evo-walk-swatch"></i>+ ${fmtNum(tw.walkLoad)} de paseos (estimado por pasos)</p>` : ''}<p class="evo-note">28 días: ${fmtNum(Math.round(md.load28))} puntos</p>
       </section>
       <section class="evo-card evo-kpi"><p class="evo-eyebrow">Cumplimiento 28 d</p>
         ${comp ? `<div class="evo-val">${fmtNum(Math.round(comp.pct))}<small>%</small></div><div class="evo-bar"><i style="width:${Math.min(100, comp.pct)}%"></i></div><p class="evo-note">${fmtNum(comp.done, comp.done % 1 ? 1 : 0)} de ${fmtNum(comp.planned)} sesiones hechas</p>` : '<div class="evo-val">—</div><p class="evo-note">Sin sesiones publicadas en 28 días.</p>'}
@@ -427,6 +462,7 @@
       ${line('Sesiones', pill)}
       ${line('Km', w => w.km ? fmtNum(w.km) : '—')}
       ${line('Cumpl. carga', w => w.plannedLoad ? `${fmtNum(Math.round(w.doneLoad / w.plannedLoad * 100))}%` : '—')}
+      ${data.walks?.walk_days ? line('Paseos', w => w.walkLoad ? `<span class="evo-walk-txt">+${fmtNum(w.walkLoad)}</span>` : '—') : ''}
     </tbody></table>`;
   }
 
@@ -568,11 +604,15 @@
     const svg = byId('evoWeeksChart'); if (!svg) return;
     const weeks = data.model.weekRows;
     const W = widthOf(svg), H = 200, pl = 34, pr = 34, pt = 10, pb = 24, iw = W - pl - pr, ih = H - pt - pb;
-    const maxLoad = Math.max(100, ...weeks.map(w => Math.max(w.plannedLoad, w.doneLoad)));
+    const maxLoad = Math.max(100, ...weeks.map(w => Math.max(w.plannedLoad, w.doneLoad + (w.walkLoad || 0))));
     const step = maxLoad > 600 ? 200 : maxLoad > 300 ? 100 : 50;
     const max = Math.ceil(maxLoad / step) * step;
     for (let v = 0; v <= max; v += step) { const y = pt + ih - ih * v / max; el('line', { x1: pl, x2: W - pr, y1: y, y2: y, stroke: '#e6e9e3' }, svg); el('text', { x: pl - 6, y: y + 3, 'text-anchor': 'end', 'font-size': 9, fill: '#9aa19a' }, svg, String(v)); }
     svg.replaceChildren();
+    const defs = el('defs', {}, svg);
+    const pattern = el('pattern', { id: 'evoWalkHatch', width: 6, height: 6, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' }, defs);
+    el('rect', { width: 6, height: 6, fill: '#8cc4b0' }, pattern);
+    el('rect', { width: 3, height: 6, fill: '#5FA58C' }, pattern);
     const bw = iw / weeks.length, b = Math.min(28, bw * .3);
     weeks.forEach((w, i) => {
       const cx = pl + i * bw + bw / 2;
@@ -580,6 +620,11 @@
       const hp = ih * w.plannedLoad / max, hd = ih * w.doneLoad / max;
       el('rect', { x: cx - b - 1.5, y: pt + ih - hp, width: b, height: hp, rx: 4, fill: '#dfe3db' }, svg);
       el('rect', { x: cx + 1.5, y: pt + ih - hd, width: b, height: hd, rx: 4, fill: w.current ? '#d6f59a' : '#b9f34d', stroke: w.current ? '#9ccf3c' : 'none', 'stroke-dasharray': w.current ? '3 2' : '' }, svg);
+      if (w.walkLoad) {
+        const hw = ih * w.walkLoad / max;
+        const seg = el('rect', { x: cx + 1.5, y: pt + ih - hd - hw, width: b, height: hw, rx: 3, fill: 'url(#evoWalkHatch)' }, svg);
+        el('title', {}, seg, `Paseos estimados por pasos: +${Math.round(w.walkLoad)}`);
+      }
       const t = el('text', { x: cx, y: H - 8, 'text-anchor': 'middle', 'font-size': 10, fill: w.current ? '#181d19' : '#858c86', 'font-weight': w.current ? 800 : 600 }, svg, w.current ? 'Esta sem.' : shortDate(w.start));
       el('title', {}, t, `Semana del ${shortDate(w.start)}: ${Math.round(w.doneLoad)} realizada / ${Math.round(w.plannedLoad)} planificada`);
     });
@@ -594,7 +639,7 @@
     // Zonas clicables por semana (encima de todo) para abrir sus sesiones.
     weeks.forEach((w, i) => {
       const hit = el('rect', { x: pl + i * bw, y: 0, width: bw, height: H, fill: 'transparent', class: 'evo-week-hit', tabindex: 0, role: 'button', 'aria-label': `Ver sesiones de la semana del ${shortDate(w.start)}` }, svg);
-      el('title', {}, hit, `Semana del ${shortDate(w.start)}: ${Math.round(w.doneLoad)} realizada / ${Math.round(w.plannedLoad)} planificada · pulsa para ver sus sesiones`);
+      el('title', {}, hit, `Semana del ${shortDate(w.start)}: ${Math.round(w.doneLoad)} realizada${w.walkLoad ? ` + ${Math.round(w.walkLoad)} de paseos` : ''} / ${Math.round(w.plannedLoad)} planificada · pulsa para ver sus sesiones`);
       hit.addEventListener('click', () => selectWeek(w.start));
       hit.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectWeek(w.start); } });
     });

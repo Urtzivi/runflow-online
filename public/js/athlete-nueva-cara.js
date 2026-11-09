@@ -48,7 +48,7 @@
   const kindColor = key => I.isHard(key) ? '#E07B39' : KIND_COLOR[key] || KIND_COLOR.other;
   const st = () => { try { return state; } catch { return null; } };
   const athlete = () => st()?.athlete || null;
-  const cache = { evolution: null, evolutionAt: 0, lastActivity: undefined, activityDetail: null };
+  const cache = { evolution: null, evolutionAt: 0, lastActivity: undefined, activityDetail: null, walks: null, walksKey: '', walksAt: 0 };
 
   async function getJson(url) {
     const response = await fetch(url, { credentials: 'same-origin', headers: { 'Content-Type': 'application/json' } });
@@ -62,6 +62,24 @@
     catch (error) { console.warn('[nueva cara] evolución', error.message); }
     return cache.evolution;
   }
+  // Paseos no registrados estimados con los pasos del reloj (Intervals) para la semana en curso.
+  async function loadWalks(week) {
+    if (!week?.week_start) return null;
+    const newest = [I.addDaysIso(week.week_start, 6), localIso()].sort()[0];
+    const key = `${week.week_start}:${newest}`;
+    if (cache.walksKey === key && Date.now() - cache.walksAt < 600000) return cache.walks;
+    try { cache.walks = await getJson(`/api/athlete/walks?oldest=${week.week_start}&newest=${newest}`); cache.walksKey = key; cache.walksAt = Date.now(); }
+    catch (error) { console.warn('[nueva cara] paseos', error.message); cache.walks = null; }
+    return cache.walks;
+  }
+  const walkTime = min => { const m = Math.round(min / 10) * 10; return m >= 60 ? `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60}` : ''}` : `${m} min`; };
+  function walkLine(walks, week) {
+    const days = (walks?.days || []).filter(d => d.walk && d.date >= week.week_start && d.date <= I.addDaysIso(week.week_start, 6));
+    if (!days.length) return '';
+    const load = days.reduce((s, d) => s + d.load, 0), min = days.reduce((s, d) => s + d.walk_min, 0);
+    return `<div class="nc-walk"><div class="nc-row"><span class="nc-walk-k"><i></i>Paseos · ${esc(walkTime(min))} aprox.</span><b>+${load} de carga</b></div><small class="nc-mut">Los contamos con los pasos del reloj, sin que tengas que registrarlos. Suman poco y no cambian tu plan.</small></div>`;
+  }
+
   async function loadLastActivity() {
     if (cache.lastActivity !== undefined) return cache.lastActivity;
     const known = st()?.activities;
@@ -168,8 +186,9 @@
     </button>`;
   }
 
-  function weekCard(week, evolution) {
+  function weekCard(week, evolution, walks) {
     if (!week) return '';
+    const walkDates = new Set((walks?.days || []).filter(d => d.walk).map(d => d.date));
     const workouts = week.workouts || [];
     const todayIso = localIso();
     const done = workouts.filter(w => ['completed', 'partial'].includes(w.execution_status)).length;
@@ -189,7 +208,8 @@
       const key = main ? I.classifySession(main) : 'rest';
       const color = kindColor(key);
       const isDone = list.some(w => ['completed', 'partial'].includes(w.execution_status));
-      const cls = date === todayIso ? 'today' : isDone ? 'done' : date < todayIso && main && key !== 'rest' ? 'missed' : '';
+      const walkOnly = walkDates.has(date) && !isDone;
+      const cls = [date === todayIso ? 'today' : isDone ? 'done' : date < todayIso && main && key !== 'rest' ? 'missed' : '', walkOnly ? 'walk' : ''].filter(Boolean).join(' ');
       const load = list.reduce((s, w) => s + (num(w.planned_load) || 0), 0);
       return `<button type="button" class="nc-day ${cls}" ${main ? `data-nc-open-workout="${esc(main.id)}"` : 'disabled'} style="--c:${color}" aria-label="${esc(dayLabel(date))}${main ? `: ${esc(main.title)}` : ': descanso'}"><small>${'LMXJVSD'[i]}</small><span>${new Date(`${date}T12:00:00`).getDate()}</span><i style="height:${Math.max(4, Math.round((load / maxLoad) * 34))}px"></i></button>`;
     }).join('');
@@ -197,7 +217,8 @@
       <div class="nc-row"><div><span class="nc-k">Esta semana</span><h3 class="nc-h3">${esc(week.week_type || week.title || 'Tu semana')}</h3></div><div class="nc-right">${right}</div></div>
       <div class="nc-bar"><i style="width:${Math.round(Math.min(1, progress) * 100)}%"></i></div>
       <div class="nc-week">${days}</div>
-      <div class="nc-legend"><span><i style="background:#4F8FC0"></i>suave</span><span><i style="background:#E07B39"></i>calidad</span><span><i style="background:#2F6FA3"></i>larga</span><span><i style="background:#7A5BB5"></i>fuerza</span></div>
+      <div class="nc-legend"><span><i style="background:#4F8FC0"></i>suave</span><span><i style="background:#E07B39"></i>calidad</span><span><i style="background:#2F6FA3"></i>larga</span><span><i style="background:#7A5BB5"></i>fuerza</span>${walkDates.size ? '<span><i class="nc-walk-sw"></i>paseo</span>' : ''}</div>
+      ${walkLine(walks, week)}
       <button type="button" class="nc-link" data-nc-share>${icon.share} Compartir mi semana</button>
     </section>`;
   }
@@ -257,17 +278,17 @@
     const ticket = ++todayRender;
     let host = q('#ncToday');
     if (!host) { host = document.createElement('div'); host.id = 'ncToday'; host.className = 'nc-stack'; content.prepend(host); }
-    const paint = (evolution, last) => {
+    const paint = (evolution, last, walks) => {
       if (ticket !== todayRender) return;
       const week = a.week; const workouts = week?.workouts || [];
       const today = workouts.find(w => String(w.workout_date).slice(0, 10) === localIso()) || null;
       const sub = q('#todaySubtitle'); if (sub) sub.innerHTML = greetingLine(week, evolution);
-      host.innerHTML = readinessCard(a.metrics || {}, evolution, today) + todayCard(today, workouts) + lastActivityCard(last) + weekCard(week, evolution) + progressCard() + goalCard(a.goals);
+      host.innerHTML = readinessCard(a.metrics || {}, evolution, today) + todayCard(today, workouts) + lastActivityCard(last) + weekCard(week, evolution, walks) + progressCard() + goalCard(a.goals);
       const coach = q('#coachMessageCard'); if (coach && coach.previousElementSibling !== host) host.after(coach);
     };
-    paint(cache.evolution, cache.lastActivity || null);
-    const [evolution, last] = await Promise.all([loadEvolution(), loadLastActivity()]);
-    paint(evolution, last);
+    paint(cache.evolution, cache.lastActivity || null, cache.walks);
+    const [evolution, last, walks] = await Promise.all([loadEvolution(), loadLastActivity(), loadWalks(a.week)]);
+    paint(evolution, last, walks);
   }
 
   // ---------- SESIÓN ----------

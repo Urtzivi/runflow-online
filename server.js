@@ -6,6 +6,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { URL } = require('url');
 const RunflowInsights = require('./public/js/athlete-insights.js');
+const RunflowWalkLoad = require('./public/js/walk-load.js');
 const { compareDetailedBlocks, detailedBlocks, findPreviousComparable, identity, sessionBlockAnalysis } = require('./session-comparison-metrics');
 
 const PORT = Number(process.env.PORT || 8787);
@@ -4083,6 +4084,42 @@ async function syncRecovery(athleteId, oldest, newest) {
 }
 
 
+// Paseos no registrados a partir de los pasos diarios de Intervals. No se guardan en Supabase (daily_metrics no tiene
+// columna de pasos): se piden a Intervals al vuelo y se guardan 20 minutos en memoria por atleta y rango.
+const walkLoadCache = new Map();
+const WALK_CACHE_MS = 20 * 60 * 1000;
+
+function demoStepsFor(athleteId, oldest, newest) {
+  const rows = [];
+  for (let date = oldest; date <= newest; date = addDays(date, 1)) {
+    const day = new Date(`${date}T12:00:00Z`).getUTCDay();
+    const base = 7600 + ((Number(date.slice(8, 10)) * 37) % 9) * 120;
+    const walk = day === 3 ? 9600 : day === 6 ? 7800 : 0;
+    rows.push({ id: date, steps: base + walk });
+  }
+  return rows;
+}
+
+async function walkLoadFor(athleteId, oldest, newest, force = false) {
+  const key = `${athleteId}:${oldest}:${newest}`;
+  const cached = walkLoadCache.get(key);
+  if (!force && cached && Date.now() - cached.at < WALK_CACHE_MS) return cached.value;
+  const from = addDays(oldest, -RunflowWalkLoad.RULE.baselineDays);
+  let wellness = [];
+  if (DEMO_MODE) wellness = demoStepsFor(athleteId, from, newest);
+  else {
+    const apiKey = await getIntervalsKey(athleteId);
+    if (!apiKey) return { days: [], has_steps: false, connected: false, total_load: 0, total_min: 0, walk_days: 0, oldest, newest };
+    wellness = unwrapIntervalsData(await intervalsFetch(apiKey, `/athlete/0/wellness?oldest=${from}&newest=${newest}`));
+  }
+  const activities = await listStoredActivities(athleteId, from, newest).catch(() => []);
+  const value = { ...RunflowWalkLoad.computeWalks({ wellness, activities, oldest, newest }), connected: true, oldest, newest };
+  walkLoadCache.set(key, { at: Date.now(), value });
+  if (walkLoadCache.size > 300) walkLoadCache.delete(walkLoadCache.keys().next().value);
+  return value;
+}
+
+
 
 function clampNumber(value, min, max) {
   const number = Number(value);
@@ -5555,6 +5592,14 @@ async function api(req, res, url) {
 
 
 
+  const walksMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/walks$/);
+  if (walksMatch && method === 'GET') {
+    const athleteId = walksMatch[1];
+    await ensureCoachAccess(session, athleteId);
+    const { oldest, newest } = dateRangeParams(url, 27);
+    return sendJson(res, 200, await walkLoadFor(athleteId, oldest, newest, url.searchParams.get('sync') === '1'));
+  }
+
   const performanceMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/performance$/);
   if (performanceMatch && method === 'GET') {
     const athleteId = performanceMatch[1];
@@ -5765,6 +5810,13 @@ async function api(req, res, url) {
     requireRole(session, 'athlete');
     if (!session.athlete_id) throw Object.assign(new Error('Tu usuario todavía no está vinculado a una ficha de deportista.'), { status: 409 });
     return sendJson(res, 200, await performanceBundle(session.athlete_id, url.searchParams.get('days') || 84, url.searchParams.get('refresh') === '1'));
+  }
+
+  if (pathname === '/api/athlete/walks' && method === 'GET') {
+    requireRole(session, 'athlete');
+    if (!session.athlete_id) throw Object.assign(new Error('Tu usuario todavía no está vinculado a una ficha de deportista.'), { status: 409 });
+    const { oldest, newest } = dateRangeParams(url, 6);
+    return sendJson(res, 200, await walkLoadFor(session.athlete_id, oldest, newest));
   }
 
   if (pathname === '/api/athlete/evolution' && method === 'GET') {

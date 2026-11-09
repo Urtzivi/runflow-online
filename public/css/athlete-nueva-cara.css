@@ -129,3 +129,12 @@ body.nc-on .athlete-week-summary-card h2{color:#fff!important;margin:6px 0 4px}
 body.nc-on .athlete-week-summary-card p{color:#E6EBE7!important;font-size:1rem;line-height:1.45;margin:0}
 body.nc-on .coach-message-card span{color:var(--nc-lime)!important}
 body.nc-on .coach-message-card p{color:#fff!important;font-size:1rem;line-height:1.45}
+/* Paseos estimados por pasos (color "andar", a rayas porque no es un entreno registrado) */
+.nc-day.walk span{background:repeating-linear-gradient(135deg,#5FA58C 0 4px,#8cc4b0 4px 8px)!important;color:#fff}
+.nc-walk-sw{background:repeating-linear-gradient(135deg,#5FA58C 0 3px,#8cc4b0 3px 6px)}
+.nc-walk{margin-top:12px;padding-top:12px;border-top:1px solid #E3E6DE;display:flex;flex-direction:column;gap:4px}
+.nc-walk .nc-row{align-items:center}
+.nc-walk-k{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600}
+.nc-walk-k i{width:10px;height:10px;border-radius:3px;background:repeating-linear-gradient(135deg,#5FA58C 0 3px,#8cc4b0 3px 6px)}
+.nc-walk b{color:#3f8a70;font-family:Manrope,Inter,sans-serif}
+.nc-walk small{font-size:12px;line-height:1.4}
