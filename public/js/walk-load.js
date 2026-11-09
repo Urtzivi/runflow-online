@@ -1,6 +1,6 @@
 // Paseos no registrados contados como carga pequeña a partir de los pasos diarios del reloj (Intervals wellness).
 // Regla: pasos del día − pasos de las actividades registradas − pasos normales del atleta (mediana de los 28 días
-// anteriores, ya sin actividades). Si sobran 4.000 pasos o más, es un paseo: ≈1,7 de carga por cada 1.000 pasos
+// anteriores, ya sin actividades). Si sobran 3.000 pasos o más (unos 30 min andando), es un paseo: ≈1,7 de carga por cada 1.000 pasos
 // extra (lo que Intervals suele dar a un paseo de 10.000 pasos), con un máximo de 25 al día. Es solo informativo:
 // no toca la aptitud, la fatiga ni la forma, que siguen viniendo de Intervals.
 (function (root, factory) {
@@ -12,7 +12,7 @@
   const RULE = {
     baselineDays: 28,
     minBaselineDays: 7,
-    minExtraSteps: 4000,
+    minExtraSteps: 3000,
     loadPer1000: 1.7,
     maxLoadPerDay: 25,
     stepsPerMinute: 100,
