@@ -105,6 +105,8 @@ jobs:
           node --check assistant-week-edit.js
           node --test scripts/test-assistant-week-edit.cjs
           node --test scripts/test-assistant-week-apply.cjs
+          node --check assistant-blocks.js
+          node --test scripts/test-assistant-blocks.cjs
           node --check supabase-cache-hook.js
           node --test scripts/test-supabase-cache.cjs
           node --check assistant-football.js
