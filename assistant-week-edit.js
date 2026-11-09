@@ -1,4 +1,5 @@
 'use strict';
+const { normaliseBlocks, markForCheck } = require('./assistant-blocks');
 
 // Agente Planificador: cambios sobre semanas y sesiones que YA están en el
 // calendario (añadir, cambiar, mover, quitar una sesión o vaciar la semana).
@@ -43,7 +44,7 @@ function cleanFields(source = {}) {
   if (source.planned_duration_min !== undefined) out.planned_duration_min = num(source.planned_duration_min, 2000);
   if (source.planned_distance_km !== undefined) out.planned_distance_km = num(source.planned_distance_km, 2000);
   if (source.planned_elevation_m !== undefined) out.planned_elevation_m = num(source.planned_elevation_m, 100000);
-  if (Array.isArray(source.blocks)) out.blocks = source.blocks.slice(0, 30);
+  if (Array.isArray(source.blocks)) out.blocks = normaliseBlocks(source.blocks);
   for (const key of ['session_objective', 'adaptation_target', 'purpose']) if (source[key] !== undefined) out[key] = safe(source[key], 3000);
   if (typeof source.is_strength === 'boolean') out.is_strength = source.is_strength;
   if (source.optional !== undefined) out.optional = Boolean(source.optional);
@@ -101,7 +102,7 @@ function applyChanges({ weekStart, today, current = [], doneIds = new Set(), cha
       if (!checkDate(fields.workout_date, what)) return;
       const added = { sport: 'Run', title: 'Sesión', summary: '', planned_load: 0, blocks: [], ...fields, id: `new-${index + 1}` };
       if (!added.structured_description) added.structured_description = added.summary;
-      workouts.push(added);
+      workouts.push(markForCheck(added));
       summary.push(`Añadir: ${label(added)}${suffix}`);
       return;
     }
@@ -121,6 +122,8 @@ function applyChanges({ weekStart, today, current = [], doneIds = new Set(), cha
     if (!Object.keys(fields).length) { errors.push(`${what}: no dice qué cambiar de “${label(target)}”.`); return; }
     const before = label(target);
     Object.assign(target, fields);
+    // Sesiones antiguas sin bloques: Intervals usa el texto; solo se comprueba si hay bloques.
+    if ((target.blocks || []).some(b => b && b.type !== 'runflow_meta') && ['blocks', 'structured_description', 'summary', 'planned_duration_min'].some(key => fields[key] !== undefined)) markForCheck(target);
     // Si cambia el texto pero no la descripción estructurada, que no quede la antigua.
     if (fields.summary !== undefined && fields.structured_description === undefined) target.structured_description = fields.summary;
     summary.push(`${action === 'move' ? 'Mover' : 'Cambiar'}: ${before} → ${label(target)}${suffix}`);

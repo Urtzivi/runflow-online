@@ -26,6 +26,13 @@ Nunca crea ni publica nada por su cuenta: todo llega al entrenador como **propue
 
 ## Reglas que comprueba el Verificador
 
+**Sesiones (bloques y texto)** — en `create_week_proposal` y en las sesiones que el agente añade o cambia:
+
+- Cada sesión de carrera necesita el bloque principal en `blocks` (`central` para series, `steady` para rodaje continuo). Intervals y la app se construyen solo con los bloques: sin él, a Intervals llega solo calentamiento + vuelta a la calma (pasó con Saioa el 9-11-2026).
+- Los bloques deben sumar `planned_duration_min` (margen de 5 min o 15 %).
+- `structured_description` es lo que lee el atleta en el móvil: pauta de 2-3 líneas (máx. ~450 caracteres). Es una pauta, no la bloquea el Verificador.
+- RunFlow traduce los nombres habituales (`main`, `interval`, `easy`, `minutes`…) al formato de bloques (`assistant-blocks.js`).
+
 **Temporada:**
 
 - La fecha de la carrera no se mueve.

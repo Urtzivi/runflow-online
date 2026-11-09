@@ -32,7 +32,7 @@ test('quitar, mover, cambiar y añadir sesiones deja una propuesta con la semana
     {action:'modify',workout_id:id(2),workout:{title:'Rodaje suave',summary:'40 min muy suave',planned_duration_min:40}},
     {action:'move',workout_id:id(3),workout_date:'2026-11-14'},
     {action:'remove',workout_id:id(3)},
-    {action:'add',workout_date:'2026-11-15',workout:{title:'Rodaje largo suave',planned_duration_min:70}},
+    {action:'add',workout_date:'2026-11-15',workout:{title:'Rodaje largo suave',planned_duration_min:70,blocks:[{type:'warmup',duration_min:10},{type:'main',name:'Rodaje',minutes:55},{type:'cooldown',duration_min:5}]}},
   ]},TODAY,verifyWith(db));
   assert.ok(result.data,JSON.stringify(result));
   const d=result.data;

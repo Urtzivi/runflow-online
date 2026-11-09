@@ -9,6 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 const P = require('./public/js/running-guided-plan.js');
+const { blockFailures } = require('./assistant-blocks');
 
 const DATA_DIR = path.join(__dirname, 'data');
 let libraryCache = null;
@@ -190,7 +191,7 @@ async function seasonProposal(db, athleteId, args, today) {
     preview: view,
   };
 }
-const workoutView = w => ({ workout_date: w.workout_date, sport: w.sport, title: w.title, priority: w.priority, planned_duration_min: w.planned_duration_min, planned_load: w.planned_load, summary: w.summary, structured_description: w.structured_description, optional: Boolean(w.optional), hard: P.isHardWorkout(w), runflow_library_id: w.runflow_library_id || null });
+const workoutView = w => ({ workout_date: w.workout_date, sport: w.sport, title: w.title, priority: w.priority, planned_duration_min: w.planned_duration_min, planned_load: w.planned_load, summary: w.summary, structured_description: w.structured_description, blocks: Array.isArray(w.blocks) ? w.blocks : [], optional: Boolean(w.optional), hard: P.isHardWorkout(w), runflow_library_id: w.runflow_library_id || null });
 async function weekBase(db, athleteId, weekStart, today) {
   if (!isDate(weekStart)) throw bad('week_start debe ser YYYY-MM-DD (lunes).');
   const start = P.mondayOf(weekStart);
@@ -207,12 +208,14 @@ async function weekBase(db, athleteId, weekStart, today) {
     advice: { decision: advice.decision, label: advice.label, why: advice.why, reasons: advice.reasons, has_data: advice.has_data, suggest_incident: advice.suggest_incident },
     workouts: sessions.map(workoutView),
     verification: P.verifyWeek({ weekStart: week.start, workouts: sessions, days: answers.days }),
-    note: 'Este es el plan base de RunFlow para la semana. Si lo cambias, mantén las reglas y explica el porqué en reason; create_week_proposal pasa el Verificador.',
+    note: 'Este es el plan base de RunFlow para la semana. Copia los blocks de cada sesión en create_week_proposal (Intervals se construye con ellos). Si lo cambias, mantén las reglas y explica el porqué en reason; create_week_proposal pasa el Verificador.',
   };
 }
 async function verifyWeekProposal(db, athleteId, weekStart, workouts, semaforo) {
   const days = await profileDays(db, athleteId);
-  return P.verifyWeek({ weekStart, workouts, days, semaforo });
+  const result = P.verifyWeek({ weekStart, workouts, days, semaforo });
+  const failures = [...result.failures, ...blockFailures(workouts)];
+  return { ok: failures.length === 0, failures };
 }
 
 module.exports = { RULES, cleanAnswers, seasonPlan, seasonView, calendarWeeks, planningContext, previewSeason, seasonProposal, weekBase, verifyWeekProposal, libraryRows };
