@@ -57,12 +57,14 @@
       const mon = monday(), oldest = addDays(mon, -14), newest = addDays(mon, 13), now = todayIso();
       const rows = await Promise.all(athletes.map(async athlete => {
         const id = encodeURIComponent(athlete.id);
-        const [calendar, recovery, football] = await Promise.all([
+        // Todo a la vez: antes la planificación esperaba a que terminase lo demás.
+        const [calendar, recovery, football, planData] = await Promise.all([
           api(`/api/coach/athletes/${id}/calendar?oldest=${oldest}&newest=${newest}`).catch(() => ({ weeks: [] })),
           api(`/api/coach/athletes/${id}/recovery?oldest=${addDays(now, -6)}&newest=${now}`).catch(() => ({})),
           api(`/api/coach/athletes/${id}/football-summary`).catch(() => ({})),
+          api(`/api/coach/athletes/${id}/plan`).catch(() => undefined),
         ]);
-        const plan = football && football.mode ? null : await api(`/api/coach/athletes/${id}/plan`).catch(() => undefined);
+        const plan = football && football.mode ? null : planData;
         return summarise(athlete, calendar.weeks || [], recovery, football, plan);
       }));
       teamCache = { at: Date.now(), athletes: rows };
