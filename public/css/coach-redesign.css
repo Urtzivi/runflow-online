@@ -87,3 +87,20 @@ body.rd-mode #rdProposals[hidden]{display:none}
 .rd-proposals{border:2px solid #C6F24E}
 .rd-proposals .stack{display:grid;gap:12px;margin-top:10px}
 @media(max-width:1100px){body.rd-mode .rd-kpis{grid-template-columns:1fr 1fr}}
+
+/* Sesiones de la propuesta semanal (Para revisar / Conexiones): ver y retocar antes de aprobar */
+.ap-sessions{margin:12px 0;padding:12px;border-radius:12px;background:rgba(0,0,0,.035);display:grid;gap:8px}
+.ap-head{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.ap-k{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;opacity:.7}
+.ap-total{font-size:12px;font-weight:700}
+.ap-row{display:grid;grid-template-columns:64px 1fr 96px;gap:6px 10px;align-items:center;padding:8px 0;border-top:1px solid rgba(0,0,0,.07)}
+.ap-row:first-of-type{border-top:0}
+.ap-day{font-weight:800;font-size:13px}
+.ap-title,.ap-min input,.ap-more textarea{font:inherit;font-size:14px;border:1px solid rgba(0,0,0,.15);border-radius:8px;padding:6px 8px;background:#fff;width:100%;box-sizing:border-box}
+.ap-min{display:flex;align-items:center;gap:4px;font-size:13px}
+.ap-min input{width:64px;text-align:right}
+.ap-structure{grid-column:2/4;font-size:12px;opacity:.75}
+.ap-more{grid-column:2/4;font-size:12px}
+.ap-more summary{cursor:pointer;opacity:.75}
+.ap-more textarea{margin-top:6px;resize:vertical}
+.ap-note{margin:0;font-size:12px;font-weight:700;color:#4d7c0f}
