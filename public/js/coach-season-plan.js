@@ -262,19 +262,34 @@
       const label = `Semana ${week.index} · ${fmt(week.start)} – ${fmt(week.end)} · ${PHASE_NAME(week.phase)} · ${week.adapted ? 'adaptada' : WEEK_TYPE_LABEL[week.type] || week.label} · ≈ ${week.minutes} min · ${STATUS_TEXT[week.status]}`;
       const pending = model.active && current && week.start > current.end;
       return `<button type="button" class="sp-wk p-${esc(week.phase)}${light ? ' light' : ''}${selected ? ' sel' : ''}${week.past ? ' past' : ''}${week.adapted ? ' adapted' : ''}${pending ? ' pending' : ''}" style="grid-column:${i + 1}" data-sp-week="${esc(week.start)}" title="${esc(label)}" aria-label="${esc(label)}">
-        ${week === current ? '<span class="sp-here">Estás aquí</span>' : ''}${week.type === 'competition' ? '<span class="sp-flag">🏁</span>' : ''}
-        <span class="sp-col"><i style="height:${h}%"></i></span><span class="sp-dot s-${week.status}"></span><small>${week.index}</small></button>`;
+        ${week === current ? `<span class="sp-here${i === 0 ? ' edge-l' : i === cols - 1 ? ' edge-r' : ''}">Estás aquí</span>` : ''}${week.type === 'competition' ? '<span class="sp-flag">🏁</span>' : ''}
+        <span class="sp-col"><i style="height:${h}%"></i></span><span class="sp-dot s-${week.status}"></span><small>${week.index}<em>${Number(week.start.slice(8, 10))}</em></small></button>`;
     }).join('');
     let col = 1;
     const phases = structure.mesos.map(meso => {
       const span = meso.weeks.length; const start = col; col += span;
       return `<div class="sp-phase p-${esc(meso.key)}" style="grid-column:${start} / span ${span}" title="${esc(meso.goal)}">${esc(span > 1 ? meso.name : meso.name.slice(0, 4) + '.')}</div>`;
     }).join('');
+    // Meses: cada semana cuenta en el mes en el que caen la mayoría de sus días (su jueves).
+    const groups = [];
+    structure.weeks.forEach((week, i) => {
+      const mid = P.addDays(week.start, 3);
+      const key = mid.slice(0, 7);
+      const last = groups[groups.length - 1];
+      if (last && last.key === key) last.span += 1;
+      else groups.push({ key, year: mid.slice(0, 4), month: Number(mid.slice(5, 7)) - 1, start: i + 1, span: 1 });
+    });
+    const months = groups.map((g, k) => {
+      const year = k === 0 || g.month === 0 ? `<span>${g.year}</span>` : '';
+      const cls = `${k % 2 ? 'odd' : 'even'}${k ? ' cut' : ''}`;
+      return `<div class="sp-month ${cls}" style="grid-column:${g.start} / span ${g.span}" title="${esc(MONTHS[g.month])} ${g.year}"><b>${MONTHS[g.month].slice(0, 3)}</b>${g.span > 1 ? year : ''}</div><div class="sp-month-band ${cls}" style="grid-column:${g.start} / span ${g.span}"></div>`;
+    }).join('');
     return `<section class="sp-card"><div class="sp-card-head"><h3>La temporada, semana a semana</h3><span class="sp-muted">La altura es el tiempo de entrenamiento previsto. Toca una semana para verla.</span></div>
-      <div class="sp-bar-scroll"><div class="sp-bar" style="--cols:${cols}">${cells}${phases}</div></div>
+      <div class="sp-bar-scroll"><div class="sp-bar" style="--cols:${cols}">${months}${cells}${phases}</div></div>
       <div class="sp-legend"><span><i class="s-published"></i>Publicada</span><span><i class="s-draft"></i>Preparada, sin publicar</span><span><i class="s-empty"></i>Por preparar</span><span><i class="light-key"></i>Semana suave</span>${model.structure.weeks.some(w => w.adapted) || model.active ? '<span><i class="adapted-key"></i>Adaptada (lesión, enfermedad…)</span>' : ''}${model.active ? '<span><i class="pending-key"></i>Se recalcula al volver</span>' : ''}</div>
     </section>`;
   }
+  const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
   const PHASE_NAME = key => P.PHASES[key]?.name || key;
   const STATUS_TEXT = { published: 'publicada', draft: 'preparada, sin publicar', empty: 'por preparar' };
   // ---------- Cómo viene el atleta (historial) ----------
