@@ -13,6 +13,12 @@ test('clasifica sesiones por título y bloques',()=>{
   assert.equal(I.classifySession({title:'Tirada larga aeróbica',sport:'Run'}),'long');
   assert.equal(I.classifySession({title:'Fuerza general',sport:'Strength'}),'strength');
   assert.equal(I.classifySession(null),'rest');
+  // Trote suave cuyo texto dice lo que NO hay que hacer: no es una sesión de cuestas.
+  const trote={sport:'Run',title:"Trote suave 30' · vuelta tras enfermedad",summary:'Trote muy suave por llano · RPE 2-3. Nada rápido ni cuestas fuertes por la pubalgia.',adaptation_target:'Recovery',blocks:[{type:'warmup',target:'Z1-Z2',duration_min:5},{type:'central',name:"20' muy suave",target:'Z1',work_unit:'m',work_value:20},{type:'cooldown',target:'Z1',duration_min:5}]};
+  assert.equal(I.classifySession(trote),'recovery');
+  assert.equal(I.classifySession({...trote,adaptation_target:'',blocks:[]}),'recovery');
+  assert.equal(I.classifySession({sport:'Run',title:'Rodaje 45 min',summary:'Sin cambios de ritmo, sin cuestas',blocks:[{type:'central',target:'Z2',work_unit:'m',work_value:45}]}),'easy');
+  assert.equal(I.classifySession({sport:'Run',title:"8 × 1' cuestas",blocks:[{type:'central',target:'Cuesta fuerte',repetitions:8,work_unit:'m',work_value:1}]}),'hills');
 });
 
 test('el paso a paso usa las zonas del atleta',()=>{
