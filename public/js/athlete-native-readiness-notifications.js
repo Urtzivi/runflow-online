@@ -114,10 +114,13 @@
   async function installActionListener() {
     const LocalNotifications = plugin();
     if (!LocalNotifications || !isNative()) return;
+    const open = () => setTimeout(() => document.dispatchEvent(new CustomEvent('runflow:open-morning-checkin')), 250);
+    // Oyente compartido (runflow-notification-owner.js) para no perder el toque si la app se abre desde el aviso.
+    if (window.RunFlowNotificationOwner?.onAction) { window.RunFlowNotificationOwner.onAction('daily_readiness', open); return; }
     try {
       await LocalNotifications.addListener('localNotificationActionPerformed', event => {
         if (event?.notification?.extra?.runflow_action !== 'daily_readiness') return;
-        setTimeout(() => document.dispatchEvent(new CustomEvent('runflow:open-morning-checkin')), 250);
+        open();
       });
     } catch (error) {
       console.warn('[RunFlow Native] notification listener', error);

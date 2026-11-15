@@ -93,11 +93,16 @@
   async function installActionListener() {
     const LocalNotifications = plugin();
     if (!LocalNotifications || !isNative()) return;
+    const open = event => {
+      const extra = event?.notification?.extra;
+      setTimeout(() => document.dispatchEvent(new CustomEvent('runflow:open-football-rate', { detail: { key: extra?.key, kind: extra?.kind } })), 250);
+    };
+    // Oyente compartido (runflow-notification-owner.js) para no perder el toque si la app se abre desde el aviso.
+    if (window.RunFlowNotificationOwner?.onAction) { window.RunFlowNotificationOwner.onAction(ACTION, open); return; }
     try {
       await LocalNotifications.addListener('localNotificationActionPerformed', event => {
-        const extra = event?.notification?.extra;
-        if (extra?.runflow_action !== ACTION) return;
-        setTimeout(() => document.dispatchEvent(new CustomEvent('runflow:open-football-rate', { detail: { key: extra.key, kind: extra.kind } })), 250);
+        if (event?.notification?.extra?.runflow_action !== ACTION) return;
+        open(event);
       });
     } catch (error) {
       console.warn('[RunFlow Fútbol] listener de avisos', error);
