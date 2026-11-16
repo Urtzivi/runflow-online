@@ -511,65 +511,181 @@
   }
 
   // ---------- TARJETA PARA COMPARTIR ----------
-  async function shareCard() {
-    const evo = await loadEvolution();
-    const weeks = evo?.weeks || [];
-    let week = weeks.at(-1);
-    if (week && !week.sessions && weeks.length > 1) week = weeks.at(-2);
-    if (!week) { try { message('Todavía no hay actividades para compartir.', 'error'); } catch {} return; }
-    const a = athlete();
-    const dayMap = new Map((evo.days || []).map(d => [d.date, d]));
-    const perDay = Array.from({ length: 7 }, (_, i) => dayMap.get(I.addDaysIso(week.week_start, i))?.km || 0);
-    const longest = Math.max(...perDay);
-    const goals = [...(a?.goals || [])].filter(g => g.goal_date >= localIso()).sort((x, y) => String(x.goal_date).localeCompare(String(y.goal_date)));
-    const goal = goals[0];
-    try { await document.fonts?.ready; } catch {}
-    const canvas = document.createElement('canvas'); canvas.width = 1080; canvas.height = 1920;
+  // Resume TODO lo hecho en la semana (carreras, fuerza, fútbol, bici, paseos…) con la carga total,
+  // y al pulsar Compartir abre directamente el menú del móvil (WhatsApp, Instagram, Telegram…).
+  async function loadShareWeek(weekStart) {
+    const key = weekStart || 'current';
+    cache.shareWeeks = cache.shareWeeks || {};
+    const hit = cache.shareWeeks[key];
+    if (hit && Date.now() - hit.at < 120000) return hit.value;
+    const value = await getJson(`/api/athlete/share-week${weekStart ? `?week_start=${weekStart}` : ''}`);
+    cache.shareWeeks[key] = { at: Date.now(), value };
+    return value;
+  }
+  const timeParts = minutes => { const m = Math.round(minutes || 0); return m >= 60 ? [[String(Math.floor(m / 60)), 1], [' h ', 0], [String(m % 60).padStart(2, '0'), 1]] : [[String(m), 1], [' min', 0]]; };
+  const timeShort = minutes => { const m = Math.round(minutes || 0); return m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}` : `${m} min`; };
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  function kindDetail(k) {
+    const parts = [];
+    if (k.key === 'football') {
+      if (k.matches) parts.push(plural(k.matches, 'partido', 'partidos'));
+      if (k.sessions - k.matches > 0) parts.push(plural(k.sessions - k.matches, 'entreno', 'entrenos'));
+    } else if (k.key === 'walk') {
+      if (k.sessions) parts.push(plural(k.sessions, 'paseo', 'paseos'));
+      if (k.km >= 1) parts.push(`${comma(k.km)} km`);
+      if (k.estimated_min) parts.push(k.sessions ? 'y pasos del reloj' : 'contados con los pasos');
+    } else {
+      if (k.sessions) parts.push(plural(k.sessions, 'sesión', 'sesiones'));
+      if (['run', 'bike', 'swim'].includes(k.key) && k.km >= 0.5) parts.push(`${comma(k.km)} km`);
+      if (k.key === 'run' && k.elevation_m >= 100) parts.push(`${k.elevation_m} m+`);
+    }
+    return parts.join(' · ');
+  }
+
+  function drawShareCard(summary, goal) {
+    const W = 1080, H = 1920, L = 90, R = 990;
+    const canvas = document.createElement('canvas'); canvas.width = W; canvas.height = H;
     const c = canvas.getContext('2d');
     const F = (w, s) => `${w} ${s}px Manrope, Inter, system-ui, sans-serif`;
-    c.fillStyle = '#1E2622'; c.fillRect(0, 0, 1080, 1920);
-    c.fillStyle = '#C6F24E'; roundRect(c, 90, 110, 96, 96, 26); c.fill();
-    c.fillStyle = '#17201C'; c.font = F(800, 40); c.textAlign = 'center'; c.fillText('RF', 138, 172);
-    c.textAlign = 'left'; c.fillStyle = '#F3F4EF'; c.font = F(800, 40); c.fillText('RUNFLOW', 214, 172);
-    c.fillStyle = '#B9C4BC'; c.font = F(500, 34); c.textAlign = 'right';
-    c.fillText(`${dayLabel(week.week_start, { day: 'numeric', month: 'short' })} – ${dayLabel(I.addDaysIso(week.week_start, 6), { day: 'numeric', month: 'short' })}`, 990, 172);
-    c.textAlign = 'left'; c.fillStyle = '#C6F24E'; c.font = F(700, 38); c.fillText('MI SEMANA', 90, 380);
-    c.fillStyle = '#F3F4EF'; c.font = F(800, 210); const kmText = comma(week.km); c.fillText(kmText, 80, 590);
-    const kmWidth = c.measureText(kmText).width; c.font = F(800, 80); c.fillText(' km', 80 + kmWidth, 590);
-    const stats = [['Sesiones', String(week.sessions)], ['Tiempo', minutesLabel(week.duration_sec)], week.elevation_m >= 50 ? ['Desnivel', `${week.elevation_m} m`] : ['Carga', String(week.load)]];
-    stats.forEach(([k, v], i) => { c.fillStyle = '#B9C4BC'; c.font = F(500, 34); c.fillText(k, 90 + i * 320, 720); c.fillStyle = '#F3F4EF'; c.font = F(800, 64); c.fillText(v, 90 + i * 320, 800); });
-    const maxDay = Math.max(1, ...perDay); const colW = 108, gap = 33;
-    perDay.forEach((km, i) => { const h = Math.max(10, (km / maxDay) * 360); const x = 90 + i * (colW + gap); c.fillStyle = km === longest && km > 0 ? '#C6F24E' : km ? '#4F8FC0' : '#36403B'; roundRect(c, x, 1260 - h, colW, h, 22); c.fill(); c.fillStyle = '#B9C4BC'; c.font = F(600, 32); c.textAlign = 'center'; c.fillText('LMXJVSD'[i], x + colW / 2, 1310); c.textAlign = 'left'; });
-    c.fillStyle = '#2A332E'; roundRect(c, 90, 1390, 900, 190, 40); c.fill();
-    c.fillStyle = '#C6F24E'; roundRect(c, 130, 1435, 100, 100, 28); c.fill();
-    c.strokeStyle = '#17201C'; c.lineWidth = 7; c.lineCap = 'round'; c.lineJoin = 'round'; c.beginPath(); c.moveTo(160, 1500); c.lineTo(200, 1500); c.moveTo(180, 1485); c.lineTo(180, 1500); c.moveTo(157, 1455); c.lineTo(203, 1455); c.lineTo(203, 1470); c.arc(180, 1470, 23, 0, Math.PI); c.closePath(); c.stroke();
-    c.fillStyle = '#B9C4BC'; c.font = F(500, 32); c.fillText('Lo mejor de la semana', 270, 1470);
-    c.fillStyle = '#F3F4EF'; c.font = F(800, 48); c.fillText(longest ? `Sesión más larga: ${comma(longest)} km` : `${week.sessions} sesiones hechas`, 270, 1535);
-    c.fillStyle = '#B9C4BC'; c.font = F(500, 34);
-    if (goal) c.fillText(`Preparando ${goal.name} · faltan ${Math.max(0, Math.ceil((new Date(`${goal.goal_date}T00:00:00`) - new Date(new Date().toDateString())) / 86400000))} días`.slice(0, 60), 90, 1760);
-    c.fillText('Entreno con RunFlow', 90, 1830);
-    const url = canvas.toDataURL('image/png');
-    openShareModal(url, canvas);
+    const MUTED = '#B9C4BC', INK = '#F3F4EF', LIME = '#C6F24E';
+    c.fillStyle = '#1E2622'; c.fillRect(0, 0, W, H);
+    // Cabecera
+    c.fillStyle = LIME; roundRect(c, L, 110, 96, 96, 26); c.fill();
+    c.fillStyle = '#17201C'; c.font = F(800, 40); c.textAlign = 'center'; c.fillText('RF', L + 48, 172);
+    c.textAlign = 'left'; c.fillStyle = INK; c.font = F(800, 40); c.fillText('RUNFLOW', 214, 172);
+    c.fillStyle = MUTED; c.font = F(500, 34); c.textAlign = 'right';
+    c.fillText(`${dayLabel(summary.week_start, { day: 'numeric', month: 'short' })} – ${dayLabel(summary.week_end, { day: 'numeric', month: 'short' })}`, R, 172);
+    c.textAlign = 'left';
+    // Tiempo total entrenando
+    const t = summary.total || {};
+    c.fillStyle = LIME; c.font = F(700, 38); c.fillText('MI SEMANA', L, 330);
+    let x = L - 8;
+    c.fillStyle = INK;
+    for (const [text, big] of timeParts(t.minutes)) { c.font = F(800, big ? 190 : 76); c.fillText(text, x, 520); x += c.measureText(text).width; }
+    c.fillStyle = MUTED; c.font = F(500, 36);
+    c.fillText(`entrenando · ${plural(t.sessions || 0, 'sesión', 'sesiones')}`, L, 590);
+    // Cifras
+    const stats = [['Carga', String(Math.round(t.load || 0))], ['Días activos', `${t.active_days || 0} de 7`], t.run_km > 0 ? ['Km corriendo', comma(t.run_km)] : ['Sesiones', String(t.sessions || 0)]];
+    stats.forEach(([k, v], i) => { c.fillStyle = MUTED; c.font = F(500, 34); c.fillText(k, L + i * 320, 700); c.fillStyle = INK; c.font = F(800, 64); c.fillText(v, L + i * 320, 780); });
+    // Barras por día, apiladas por tipo de actividad
+    const kinds = summary.kinds || [];
+    const order = kinds.map(k => k.key), colorOf = Object.fromEntries(kinds.map(k => [k.key, k.color]));
+    const dayTotal = d => Object.values(d.parts || {}).reduce((s, v) => s + v, 0);
+    const maxDay = Math.max(1, ...(summary.days || []).map(dayTotal));
+    const base = 1150, maxH = 290, colW = 102, gap = 31;
+    (summary.days || []).forEach((d, i) => {
+      const bx = L + i * (colW + gap);
+      const total = dayTotal(d);
+      if (!total) { c.fillStyle = '#36403B'; roundRect(c, bx, base - 10, colW, 10, 5); c.fill(); }
+      else {
+        const h = Math.max(24, total / maxDay * maxH);
+        c.save(); roundRect(c, bx, base - h, colW, h, 22); c.clip();
+        let y = base;
+        for (const key of order) { const v = d.parts[key]; if (!v) continue; const seg = v / total * h; c.fillStyle = colorOf[key]; c.fillRect(bx, y - seg, colW, seg + 1); y -= seg; }
+        c.restore();
+      }
+      c.fillStyle = MUTED; c.font = F(600, 32); c.textAlign = 'center'; c.fillText('LMXJVSD'[i], bx + colW / 2, 1200); c.textAlign = 'left';
+    });
+    // Qué he hecho: una fila por tipo de actividad
+    let rows = kinds.slice();
+    if (rows.length > 5) {
+      const rest = rows.slice(4);
+      rows = rows.slice(0, 4).concat([{ key: 'other', label: 'Otros', color: '#8A938C', minutes: rest.reduce((s, k) => s + k.minutes, 0), load: rest.reduce((s, k) => s + k.load, 0), sessions: rest.reduce((s, k) => s + k.sessions, 0), matches: 0, km: 0, elevation_m: 0, estimated_min: 0 }]);
+    }
+    let y = 1270;
+    const rowH = 96;
+    for (const k of rows) {
+      c.fillStyle = k.color; roundRect(c, L, y + 6, 54, 54, 16); c.fill();
+      c.fillStyle = INK; c.font = F(800, 40); c.fillText(k.label, L + 80, y + 36);
+      c.fillStyle = MUTED; c.font = F(500, 29); c.fillText(kindDetail(k) || ' ', L + 80, y + 76);
+      c.textAlign = 'right';
+      c.fillStyle = INK; c.font = F(800, 40); const approx = k.key === 'walk' && k.estimated_min && !k.sessions;
+      c.fillText(approx ? `≈ ${timeShort(Math.round(k.minutes / 10) * 10)}` : timeShort(k.minutes), R, y + 36);
+      c.fillStyle = MUTED; c.font = F(500, 29); c.fillText(k.load ? `carga ${Math.round(k.load)}` : ' ', R, y + 76);
+      c.textAlign = 'left';
+      y += rowH;
+    }
+    // Lo mejor de la semana (si cabe)
+    if (summary.best && y + 190 <= 1720) {
+      y += 24;
+      c.fillStyle = '#2A332E'; roundRect(c, L, y, 900, 170, 40); c.fill();
+      c.fillStyle = LIME; roundRect(c, 130, y + 35, 100, 100, 28); c.fill();
+      c.strokeStyle = '#17201C'; c.lineWidth = 7; c.lineCap = 'round'; c.lineJoin = 'round'; c.beginPath();
+      const cy = y + 35; c.moveTo(160, cy + 65); c.lineTo(200, cy + 65); c.moveTo(180, cy + 50); c.lineTo(180, cy + 65); c.moveTo(157, cy + 20); c.lineTo(203, cy + 20); c.lineTo(203, cy + 35); c.arc(180, cy + 35, 23, 0, Math.PI); c.closePath(); c.stroke();
+      c.fillStyle = MUTED; c.font = F(500, 32); c.fillText(summary.best.label, 270, y + 72);
+      c.fillStyle = INK; c.font = F(800, 44); c.fillText(summary.best.text.slice(0, 32), 270, y + 128);
+    }
+    c.fillStyle = MUTED; c.font = F(500, 34);
+    if (goal) c.fillText(`Preparando ${goal.name} · faltan ${Math.max(0, Math.ceil((new Date(`${goal.goal_date}T00:00:00`) - new Date(new Date().toDateString())) / 86400000))} días`.slice(0, 60), L, 1780);
+    c.fillText('Entreno con RunFlow', L, 1850);
+    return canvas;
+  }
+
+  async function shareCard(weekStart) {
+    let summary;
+    try {
+      summary = await loadShareWeek(weekStart);
+      // Lunes sin nada hecho todavía: se comparte la semana pasada.
+      if (!weekStart && !(summary.total?.minutes > 0)) summary = await loadShareWeek(I.addDaysIso(summary.week_start, -7));
+    } catch (error) { try { message(error.message || 'No se pudo preparar tu semana.', 'error'); } catch {} return; }
+    if (!(summary.total?.minutes > 0)) { try { message('Todavía no hay actividades para compartir.', 'error'); } catch {} return; }
+    const a = athlete();
+    const goal = [...(a?.goals || [])].filter(g => g.goal_date >= localIso()).sort((x, y) => String(x.goal_date).localeCompare(String(y.goal_date)))[0];
+    try { await document.fonts?.ready; } catch {}
+    const canvas = drawShareCard(summary, goal);
+    openShareModal(canvas, summary);
+    if (!weekStart) shareImage(canvas, true);
   }
   function roundRect(c, x, y, w, h, r) { r = Math.min(r, h / 2, w / 2); c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
-  function openShareModal(url, canvas) {
+
+  // Compartir nativo: en la app de Android (plugins Share + Filesystem) abre el menú del sistema con la imagen;
+  // en el navegador del móvil usa navigator.share. Si nada de eso está disponible, se queda la vista previa.
+  async function shareImage(canvas, auto = false) {
+    const cap = window.Capacitor;
+    const Share = cap?.Plugins?.Share, Files = cap?.Plugins?.Filesystem;
+    const nativeApp = Boolean(cap?.isNativePlatform?.());
+    const text = 'Mi semana con RunFlow';
+    try {
+      if (nativeApp && Share && Files) {
+        const data = canvas.toDataURL('image/png').split(',')[1];
+        const written = await Files.writeFile({ path: `runflow-mi-semana-${Date.now()}.png`, data, directory: 'CACHE' });
+        await Share.share({ title: text, text, files: [written.uri], dialogTitle: 'Compartir mi semana' });
+        return true;
+      }
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+      const file = new File([blob], 'runflow-mi-semana.png', { type: 'image/png' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: text }); return true; }
+    } catch (error) {
+      const msg = String(error?.message || error || '');
+      if (error?.name === 'AbortError' || /cancel/i.test(msg)) return true;
+      if (error?.name === 'NotAllowedError' && auto) return false; // el navegador pide otro toque: queda el botón Compartir
+      console.warn('[nueva cara] compartir', msg);
+    }
+    if (!auto) {
+      const hint = q('#ncShareModal [data-nc-share-hint]');
+      if (hint) hint.textContent = nativeApp ? 'Para enviarla directamente por WhatsApp hace falta la última versión de la app. Mientras, mantén pulsada la imagen o haz una captura.' : 'Tu navegador no deja compartir desde aquí: mantén pulsada la imagen para guardarla o haz una captura.';
+    }
+    return false;
+  }
+
+  function openShareModal(canvas, summary) {
     let modal = q('#ncShareModal');
     if (!modal) {
       modal = document.createElement('div'); modal.id = 'ncShareModal'; modal.className = 'modal-backdrop hidden';
-      modal.innerHTML = '<div class="modal nc-share-modal"><div class="athlete-session-modal-head"><button type="button" class="athlete-modal-close" data-nc-close aria-label="Cerrar">←</button><div><p class="athlete-kicker">PARA COMPARTIR</p><h2>Tu semana</h2></div></div><div class="modal-body"><img alt="Resumen de tu semana" class="nc-share-img"><div class="nc-share-actions"><button type="button" class="nc-btn nc-btn-lime" data-nc-do-share>Compartir</button><a class="nc-btn" data-nc-download download="runflow-mi-semana.png">Guardar imagen</a></div><small class="nc-mut">Si tu móvil no deja compartir desde aquí, mantén pulsada la imagen o haz una captura.</small></div></div>';
+      modal.innerHTML = '<div class="modal nc-share-modal"><div class="athlete-session-modal-head"><button type="button" class="athlete-modal-close" data-nc-close aria-label="Cerrar">←</button><div><p class="athlete-kicker">PARA COMPARTIR</p><h2>Tu semana</h2></div></div><div class="modal-body"><div class="nc-share-weeks"><button type="button" data-nc-share-week="current">Esta semana</button><button type="button" data-nc-share-week="previous">Semana pasada</button></div><img alt="Resumen de tu semana" class="nc-share-img"><div class="nc-share-actions"><button type="button" class="nc-btn nc-btn-lime" data-nc-do-share>Compartir</button><a class="nc-btn" data-nc-download download="runflow-mi-semana.png">Guardar imagen</a></div><small class="nc-mut" data-nc-share-hint>Se abre el menú de tu móvil para enviarla por WhatsApp, Instagram, Telegram…</small></div></div>';
       document.body.appendChild(modal);
       modal.querySelector('[data-nc-close]').addEventListener('click', () => modal.classList.add('hidden'));
+      modal.querySelectorAll('[data-nc-share-week]').forEach(button => button.addEventListener('click', () => {
+        const thisMonday = I.isoMonday(localIso());
+        shareCard(button.dataset.ncShareWeek === 'previous' ? I.addDaysIso(thisMonday, -7) : thisMonday);
+      }));
     }
+    const url = canvas.toDataURL('image/png');
     modal.querySelector('img').src = url;
     modal.querySelector('[data-nc-download]').href = url;
-    const shareBtn = modal.querySelector('[data-nc-do-share]');
-    shareBtn.onclick = () => canvas.toBlob(async blob => {
-      try {
-        const file = new File([blob], 'runflow-mi-semana.png', { type: 'image/png' });
-        if (navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file], title: 'Mi semana con RunFlow' });
-        else modal.querySelector('[data-nc-download]').click();
-      } catch (error) { if (error?.name !== 'AbortError') modal.querySelector('[data-nc-download]').click(); }
-    }, 'image/png');
+    const thisMonday = I.isoMonday(localIso());
+    modal.querySelectorAll('[data-nc-share-week]').forEach(button => button.classList.toggle('on', (button.dataset.ncShareWeek === 'previous') === (summary.week_start < thisMonday)));
+    modal.querySelector('[data-nc-do-share]').onclick = () => shareImage(canvas, false);
     modal.classList.remove('hidden');
   }
 

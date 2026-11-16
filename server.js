@@ -9,6 +9,8 @@ const RunflowInsights = require('./public/js/athlete-insights.js');
 const RunflowWalkLoad = require('./public/js/walk-load.js');
 const RunflowFormMetrics = require('./public/js/form-metrics.js');
 const LoadScale = require('./public/js/load-scale.js');
+const RunflowWeekShare = require('./public/js/week-share.js');
+const RunflowTraining = require('./public/js/coach-training-model.js');
 const { compareDetailedBlocks, detailedBlocks, findPreviousComparable, identity, sessionBlockAnalysis } = require('./session-comparison-metrics');
 
 const PORT = Number(process.env.PORT || 8787);
@@ -4912,6 +4914,41 @@ async function athleteEvolution(athleteId, weeksParam) {
   return { ...summary, daily, today };
 }
 
+// Tarjeta "Mi semana" del atleta: todo lo hecho en la semana (carreras, fuerza, fútbol, paseos…) con su carga.
+const FOOTBALL_LOG_PREFIX = 'RF_FOOTBALL|';
+async function footballLogsForWeek(athleteId, weekStart, weekEnd) {
+  const logs = DEMO_MODE
+    ? (demo.manual_logs || []).filter(item => item.athlete_id === athleteId && !item.workout_id)
+    : await prodRows('manual_session_logs', `athlete_id=eq.${encodeURIComponent(athleteId)}&workout_id=is.null&created_at=gte.${addDays(weekStart, -14)}T00:00:00Z&comment=like.${encodeURIComponent(`${FOOTBALL_LOG_PREFIX}*`)}&select=id,created_at,actual_duration_min,rpe,comment&limit=200`).catch(() => []);
+  const out = [];
+  for (const log of logs) {
+    const text = String(log.comment || '');
+    if (!text.startsWith(FOOTBALL_LOG_PREFIX)) continue;
+    let meta; try { meta = JSON.parse(text.slice(FOOTBALL_LOG_PREFIX.length)); } catch { continue; }
+    if (!['match', 'football_training', 'strength'].includes(meta?.kind)) continue;
+    const date = validDate(meta.plan_date) || localDateInTimeZone(undefined, new Date(log.created_at));
+    if (date < weekStart || date > weekEnd) continue;
+    const minutes = meta.kind === 'match' && Number.isFinite(Number(meta.minutes_played)) ? Number(meta.minutes_played) : Number(log.actual_duration_min || 0);
+    out.push({ kind: meta.kind, date, minutes, rpe: numberOrNull(log.rpe, 1, 10) });
+  }
+  return out;
+}
+
+async function athleteShareWeek(athleteId, weekParam) {
+  const today = localDateInTimeZone();
+  const weekStart = RunflowInsights.isoMonday(validDate(weekParam) || today);
+  const weekEnd = addDays(weekStart, 6);
+  const newest = weekEnd < today ? weekEnd : today;
+  const [weeks, walks, footballLogs] = await Promise.all([
+    listCalendarWeeks(athleteId, weekStart, weekEnd, false).catch(error => { console.error(`[share-week] semana: ${error.message}`); return []; }),
+    newest >= weekStart ? walkLoadFor(athleteId, weekStart, newest).catch(() => null) : null,
+    footballLogsForWeek(athleteId, weekStart, weekEnd).catch(() => []),
+  ]);
+  // Las sesiones de fútbol vinculadas a una sesión de RunFlow ya llegan por el calendario.
+  const records = RunflowTraining.records({ weeks: weeks.filter(week => week.week_start === weekStart) }).filter(r => r.date && r.date <= today);
+  return RunflowWeekShare.summarizeWeek({ weekStart, records, footballLogs, walks, loadScale: LoadScale });
+}
+
 let dailyPerformanceLastDate = '';
 let dailyPerformanceRunning = false;
 async function refreshAllPerformanceSnapshots(reason = 'timer') {
@@ -5947,6 +5984,12 @@ async function api(req, res, url) {
     if (!session.athlete_id) throw Object.assign(new Error('Tu usuario todavía no está vinculado a una ficha de deportista.'), { status: 409 });
     const { oldest, newest } = dateRangeParams(url, 6);
     return sendJson(res, 200, await walkLoadFor(session.athlete_id, oldest, newest));
+  }
+
+  if (pathname === '/api/athlete/share-week' && method === 'GET') {
+    requireRole(session, 'athlete');
+    if (!session.athlete_id) throw Object.assign(new Error('Tu usuario todavía no está vinculado a una ficha de deportista.'), { status: 409 });
+    return sendJson(res, 200, await athleteShareWeek(session.athlete_id, url.searchParams.get('week_start')));
   }
 
   if (pathname === '/api/athlete/evolution' && method === 'GET') {
