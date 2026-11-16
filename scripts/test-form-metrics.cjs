@@ -86,3 +86,16 @@ test('no usa trail con mucho desnivel, paseos, sesiones cortas ni sin pulso', ()
 test('zonas de pulso: mismas proporciones con el umbral nuevo y la última = pulso máximo', () => {
   assert.deepEqual(F.scaleHrZones([129, 137, 145, 153, 157, 162, 170], 154, 160, 177), [134, 142, 151, 159, 163, 168, 177]);
 });
+
+test('evolución semanal del umbral: refleja la mejora semana a semana', () => {
+  const acts = [];
+  for (let i = 0; i < 8; i += 1) acts.push(run(addDays('2026-08-03', i * 4), 320, 130));
+  for (let i = 0; i < 10; i += 1) acts.push(run(addDays('2026-09-28', i * 4), 295, 130));
+  const r = F.computeForm({ activities: acts, today: '2026-11-12' });
+  assert.equal(r.weekly.length, 16);
+  const filled = r.weekly.filter(w => w.threshold_pace_sec);
+  assert.ok(filled.length >= 10);
+  assert.ok(filled.at(-1).threshold_pace_sec < filled[0].threshold_pace_sec, 'umbral más rápido al final');
+  assert.equal(filled.at(-1).threshold_pace_sec, r.threshold.estimate.pace_sec);
+  assert.equal(new Date(`${r.weekly[0].week_start}T12:00:00Z`).getUTCDay(), 1);
+});
