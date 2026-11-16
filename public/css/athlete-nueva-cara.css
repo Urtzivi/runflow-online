@@ -138,3 +138,6 @@ body.nc-on .coach-message-card p{color:#fff!important;font-size:1rem;line-height
 .nc-walk-k i{width:10px;height:10px;border-radius:3px;background:repeating-linear-gradient(135deg,#5FA58C 0 3px,#8cc4b0 3px 6px)}
 .nc-walk b{color:#3f8a70;font-family:Manrope,Inter,sans-serif}
 .nc-walk small{font-size:12px;line-height:1.4}
+.nc-share-weeks{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:#ECEEE7;border-radius:14px;padding:4px}
+.nc-share-weeks button{border:0;background:transparent;border-radius:11px;padding:9px 6px;font:inherit;font-weight:700;font-size:14px;color:#5C665F;cursor:pointer}
+.nc-share-weeks button.on{background:#fff;color:#17201C;box-shadow:0 1px 3px rgba(0,0,0,.12)}
