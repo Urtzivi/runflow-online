@@ -25,6 +25,7 @@
     minRuns: 3,
     rollingRuns: 5,
     compareDays: 42,           // cambio frente a hace 6 semanas
+    weeklyWeeks: 16,           // evolución semanal: últimas 16 semanas
     thresholdFraction: 0.88,   // ritmo umbral de Daniels ≈ 88 % del VO2máx
     suggestPct: 3,             // proponer cambiar el umbral si se aleja un 3 % o más
     refHrFraction: 0.85,       // pulso de referencia = 85 % del pulso umbral, redondeado a 5
@@ -182,6 +183,20 @@
     const paceSuggest = thrEst && recent.length >= RULE.minRuns && (thrInUse === null || Math.abs(diffPct) >= RULE.suggestPct);
     const suggest = Boolean(paceSuggest || lthrSuggested);
 
+    // Evolución semanal del umbral estimado: cada semana, lo que se habría calculado ese domingo
+    // (mediana de las carreras de las 6 semanas anteriores, mín. 3).
+    const weekly = [];
+    if (valid.length) {
+      const monday = iso => { const d = new Date(`${iso}T12:00:00Z`); return addDays(iso, -((d.getUTCDay() + 6) % 7)); };
+      const firstWeek = monday(addDays(day, -7 * (RULE.weeklyWeeks - 1)));
+      for (let w = firstWeek; w <= day; w = addDays(w, 7)) {
+        const end = addDays(w, 6) < day ? addDays(w, 6) : day;
+        const pool = valid.filter(e => e.date <= end && e.date > addDays(end, -RULE.windowDays));
+        const v = pool.length >= RULE.minRuns ? median(pool.slice(-8).map(e => e.vdot)) : null;
+        weekly.push({ week_start: w, runs: valid.filter(e => e.date >= w && e.date <= end).length, vo2max: round(v, 1), threshold_pace_sec: v ? round(thresholdPaceFor(v), 0) : null, easy_pace_sec: v && refHr && rest && maxHr ? round(paceAtHr(v, refHr, rest, maxHr), 0) : null });
+      }
+    }
+
     // 3. Carreras
     const races = vdot ? RULE.races.map(r => {
       const sec = raceSeconds(vdot, r.meters);
@@ -189,7 +204,7 @@
     }) : [];
 
     return {
-      version: 1,
+      version: 2,
       today: day,
       has_data: Boolean(vdot),
       confidence,
@@ -217,6 +232,7 @@
         },
       },
       races,
+      weekly,
       resting_hr: round(rest, 0),
       runs: estimates.slice(-30).map(e => (e.ok
         ? { date: e.date, id: e.id, name: e.name, ok: true, vdot: round(e.vdot, 1), hr: e.hr, pace_sec: round(e.pace_sec, 0), km: e.km, minutes: e.minutes }

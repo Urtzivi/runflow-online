@@ -125,3 +125,12 @@
 .evo-form-race{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:baseline;padding:6px 0;border-bottom:1px solid #eef0ec}
 .evo-form-race span{font-weight:800;font-size:12px}.evo-form-race b{font-size:17px}.evo-form-race small{font-size:11px;color:var(--v8-muted,#7b827c)}
 @media(max-width:1180px){.evo-form{grid-template-columns:1fr}}
+
+/* Datos fisiológicos · forma automática */
+.evo-ph-wide{grid-column:1/-1;display:flex;flex-direction:column;gap:3px}
+.evo-thr-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}.evo-thr-head b{margin:2px 0}
+.evo-thr-chart{width:100%;display:block;margin:4px 0}
+.evo-ph-races{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:4px 0}
+.evo-ph-races>div{display:flex;flex-direction:column}.evo-ph-races b{font-size:17px;margin:1px 0}
+.evo-ph small span{font-size:inherit;text-transform:none;letter-spacing:normal}
+.evo-ph small span.up{color:var(--v8-lime-dark,#638e16)}.evo-ph small span.down{color:var(--evo-bad)}.evo-ph small span.mid{color:var(--evo-warn)}

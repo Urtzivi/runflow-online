@@ -221,6 +221,32 @@
   }
   const fmtRace = sec => { const s = Math.round(num(sec) || 0), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60; return h ? `${h}:${pad(m)}:${pad(r)}` : `${m}:${pad(r)}`; };
 
+  function drawThresholdChart(data) {
+    const svg = byId('evoThrChart'); const f = data.form;
+    const weeks = (f?.weekly || []);
+    const pts = weeks.map((w, i) => ({ i, w, v: num(w.threshold_pace_sec) })).filter(p => p.v !== null);
+    if (!svg || pts.length < 2) { if (svg) svg.style.display = 'none'; return; }
+    const W = svg.clientWidth || 320, H = 110, L = 36, R = 8, T = 8, B = 18;
+    const inUse = num(f.threshold.in_use.pace_sec);
+    const vals = pts.map(p => p.v).concat(inUse !== null ? [inUse] : []);
+    let lo = Math.min(...vals) - 4, hi = Math.max(...vals) + 4; if (hi - lo < 16) { const m = (hi + lo) / 2; lo = m - 8; hi = m + 8; }
+    const x = i => L + i * (W - L - R) / Math.max(1, weeks.length - 1);
+    const y = v => T + (v - lo) / (hi - lo) * (H - T - B); // más rápido arriba
+    for (const v of [lo + 4, (lo + hi) / 2, hi - 4]) {
+      el('line', { x1: L, x2: W - R, y1: y(v), y2: y(v), stroke: '#eceee9' }, svg);
+      el('text', { x: L - 5, y: y(v) + 3, 'text-anchor': 'end', 'font-size': 9, fill: '#7b827c' }, svg, fmtPace(v));
+    }
+    if (inUse !== null) el('line', { x1: L, x2: W - R, y1: y(inUse), y2: y(inUse), stroke: '#c2413b', 'stroke-dasharray': '4 4', 'stroke-width': 1.3 }, svg);
+    let lastMonth = '';
+    weeks.forEach((w, i) => { const m = monthShort(w.week_start); if (m !== lastMonth) { lastMonth = m; el('text', { x: x(i), y: H - 4, 'font-size': 9, fill: '#7b827c', 'text-anchor': 'middle' }, svg, m); } });
+    el('path', { d: pts.map((p, k) => `${k ? 'L' : 'M'}${x(p.i).toFixed(1)},${y(p.v).toFixed(1)}`).join(' '), fill: 'none', stroke: 'var(--v8-threshold,#d9822b)', 'stroke-width': 2.5, 'stroke-linejoin': 'round' }, svg);
+    pts.forEach((p, k) => {
+      const c = el('circle', { cx: x(p.i), cy: y(p.v), r: k === pts.length - 1 ? 4 : 2.8, fill: k === pts.length - 1 ? 'var(--v8-threshold,#d9822b)' : '#fff', stroke: 'var(--v8-threshold,#d9822b)', 'stroke-width': 1.6 }, svg);
+      el('title', {}, c, `Semana del ${shortDate(p.w.week_start)}: ${fmtPace(p.v)} /km · ${p.w.runs} carrera${p.w.runs === 1 ? '' : 's'} esa semana`);
+    });
+  }
+  const monthShort = iso => new Intl.DateTimeFormat('es-ES', { month: 'short' }).format(new Date(`${iso}T12:00:00`)).replace('.', '');
+
   function drawFormSpark(data) {
     const svg = byId('evoFormSpark'); const points = (data.form?.easy_pace?.series || []).filter(p => num(p.pace_sec) !== null).slice(-24);
     if (!svg || points.length < 2) return;
@@ -396,7 +422,7 @@
       if (nav) nav.click(); else window.switchView('activities');
     });
     root.querySelector('[data-evo-accept]')?.addEventListener('click', event => acceptThreshold(event.currentTarget));
-    drawGauge(data); drawWeeksChart(data); drawReadiness(data); drawSparks(data); drawFormSpark(data);
+    drawGauge(data); drawWeeksChart(data); drawReadiness(data); drawSparks(data); drawFormSpark(data); drawThresholdChart(data);
     renderSessions(); renderWeekDetail();
   }
 
@@ -597,11 +623,28 @@
     const tiles = [];
     const tile = (label, value, note) => tiles.push(`<div class="evo-ph"><span>${label}</span><b>${value}</b><small>${note}</small></div>`);
     const change = (value, unit, betterWhenPositive = true, digits = 0) => value === null ? '' : `<span class="${(value >= 0) === betterWhenPositive ? 'up' : 'down'}">${signed(value, digits, unit)}</span>`;
-    if (num(sum.threshold_pace_sec_per_km) !== null) {
+    const f = data.form && data.form.has_data ? data.form : null;
+    if (f) {
+      // Forma automática: umbral estimado por RunFlow con su evolución semanal, ritmo a pulso fijo, VO2máx y carreras.
+      const weekly = (f.weekly || []).filter(w => num(w.threshold_pace_sec) !== null);
+      const nowThr = num(f.threshold.estimate.pace_sec), inUse = num(f.threshold.in_use.pace_sec);
+      const ref8 = weekly.length > 8 ? weekly[weekly.length - 9] : weekly[0];
+      const ch8 = ref8 && nowThr !== null ? num(ref8.threshold_pace_sec) - nowThr : null; // + = más rápido
+      const chTxt = ch8 === null || weekly.length < 2 ? '' : ch8 === 0 ? 'Igual que hace 8 semanas' : `<span class="${ch8 > 0 ? 'up' : 'down'}">${ch8 > 0 ? '−' : '+'}${fmtNum(Math.abs(ch8))} s/km</span> frente a hace ${weekly.length > 8 ? 8 : weekly.length - 1} semanas (${fmtPace(ref8.threshold_pace_sec)})`;
+      tiles.push(`<div class="evo-ph evo-ph-wide"><span>Ritmo umbral · estimado por RunFlow</span><div class="evo-thr-head"><b>${fmtPace(nowThr)} /km</b><small>${inUse !== null ? `En Intervals: ${fmtPace(inUse)} /km${f.threshold.suggest ? ' · <span class="mid">propuesta de cambio</span>' : ''}` : 'Sin ritmo umbral en Intervals'}</small></div>
+        <small>${chTxt}</small>
+        <svg id="evoThrChart" class="evo-thr-chart" height="110" role="img" aria-label="Evolución semanal del ritmo umbral estimado"></svg>
+        <small>Cada punto es una semana: lo que RunFlow calculaba ese domingo con las carreras de las 6 semanas anteriores.${inUse !== null ? ' La línea discontinua es el valor de Intervals.' : ''} Más arriba = más rápido.</small></div>`);
+      const e = f.easy_pace, ech = num(e.change_sec);
+      tile(`Ritmo a ${fmtNum(e.ref_hr)} ppm`, `${fmtPace(e.pace_sec)} /km`, ech === null ? 'mismo pulso, en rodajes' : `${ech === 0 ? 'igual' : `<span class="${ech > 0 ? 'up' : 'down'}">${ech > 0 ? '−' : '+'}${fmtNum(Math.abs(ech))} s</span>`} en 6 semanas`);
+      const vch = num(f.vo2max) !== null && num(f.vo2max_before) !== null ? num(f.vo2max) - num(f.vo2max_before) : null;
+      tile('VO₂máx estimado', fmtNum(num(f.vo2max), 1), vch === null ? `confianza ${esc(String(f.confidence).toLowerCase())}` : `${change(Math.round(vch * 10) / 10, '', true, 1)} en 6 semanas · ${f.runs_used} carreras`);
+      tiles.push(`<div class="evo-ph evo-ph-wide"><span>Podría correr hoy</span><div class="evo-ph-races">${(f.races || []).map(r => `<div><small>${esc(r.label)}</small><b>${esc(fmtRace(r.seconds))}</b><small>${fmtPace(r.pace_sec)} /km</small></div>`).join('')}</div><small>Si prepara la distancia, en llano.</small></div>`);
+    } else if (num(sum.threshold_pace_sec_per_km) !== null) {
       const ch = num(sum.threshold_pace_change_8w_sec);
       tile('Ritmo umbral', `${fmtPace(sum.threshold_pace_sec_per_km)} /km`, ch !== null ? `${ch > 0 ? `<span class="up">−${fmtNum(Math.abs(ch))} s</span>` : ch < 0 ? `<span class="down">+${fmtNum(Math.abs(ch))} s</span>` : 'sin cambios'} en 8 semanas` : esc(sum.threshold_confidence ? `Confianza: ${sum.threshold_confidence}` : ''));
     }
-    if (lthr !== null || maxHr !== null) tile('FC umbral · FC máx', `${lthr !== null ? fmtNum(lthr) : '—'} · ${maxHr !== null ? fmtNum(maxHr) : '—'}`, profile.lthr ? 'ppm · perfil de Intervals' : 'ppm');
+    if (lthr !== null || maxHr !== null) tile('FC umbral · FC máx', `${lthr !== null ? fmtNum(lthr) : '—'} · ${maxHr !== null ? fmtNum(maxHr) : '—'}`, f && (f.threshold.changes.lthr || f.threshold.changes.max_hr) ? `<span class="mid">RunFlow propone ${fmtNum(f.threshold.estimate.lthr)} · ${fmtNum(f.threshold.estimate.max_hr)}</span>` : profile.lthr ? 'ppm · perfil de Intervals' : 'ppm');
     if (num(sum.z2_pace_sec_per_km) !== null) tile('Ritmo en Z2', `${fmtPace(sum.z2_pace_sec_per_km)} /km`, num(sum.z2_pace_change_pct) !== null ? `${change(num(sum.z2_pace_change_pct), '%', true, 1)} vs sesiones anteriores` : 'mediana reciente');
     if (num(sum.aerobic_efficiency) !== null) tile('Eficiencia aeróbica', fmtNum(num(sum.aerobic_efficiency), 2), num(sum.aerobic_efficiency_change_pct) !== null ? `${change(num(sum.aerobic_efficiency_change_pct), '%', true, 1)} últimas 6 sesiones` : 'últimas sesiones');
     if (num(sum.cardiac_drift_pct) !== null) tile('Deriva cardiaca', `${fmtNum(num(sum.cardiac_drift_pct), 1)} %`, 'mediana de las últimas sesiones');
@@ -624,7 +667,7 @@
       return `<div class="evo-zone"><span class="z">${esc(k)}${range}</span><span class="zb"><i style="width:${(totals[k] / totalSec * 100).toFixed(1)}%;background:${zoneColors[n - 1] || 'var(--v8-rest)'}"></i></span><span class="r">${fmtDuration(totals[k])}</span></div>`;
     }).join('')}</div>` : '';
 
-    return `<div class="evo-card-head"><div><h3>Datos fisiológicos</h3><p class="evo-sub">Perfil Run de Intervals.icu y métricas calculadas por sesión</p></div></div>
+    return `<div class="evo-card-head"><div><h3>Datos fisiológicos</h3><p class="evo-sub">Forma calculada por RunFlow con cada carrera, perfil Run de Intervals.icu y métricas por sesión</p></div></div>
       ${tiles.length ? `<div class="evo-phys">${tiles.join('')}</div>` : '<div class="evo-empty">Todavía no hay métricas fisiológicas. Se calculan a partir de actividades con FC sincronizadas desde Intervals.icu.</div>'}
       ${zonesHtml}`;
   }
