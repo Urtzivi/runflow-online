@@ -1,6 +1,6 @@
 // RunFlow Coach · Evolución del atleta.
 // Vista completa de un deportista: últimas semanas, sesiones, readiness y datos fisiológicos.
-// Solo lectura: usa los endpoints existentes de Coach y no modifica datos.
+// Solo lectura, salvo «Aceptar umbral» de la forma automática (lo guarda en el perfil Run de Intervals).
 (() => {
   const VIEW = 'evolution';
   const PERIODS = [4, 8, 12];
@@ -138,6 +138,7 @@
     if (isActive()) render();
     loadReviewStates(ui.data);
     loadWalks(ui.data, sync);
+    loadForm(ui.data, sync);
   }
 
   // Paseos no registrados estimados con los pasos del reloj (Intervals). Llegan después para no frenar la vista.
@@ -149,6 +150,86 @@
       applyWalks(data);
       if (isActive()) render();
     } catch { /* sin pasos: la vista sigue igual */ }
+  }
+
+  // Forma automática (public/js/form-metrics.js en el servidor): llega después para no frenar la vista.
+  async function loadForm(data, sync) {
+    try {
+      const form = await api(`/api/coach/athletes/${encodeURIComponent(data.athleteId)}/form${sync ? '?sync=1' : ''}`);
+      if (ui.data !== data) return;
+      data.form = form;
+      if (isActive()) render();
+    } catch (error) { if (ui.data === data) { data.form = { error: error.message }; if (isActive()) render(); } }
+  }
+
+  async function acceptThreshold(button) {
+    const data = ui.data; const t = data?.form?.threshold;
+    if (!t) return;
+    const parts = [];
+    if (t.changes.pace) parts.push(`ritmo umbral ${t.in_use.pace_sec ? `${fmtPace(t.in_use.pace_sec)} → ` : ''}${fmtPace(t.estimate.pace_sec)} /km`);
+    if (t.changes.max_hr) parts.push(`FC máx ${fmtNum(t.in_use.max_hr)} → ${fmtNum(t.estimate.max_hr)}`);
+    if (t.changes.lthr) parts.push(`FC umbral ${fmtNum(t.in_use.lthr)} → ${fmtNum(t.estimate.lthr)}`);
+    if (!window.confirm(`Se cambiará en el perfil Run de Intervals: ${parts.join(', ')}.\n\nLas zonas se recalculan y las sesiones nuevas se analizarán con estos valores. Las ya hechas no cambian.`)) return;
+    button.disabled = true; button.textContent = 'Guardando…';
+    try {
+      const response = await fetch(`/api/coach/athletes/${encodeURIComponent(data.athleteId)}/form/accept`, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'No se pudo guardar el umbral.');
+      if (ui.data === data) { data.form = result.form; data.formSaved = true; render(); }
+    } catch (error) { button.disabled = false; button.textContent = 'Aceptar umbral'; window.alert(error.message); }
+  }
+
+  function formCard(data) {
+    const f = data.form;
+    const head = sub => `<div class="evo-card-head"><div><h3>Forma automática</h3><p class="evo-sub">${sub}</p></div></div>`;
+    if (!f) return `${head('Calculando con sus últimas carreras…')}`;
+    if (f.error) return `${head('No se ha podido calcular')}<div class="evo-empty">${esc(f.error)}</div>`;
+    if (!f.has_data) return `${head('RunFlow aprende de cada carrera')}<div class="evo-empty">Todavía no hay suficientes carreras con pulso: hacen falta al menos 3 de 20 min o más, por llano, en los últimos 3 meses.</div>`;
+    const e = f.easy_pace, t = f.threshold;
+    const trendTxt = { mejora: '<span class="up">Mejora</span>', empeora: '<span class="down">Empeora</span>', estable: 'Estable', sin_datos: '' }[e.trend] || '';
+    const change = num(e.change_sec);
+    const changeTxt = change === null ? 'Sin datos de hace 6 semanas' : `${trendTxt} · ${change === 0 ? 'igual' : `${Math.abs(change)} s/km ${change > 0 ? 'más rápido' : 'más lento'}`} que hace 6 semanas (${fmtPace(e.before_pace_sec)})`;
+    const last = (f.accepted || []).at(-1);
+    const lastTxt = last ? `<p class="evo-note">Último cambio aceptado el ${esc(shortDate(last.date))}${last.pace ? `: ${last.pace[0] ? fmtPace(last.pace[0]) : '—'} → ${fmtPace(last.pace[1])} /km` : ''}${last.max_hr ? ` · FC máx ${last.max_hr[0]} → ${last.max_hr[1]}` : ''}.</p>` : '';
+    const diff = num(t.diff_pct);
+    const thrState = t.suggest
+      ? `<div class="evo-form-alert"><b>RunFlow propone cambiarlo.</b> ${t.in_use.pace_sec ? `Sus carreras dicen ${fmtPace(t.estimate.pace_sec)} /km y en Intervals tiene ${fmtPace(t.in_use.pace_sec)} /km (${fmtNum(Math.abs(diff), 1)} % ${diff < 0 ? 'más lento' : 'más rápido'}).` : 'En Intervals no tiene ritmo umbral.'}${t.changes.max_hr ? ` El reloj ha visto un pulso máximo de ${fmtNum(t.estimate.max_hr)} (tenía ${fmtNum(t.in_use.max_hr)}).` : ''}
+          ${f.can_update_intervals ? '<button type="button" class="evo-btn small evo-form-accept" data-evo-accept>Aceptar umbral</button>' : '<small>Sin acceso al perfil Run de Intervals: cámbialo allí a mano.</small>'}</div>`
+      : `<p class="evo-note">${data.formSaved ? '<b>Guardado en Intervals.</b> ' : ''}Coincide con el de Intervals (diferencia menor del 3 %): no hace falta cambiar nada.</p>`;
+    return `${head(`Calculada sola con sus últimas ${f.runs_used} carreras · confianza ${esc(String(f.confidence).toLowerCase())}`)}
+      <div class="evo-form">
+        <div class="evo-form-col">
+          <span class="evo-label">Ritmo a ${fmtNum(e.ref_hr)} ppm</span>
+          <b class="evo-form-big">${fmtPace(e.pace_sec)} <small>/km</small></b>
+          <small>${changeTxt}</small>
+          <svg id="evoFormSpark" class="evo-form-spark" height="54" role="img" aria-label="Evolución del ritmo a pulso fijo"></svg>
+          <p class="evo-note">A qué ritmo corre con el mismo pulso en sus rodajes. Más rápido = mejor forma.</p>
+        </div>
+        <div class="evo-form-col">
+          <span class="evo-label">Umbral</span>
+          <div class="evo-form-thr"><div><small>Estimado por RunFlow</small><b>${fmtPace(t.estimate.pace_sec)} /km</b><small>${fmtNum(t.estimate.lthr)} ppm</small></div><div><small>En Intervals ahora</small><b>${t.in_use.pace_sec ? `${fmtPace(t.in_use.pace_sec)} /km` : '—'}</b><small>${fmtNum(t.in_use.lthr)} ppm</small></div></div>
+          ${thrState}${lastTxt}
+        </div>
+        <div class="evo-form-col">
+          <span class="evo-label">Podría correr hoy</span>
+          ${(f.races || []).map(r => `<div class="evo-form-race"><span>${esc(r.label)}</span><b>${esc(fmtRace(r.seconds))}</b><small>${fmtPace(r.pace_sec)} /km</small></div>`).join('')}
+          <p class="evo-note">Si prepara la distancia y en recorrido llano. VO₂máx estimado ${fmtNum(num(f.vo2max), 1)}${num(f.vo2max_before) !== null ? ` (hace 6 semanas ${fmtNum(num(f.vo2max_before), 1)})` : ''}.</p>
+        </div>
+      </div>`;
+  }
+  const fmtRace = sec => { const s = Math.round(num(sec) || 0), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60; return h ? `${h}:${pad(m)}:${pad(r)}` : `${m}:${pad(r)}`; };
+
+  function drawFormSpark(data) {
+    const svg = byId('evoFormSpark'); const points = (data.form?.easy_pace?.series || []).filter(p => num(p.pace_sec) !== null).slice(-24);
+    if (!svg || points.length < 2) return;
+    const w = svg.clientWidth || 260, h = 54, padY = 6;
+    const vals = points.map(p => p.pace_sec); const lo = Math.min(...vals), hi = Math.max(...vals); const span = Math.max(hi - lo, 10);
+    const x = i => 4 + i * (w - 8) / (points.length - 1);
+    const y = v => padY + (v - lo) / span * (h - padY * 2); // ritmo más rápido (menos segundos) arriba
+    el('path', { d: points.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.pace_sec).toFixed(1)}`).join(' '), fill: 'none', stroke: 'var(--v8-lime-dark,#638e16)', 'stroke-width': 2.5, 'stroke-linejoin': 'round' }, svg);
+    const lastI = points.length - 1;
+    el('circle', { cx: x(lastI), cy: y(points[lastI].pace_sec), r: 3.5, fill: 'var(--v8-lime-dark,#638e16)' }, svg);
+    el('title', {}, svg, `${shortDate(points[0].date)}: ${fmtPace(points[0].pace_sec)} → ${shortDate(points[lastI].date)}: ${fmtPace(points[lastI].pace_sec)} /km`);
   }
 
   function applyWalks(data) {
@@ -285,6 +366,7 @@
       ${data.errors.length ? `<div class="evo-warning">Algunos datos no se han podido cargar: ${esc(data.errors.join(' · '))}</div>` : ''}
       ${athleteStrip(data)}
       <div class="evo-grid evo-kpis">${kpis(data)}</div>
+      <section class="evo-card evo-form-card">${formCard(data)}</section>
       <div class="evo-grid evo-row2">
         <section class="evo-card"><div class="evo-card-head"><div><h3>Últimas semanas</h3><p class="evo-sub">Carga planificada frente a realizada y evolución de la aptitud</p></div>
           <div class="evo-legend"><span><i style="background:#dfe3db"></i>Planificada</span><span><i style="background:var(--v8-lime)"></i>Realizada</span>${data.walks?.walk_days ? '<span><i class="evo-walk-swatch"></i>Paseos (estimado)</span>' : ''}<span><i class="line"></i>Aptitud</span></div></div>
@@ -311,7 +393,8 @@
       const nav = document.querySelector('#v8AthleteNav [data-v8="activities"]');
       if (nav) nav.click(); else window.switchView('activities');
     });
-    drawGauge(data); drawWeeksChart(data); drawReadiness(data); drawSparks(data);
+    root.querySelector('[data-evo-accept]')?.addEventListener('click', event => acceptThreshold(event.currentTarget));
+    drawGauge(data); drawWeeksChart(data); drawReadiness(data); drawSparks(data); drawFormSpark(data);
     renderSessions(); renderWeekDetail();
   }
 

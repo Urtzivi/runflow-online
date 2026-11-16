@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const { URL } = require('url');
 const RunflowInsights = require('./public/js/athlete-insights.js');
 const RunflowWalkLoad = require('./public/js/walk-load.js');
+const RunflowFormMetrics = require('./public/js/form-metrics.js');
 const { compareDetailedBlocks, detailedBlocks, findPreviousComparable, identity, sessionBlockAnalysis } = require('./session-comparison-metrics');
 
 const PORT = Number(process.env.PORT || 8787);
@@ -4121,6 +4122,89 @@ async function walkLoadFor(athleteId, oldest, newest, force = false) {
 
 
 
+// Forma automática (public/js/form-metrics.js): ritmo a pulso fijo, umbral estimado y estimación de 5K/10K/media.
+const formCache = new Map();
+const FORM_CACHE_MS = 20 * 60 * 1000;
+const FORM_HISTORY_FIELD = 'RunFlow · Umbral aceptado';
+
+async function athleteCustomFields(athleteId) {
+  if (DEMO_MODE) return [];
+  const rows = await prodRows('athlete_profiles', `athlete_id=eq.${encodeURIComponent(athleteId)}&select=custom_fields&limit=1`).catch(() => []);
+  return Array.isArray(rows[0] && rows[0].custom_fields) ? rows[0].custom_fields : [];
+}
+
+function formHistoryFrom(fields) {
+  const row = (fields || []).find(item => item && item.label === FORM_HISTORY_FIELD);
+  if (!row) return [];
+  try { const value = JSON.parse(row.value); return Array.isArray(value) ? value : []; } catch { return []; }
+}
+
+async function athleteForm(athleteId, force = false) {
+  const cached = formCache.get(athleteId);
+  if (!force && cached && Date.now() - cached.at < FORM_CACHE_MS) return cached.value;
+  const today = localDateInTimeZone();
+  const [activities, profile, fields] = await Promise.all([
+    listStoredActivities(athleteId, addDays(today, -200), today).catch(() => []),
+    DEMO_MODE ? null : intervalsRunProfile(athleteId),
+    athleteCustomFields(athleteId),
+  ]);
+  const value = {
+    ...RunflowFormMetrics.computeForm({ activities, profile, today }),
+    source: profile ? 'Intervals.icu · perfil Run' : 'Actividades',
+    can_update_intervals: Boolean(profile && profile.settings_id),
+    accepted: formHistoryFrom(fields).slice(-3),
+  };
+  formCache.set(athleteId, { at: Date.now(), value });
+  if (formCache.size > 200) formCache.delete(formCache.keys().next().value);
+  return value;
+}
+
+// El entrenador acepta el umbral que propone RunFlow: se guarda en el perfil Run de Intervals
+// (ritmo umbral y, si el reloj vio un pulso máximo nuevo, pulso máximo, pulso umbral y zonas de pulso).
+// A partir de ahí las actividades nuevas llegan con las referencias nuevas y el efecto de entrenamiento se adapta.
+async function acceptFormThreshold(athleteId, body, coachUserId) {
+  const form = await athleteForm(athleteId, true);
+  const t = form.threshold || {};
+  if (!t.suggest) throw Object.assign(new Error('RunFlow no propone ningún cambio de umbral ahora mismo.'), { status: 409 });
+  const usePace = body.pace !== false && t.changes.pace && t.estimate.pace_sec;
+  const useHr = body.hr !== false && (t.changes.lthr || t.changes.max_hr);
+  if (!usePace && !useHr) throw Object.assign(new Error('No hay nada que aceptar.'), { status: 400 });
+  const patch = {};
+  if (usePace) patch.threshold_pace = Math.round((1000 / t.estimate.pace_sec) * 10000) / 10000;
+  let profile = null;
+  if (!DEMO_MODE) {
+    profile = await intervalsRunProfile(athleteId);
+    if (!profile || !profile.settings_id) throw Object.assign(new Error('No se puede leer el perfil Run de Intervals de este deportista.'), { status: 409 });
+    if (useHr) {
+      if (t.changes.max_hr) patch.max_hr = t.estimate.max_hr;
+      if (t.changes.lthr) patch.lthr = t.estimate.lthr;
+      const zones = RunflowFormMetrics.scaleHrZones(profile.hr_zone_limits, profile.lthr, t.estimate.lthr, t.estimate.max_hr);
+      if (zones) patch.hr_zones = zones;
+    }
+    const apiKey = await getIntervalsKey(athleteId);
+    if (!apiKey) throw Object.assign(new Error('Este deportista no tiene Intervals.icu conectado.'), { status: 409 });
+    await intervalsFetch(apiKey, `/athlete/0/sport-settings/${encodeURIComponent(profile.settings_id)}`, { method: 'PUT', body: JSON.stringify(patch) });
+  }
+  const entry = {
+    date: localDateInTimeZone(),
+    pace: usePace ? [t.in_use.pace_sec, t.estimate.pace_sec] : null,
+    lthr: patch.lthr ? [t.in_use.lthr, patch.lthr] : null,
+    max_hr: patch.max_hr ? [t.in_use.max_hr, patch.max_hr] : null,
+    vo2: form.vo2max,
+    by: coachUserId || null,
+  };
+  if (!DEMO_MODE) {
+    const fields = (await athleteCustomFields(athleteId)).filter(item => item && item.label !== FORM_HISTORY_FIELD);
+    const history = [...formHistoryFrom(await athleteCustomFields(athleteId)), entry].slice(-4);
+    fields.push({ label: FORM_HISTORY_FIELD, value: JSON.stringify(history) });
+    await prodRows('athlete_profiles', 'on_conflict=athlete_id', { method: 'POST', body: { athlete_id: athleteId, custom_fields: fields.slice(-50), updated_at: new Date().toISOString() }, prefer: 'resolution=merge-duplicates,return=minimal' });
+  }
+  formCache.delete(athleteId);
+  const fresh = await athleteForm(athleteId, true).catch(() => form);
+  return { ok: true, applied: entry, intervals_patch: patch, form: DEMO_MODE ? { ...fresh, accepted: [...(fresh.accepted || []), entry] } : fresh };
+}
+
+
 function clampNumber(value, min, max) {
   const number = Number(value);
   if (!Number.isFinite(number)) return min;
@@ -5600,6 +5684,19 @@ async function api(req, res, url) {
     return sendJson(res, 200, await walkLoadFor(athleteId, oldest, newest, url.searchParams.get('sync') === '1'));
   }
 
+  const formMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/form$/);
+  if (formMatch && method === 'GET') {
+    const athleteId = formMatch[1];
+    await ensureCoachAccess(session, athleteId);
+    return sendJson(res, 200, await athleteForm(athleteId, url.searchParams.get('sync') === '1'));
+  }
+  const formAcceptMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/form\/accept$/);
+  if (formAcceptMatch && method === 'POST') {
+    const athleteId = formAcceptMatch[1];
+    await ensureCoachAccess(session, athleteId);
+    return sendJson(res, 200, await acceptFormThreshold(athleteId, await readJson(req), session.user && session.user.id));
+  }
+
   const performanceMatch = pathname.match(/^\/api\/coach\/athletes\/([^/]+)\/performance$/);
   if (performanceMatch && method === 'GET') {
     const athleteId = performanceMatch[1];
@@ -5810,6 +5907,13 @@ async function api(req, res, url) {
     requireRole(session, 'athlete');
     if (!session.athlete_id) throw Object.assign(new Error('Tu usuario todavía no está vinculado a una ficha de deportista.'), { status: 409 });
     return sendJson(res, 200, await performanceBundle(session.athlete_id, url.searchParams.get('days') || 84, url.searchParams.get('refresh') === '1'));
+  }
+
+  if (pathname === '/api/athlete/form' && method === 'GET') {
+    requireRole(session, 'athlete');
+    if (!session.athlete_id) throw Object.assign(new Error('Tu usuario todavía no está vinculado a una ficha de deportista.'), { status: 409 });
+    const form = await athleteForm(session.athlete_id);
+    return sendJson(res, 200, { ...form, threshold: { ...form.threshold, suggest: false }, accepted: [] });
   }
 
   if (pathname === '/api/athlete/walks' && method === 'GET') {

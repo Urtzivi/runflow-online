@@ -108,3 +108,18 @@
 .evo-walk-note{display:flex;gap:6px;align-items:center;color:#3f8a70;font-weight:700}
 .evo-walk-row{cursor:default}
 .evo-walk-why{margin-top:10px;background:#f3f4ef;border-radius:12px;padding:10px 12px;font-size:12px;line-height:1.5;color:#3f4741}
+
+/* Forma automática */
+.evo-form-card{margin-bottom:14px}
+.evo-form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.evo-form-col{background:#fff;border:1px solid var(--v8-line,#dde1da);border-radius:14px;padding:12px 13px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.evo-form-col>small{font-size:11px;color:var(--v8-muted,#7b827c)}
+.evo-form-big{font-size:28px;line-height:1.1}.evo-form-big small{font-size:13px;color:var(--v8-muted,#7b827c)}
+.evo-form-spark{width:100%;display:block;margin-top:4px}
+.evo-form-thr{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.evo-form-thr>div{display:flex;flex-direction:column}.evo-form-thr small{font-size:10px;color:var(--v8-muted,#7b827c)}.evo-form-thr b{font-size:19px;margin:2px 0}
+.evo-form-alert{margin-top:6px;background:#fdf0e1;border-radius:12px;padding:9px 11px;font-size:12px;line-height:1.45;color:#5d3f1c}
+.evo-form-accept{margin-top:8px;display:block;background:#1a211b;color:var(--v8-lime,#b9f34d);border-color:#1a211b}
+.evo-form-race{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:baseline;padding:6px 0;border-bottom:1px solid #eef0ec}
+.evo-form-race span{font-weight:800;font-size:12px}.evo-form-race b{font-size:17px}.evo-form-race small{font-size:11px;color:var(--v8-muted,#7b827c)}
+@media(max-width:1180px){.evo-form{grid-template-columns:1fr}}
