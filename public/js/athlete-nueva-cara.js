@@ -58,8 +58,10 @@
   }
   async function loadEvolution(force = false) {
     if (!force && cache.evolution && Date.now() - cache.evolutionAt < 120000) return cache.evolution;
+    const formReq = getJson('/api/athlete/form').catch(error => { console.warn('[nueva cara] forma', error.message); return null; });
     try { cache.evolution = await getJson('/api/athlete/evolution?weeks=12'); cache.evolutionAt = Date.now(); }
     catch (error) { console.warn('[nueva cara] evolución', error.message); }
+    cache.form = await formReq;
     return cache.evolution;
   }
   // Paseos no registrados estimados con los pasos del reloj (Intervals) para la semana en curso.
@@ -456,7 +458,16 @@
     if (activeWeeks >= 8) lines.push(`has entrenado ${activeWeeks} de las últimas 12 semanas`);
     const headline = lines.length ? `${lines.join(', ').replace(/^./, c => c.toUpperCase())}.` : sessions ? `${sessions} sesiones y ${comma(totalKm, 0)} km en 12 semanas. Sigue sumando: la constancia es lo que más mejora.` : 'Cuando tengas unas semanas de entrenamientos verás aquí cómo mejoras.';
 
+    // Forma automática: RunFlow la recalcula con cada carrera (ritmo a pulso fijo, umbral estimado, 5K/10K/media).
+    const form = cache.form && cache.form.has_data ? cache.form : null;
+    const fe = form?.easy_pace;
+    const raceTime = sec => { const t = Math.round(sec), h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), r = t % 60; return h ? `${h}:${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}` : `${m}:${String(r).padStart(2, '0')}`; };
+    const formHtml = form ? `<section class="nc-card"><div class="nc-row"><span class="nc-k">Tu forma ahora</span>${fe.trend === 'mejora' ? '<span class="nc-pill nc-pill-green">Mejorando</span>' : fe.trend === 'empeora' ? '<span class="nc-pill nc-pill-soft">Algo por debajo</span>' : ''}</div>
+        <div class="nc-row" style="align-items:flex-end"><div><small class="nc-mut" style="display:block">Con ${fe.ref_hr} pulsaciones corres a</small><b style="display:block;font-size:28px;line-height:1.15">${I.fmtPace(fe.pace_sec)}/km</b></div>${num(fe.change_sec) !== null && fe.change_sec !== 0 ? `<small class="${fe.change_sec > 0 ? 'nc-green' : 'nc-warn'}">${fe.change_sec > 0 ? '▲' : '▼'} ${Math.abs(fe.change_sec)} s/km<br>en 6 semanas</small>` : ''}</div>
+        <div class="nc-grid3">${(form.races || []).map(r => `<div class="nc-stat"><span>${esc(r.label)}</span><b>${esc(raceTime(r.seconds))}</b><small class="nc-mut">${I.fmtPace(r.pace_sec)}/km</small></div>`).join('')}</div>
+        <small class="nc-mut">Lo que podrías correr hoy si preparas la distancia, en llano. RunFlow lo recalcula con cada carrera: si vas más rápido con el mismo pulso, estás mejor.</small></section>` : '';
     const markers = [
+      form?.threshold?.estimate?.pace_sec ? { k: 'Ritmo de umbral', v: `${I.fmtPace(form.threshold.estimate.pace_sec)}/km`, d: 'según tus carreras', good: true } :
       pace ? { k: 'Ritmo de umbral', v: `${I.fmtPace(pace)}/km`, d: paceChange !== null ? (paceChange >= 0 ? `▲ ${Math.round(paceChange)} s en 8 sem.` : `▼ ${Math.round(-paceChange)} s en 8 sem.`) : '', good: paceChange === null || paceChange >= 0 } : null,
       vam ? { k: 'Subida (VAM)', v: `${Math.round(vam)} m/h`, d: vamChange !== null ? `${vamChange >= 0 ? '▲' : '▼'} ${comma(Math.abs(vamChange))} %` : '', good: vamChange === null || vamChange >= 0 } : null,
       eff ? { k: 'Eficiencia aeróbica', v: comma(eff, 2), d: effChange !== null ? `${effChange >= 0 ? '▲' : '▼'} ${comma(Math.abs(effChange))} %` : '', good: effChange === null || effChange >= 0 } : null,
@@ -482,6 +493,7 @@
     return `
       <section class="nc-dark"><span class="nc-k nc-k-light">En resumen</span><strong class="nc-ready-title">${esc(headline)}</strong></section>
       ${fitnessSeries.filter(v => v !== null).length >= 2 ? `<section class="nc-card"><div class="nc-row"><span class="nc-k">Nivel de forma</span>${fitDelta !== null ? `<span class="nc-pill ${fitDelta >= 0 ? 'nc-pill-green' : 'nc-pill-soft'}">${fitDelta >= 0 ? '+' : ''}${comma(fitDelta, 0)} puntos</span>` : ''}</div>${svgLine(fitnessSeries, { thin: fatigueSeries })}<small class="nc-mut">Sube cuando entrenas con constancia${fatigueSeries ? '. La línea fina es el cansancio de cada día' : ''}.</small></section>` : ''}
+      ${formHtml}
       ${markers.length ? `<section class="nc-card"><span class="nc-k">Tus marcadores</span><div class="nc-markers">${markers.map(m => `<div class="nc-stat"><span>${m.k}</span><b>${esc(m.v)}</b>${m.d ? `<small class="${m.good ? 'nc-green' : 'nc-warn'}">${esc(m.d)}</small>` : ''}</div>`).join('')}</div><small class="nc-mut">Estimados con tus entrenamientos. Lo importante es la tendencia.</small></section>` : ''}
       ${weeks.length ? `<section class="nc-card"><div class="nc-row"><span class="nc-k">Kilómetros por semana</span><small class="nc-mut">media ${comma(kmAvg, 0)} km</small></div><div class="nc-km">${bars}</div></section>` : ''}
       ${zTot > 0 ? `<section class="nc-card"><span class="nc-k">¿Haces el suave suave?</span><div class="nc-zbar"><i style="width:${(zEasy / zTot * 100).toFixed(1)}%;background:#4F8FC0"><em>${Math.round(zEasy / zTot * 100)} % suave</em></i><i style="width:${(zMid / zTot * 100).toFixed(1)}%;background:#E3B341"></i><i style="width:${(zHard / zTot * 100).toFixed(1)}%;background:#C8402F"></i></div><p class="nc-p">${zEasy / zTot >= 0.75 ? 'Muy bien repartido. Lo ideal es cerca de un 80 % suave y un 20 % fuerte, con poco tiempo en la zona media.' : zMid / zTot >= 0.25 ? `Pasas un ${Math.round(zMid / zTot * 100)} % en la zona media ("zona gris"). Haz los días suaves más suaves y los duros, duros.` : 'Hay bastante intensidad. Asegúrate de que los días suaves sean suaves de verdad.'}</p></section>` : ''}
