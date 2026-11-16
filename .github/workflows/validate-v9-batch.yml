@@ -94,6 +94,11 @@ jobs:
         run: |
           node --check public/js/coach-running-guided-plan.js
           node --test scripts/test-running-guided-plan.cjs
+      - name: Test carga en escala Intervals
+        run: |
+          node --check public/js/load-scale.js
+          node --check load-scale-hook.js
+          node --test scripts/test-load-scale.cjs
       - name: Test assistant feedback drafts
         run: |
           node --check assistant-api-hook.js
