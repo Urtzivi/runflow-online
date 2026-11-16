@@ -1,5 +1,6 @@
 'use strict';
 const { normaliseBlocks, markForCheck } = require('./assistant-blocks');
+const LoadScale = require('./public/js/load-scale.js');
 
 // Agente Planificador: cambios sobre semanas y sesiones que YA están en el
 // calendario (añadir, cambiar, mover, quitar una sesión o vaciar la semana).
@@ -214,7 +215,8 @@ async function buildWeekEdit(db, athleteId, body, today, verify) {
     title: week?.title || '',
     coach_comment: week?.coach_comment || '',
     ...weekChanges,
-    workouts: result.workouts.map(w => (String(w.id).startsWith('new-') ? (({ id, ...rest }) => rest)(w) : w)),
+    workouts: result.workouts.map(w => (String(w.id).startsWith('new-') ? (({ id, ...rest }) => rest)(w) : w))
+      .map(w => ({ ...w, planned_load: LoadScale.toIntervals(w.planned_load, w.planned_duration_min, w.is_strength ? 'Strength' : w.sport) || 0 })),
   };
   weekData.target_load = weekData.workouts.reduce((sum, w) => sum + Number(w.planned_load || 0), 0);
   return {

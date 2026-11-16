@@ -10,6 +10,19 @@
   };
   const mismatch = (planned, actual) => Boolean(sport(planned) && sport(actual) && sport(planned) !== sport(actual));
   const published = week => (week.publication_status || week.status) === 'published';
+  const scale = () => (typeof module !== 'undefined' && module.exports ? require('./load-scale.js') : root.RunFlowLoadScale);
+  // Sesión hecha sin actividad de Intervals (fuerza en el gimnasio, por ejemplo): carga estimada en la escala
+  // de Intervals con los minutos y el RPE que apuntó; si no puso RPE, la planificada (pasada a esa escala) por los minutos hechos.
+  function manualLoad(workout, log) {
+    const LS = scale();
+    const kind = workout.is_strength ? 'Strength' : workout.sport;
+    const minutes = number(workout.planned_duration_min), actual = number(log.actual_duration_min) || (log.status === 'completed' ? minutes : null);
+    const byRpe = LS && actual > 0 && number(log.rpe) > 0 ? LS.fromRpe(actual, number(log.rpe), kind) : null;
+    if (byRpe !== null) return byRpe;
+    const raw = number(workout.planned_load);
+    const planned = raw !== null && LS ? LS.toIntervals(raw, minutes, kind) : raw;
+    return planned !== null && minutes > 0 && actual > 0 ? planned * actual / minutes : log.status === 'completed' ? planned : null;
+  }
   function records(result) {
     const rows = [], seen = new Set();
     for (const week of result.weeks || []) {
@@ -17,8 +30,7 @@
         for (const activity of workout.activities || []) addActivity(activity, workout);
         const log = workout.manual_log;
         if (!(workout.activities || []).length && log && ['completed', 'partial'].includes(log.status)) {
-          const planned = number(workout.planned_load), minutes = number(workout.planned_duration_min), actual = number(log.actual_duration_min);
-          const load = planned !== null && minutes > 0 && actual > 0 ? planned * actual / minutes : log.status === 'completed' ? planned : null;
+          const load = manualLoad(workout, log);
           rows.push({athlete:result.athlete, workout, type:'manual', date:workout.workout_date, load, estimated:true});
         }
       }

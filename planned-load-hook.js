@@ -212,7 +212,7 @@ function estimateWorkout(workout, historyBySport) {
 
   if (kind === 'strength') {
     const samples = historyBySport.get('strength') || [];
-    const base = samples.length >= 3 ? percentile(samples, 0.35) : 1.10;
+    const base = samples.length >= 3 ? percentile(samples, 0.35) : 0.75; // escala Intervals (load-scale.js)
     const load = Math.max(1, Math.round(duration * clamp(base * strengthFactor(workout), 0.65, 1.55)));
     return {
       planned_load: load,

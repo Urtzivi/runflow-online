@@ -6,10 +6,12 @@
  * cualquier semana (replan) cuando el atleta pierde días o semanas.
  */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.RunFlowRunningPlan = factory();
-})(typeof self !== 'undefined' ? self : this, function () {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./load-scale.js'));
+  else root.RunFlowRunningPlan = factory(root.RunFlowLoadScale);
+})(typeof self !== 'undefined' ? self : this, function (LS) {
   'use strict';
+  // Toda la carga del plan va en la escala de Intervals (load-scale.js): una hora al umbral ≈ 100.
+  const weekLoad = (minutes, rpe) => LS.fromRpe(minutes, rpe, 'Run') || 0;
 
   const DAY_MS = 86400000;
   const DAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
@@ -302,7 +304,7 @@
       const phaseFactor = week.phase === 'prep' ? 0.85 : 1;
       week.minutes = Math.round(capacity * info.pct * phaseFactor / 5) * 5;
       week.hours = Math.round(week.minutes / 6) / 10;
-      week.load = Math.round(week.minutes * info.rpe);
+      week.load = weekLoad(week.minutes, info.rpe);
       week.label = info.label;
       week.strength_sessions = strengthPlanFor(answers, race, week.phase, week.type).perWeek;
       week.why = week.reason ? `${REASONS[week.reason] ? `${REASONS[week.reason]}. ` : ''}${info.why}` : info.why;
@@ -320,7 +322,7 @@
         if (week.minutes > ceiling) {
           week.minutes = Math.round(ceiling / 5) * 5;
           week.hours = Math.round(week.minutes / 6) / 10;
-          week.load = Math.round(week.minutes * WEEK_TYPES[week.type].rpe);
+          week.load = weekLoad(week.minutes, WEEK_TYPES[week.type].rpe);
           week.why = `Sube poco a poco desde lo que venía corriendo (≈ ${Math.round(history)} min por semana). ${week.why}`;
           ramped += 1;
         }
@@ -337,7 +339,7 @@
       if (week.minutes > cap) {
         week.minutes = cap;
         week.hours = Math.round(week.minutes / 6) / 10;
-        week.load = Math.round(week.minutes * WEEK_TYPES[week.type].rpe);
+        week.load = weekLoad(week.minutes, WEEK_TYPES[week.type].rpe);
       }
       peak = Math.max(peak, week.minutes);
     });
@@ -347,7 +349,7 @@
       if (!share || !peak || week.minutes < peak) return;
       week.minutes = Math.max(30, Math.round(peak * share / 5) * 5);
       week.hours = Math.round(week.minutes / 6) / 10;
-      week.load = Math.round(week.minutes * WEEK_TYPES[week.type].rpe);
+      week.load = weekLoad(week.minutes, WEEK_TYPES[week.type].rpe);
     });
 
     const mesos = [];
@@ -475,7 +477,7 @@
       priority: options.priority || 'C',
       workout_date: date,
       planned_duration_min: row.minutes || null,
-      planned_load: Math.min(1000, Math.round(row.load || 0)),
+      planned_load: Math.min(1000, Math.round(LS.toIntervals(row.load || 0, row.minutes, strength ? 'Strength' : 'Run') || 0)),
       session_objective: options.objective || row.objective || '',
       adaptation_target: row.family || '',
       summary: [options.role, rpe || row.intensity].filter(Boolean).join(' · '),
@@ -734,7 +736,7 @@
     return {
       sport: { run: 'Run', bike: 'Ride', walk: 'Walk' }[kind], is_strength: false, optional: true, regenerative: true,
       title: `${OPTIONAL} · ${label} ${duration}'`, priority: 'C', workout_date: date,
-      planned_duration_min: duration, planned_load: Math.round(duration * (kind === 'run' ? 1.5 : kind === 'bike' ? 0.6 : 0.3)),
+      planned_duration_min: duration, planned_load: kind === 'run' ? LS.fromRpe(duration, 2.5, 'Run') : Math.round(duration * (kind === 'bike' ? 0.6 : 0.3)),
       session_objective: 'Soltar piernas y recuperar el día de fuerza, sin sumar cansancio.', adaptation_target: 'Recovery',
       summary: `Propuesta, no obligatorio · Salida regenerativa · RPE 2-3 de 10: muy suave, puedes hablar sin esfuerzo`,
       structured_description: `Opcional. Hoy lo importante es la fuerza: si te apetece, una salida regenerativa en otro momento del día.\nCómo debe sentirse: RPE 2-3 de 10, muy suave. Nada de series ni cambios de ritmo.\nSi notas las piernas cargadas o has dormido mal, mejor no salir.`,
@@ -773,7 +775,7 @@
     ].filter(Boolean);
     return {
       sport: 'Strength', is_strength: true, title: `Fuerza guiada en el gimnasio · ${sp.name}`, priority: 'B', workout_date: date,
-      planned_duration_min: duration, planned_load: Math.round(duration * 5),
+      planned_duration_min: duration, planned_load: LS.fromRpe(duration, 5, 'Strength'),
       session_objective: sp.goal, adaptation_target: sp.families.join(', '),
       summary: `Fuerza · ${sp.name} · Con el entrenador del gimnasio · ${sp.effort}${afterRun ? ' · Después de correr, no antes' : ''}`,
       structured_description: lines.join('\n'),
@@ -873,7 +875,7 @@
         const key = phaseOfMicro(micro) || mesoKey;
         const week = {
           index: 0, start: micro.start_date, end: addDays(micro.start_date, 6), phase: key, type, minutes, hours,
-          load: Number(micro.planned?.load) || Math.round(minutes * info.rpe), label: info.label, why: info.why,
+          load: Number(micro.planned?.load) || weekLoad(minutes, info.rpe), label: info.label, why: info.why,
           strength_sessions: Number(micro.planned?.strength_sessions) || 0, micro_id: micro.id, meso_id: meso.id,
           adapted: String(micro.notes || '').includes(ADAPTED_PREFIX),
         };
@@ -990,7 +992,7 @@
     return {
       sport: 'Strength', is_strength: true, priority: 'B', workout_date: date,
       title: incident.kind === 'lesion' ? `Recuperación · ${zone.label}` : 'Fuerza suave y movilidad',
-      planned_duration_min: duration, planned_load: duration * 3,
+      planned_duration_min: duration, planned_load: LS.fromRpe(duration, 3, 'Strength'),
       session_objective: 'Fortalecer la zona y el tronco para volver mejor.', adaptation_target: 'Rehab',
       summary: 'Ejercicios de recuperación · RPE 4-5 de 10 · sin dolor',
       structured_description: [
@@ -1028,7 +1030,7 @@
     return {
       sport: 'Run', is_strength: false, priority: 'A', workout_date: date,
       title: `Vuelta a correr · paso ${step + 1} de ${RETURN_STEPS.length}`,
-      planned_duration_min: duration, planned_load: Math.round(duration * 3),
+      planned_duration_min: duration, planned_load: LS.fromRpe(duration, 3, 'Run'),
       session_objective: 'Volver a correr sin que vuelva el dolor.', adaptation_target: 'Return to run',
       summary: `${s.text} · muy suave, por llano y terreno blando`,
       structured_description: [
@@ -1377,7 +1379,7 @@
       // Referencia para el ±15 %: lo que pondría RunFlow para ese tipo de semana (una descarga ya baja sola).
       const reference = round5(base.base_minutes * WEEK_TYPES[type].pct / WEEK_TYPES[base.base_type].pct);
       Object.assign(week, {
-        type, minutes, hours: Math.round(minutes / 6) / 10, load: Math.round(minutes * WEEK_TYPES[type].rpe), label: WEEK_TYPES[type].label,
+        type, minutes, hours: Math.round(minutes / 6) / 10, load: weekLoad(minutes, WEEK_TYPES[type].rpe), label: WEEK_TYPES[type].label,
         agent: { ...base, reference, why },
         why: why ? `Planificador: ${why} ${WEEK_TYPES[type].why}` : week.why,
       });
