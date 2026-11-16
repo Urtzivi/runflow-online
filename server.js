@@ -8,6 +8,7 @@ const { URL } = require('url');
 const RunflowInsights = require('./public/js/athlete-insights.js');
 const RunflowWalkLoad = require('./public/js/walk-load.js');
 const RunflowFormMetrics = require('./public/js/form-metrics.js');
+const LoadScale = require('./public/js/load-scale.js');
 const { compareDetailedBlocks, detailedBlocks, findPreviousComparable, identity, sessionBlockAnalysis } = require('./session-comparison-metrics');
 
 const PORT = Number(process.env.PORT || 8787);
@@ -902,8 +903,20 @@ function normaliseWorkout(item, athleteId, weekStart, index) {
 
   const structuredDuration = structuredWorkoutDurationMin(workout);
   if (structuredDuration !== null) workout.planned_duration_min = structuredDuration;
+  // Carga siempre en la escala de Intervals (public/js/load-scale.js): una sRPE (minutos × RPE) se convierte.
+  workout.planned_load = LoadScale.toIntervals(workout.planned_load, workout.planned_duration_min, workout.is_strength ? 'Strength' : sport) || 0;
 
   return workout;
+}
+
+// Objetivo de carga de la semana en escala Intervals. Si sus sesiones venían en sRPE y se han convertido,
+// el objetivo se escala igual (así se respeta que no cuente lo opcional); sin sesiones, se convierte con sus horas.
+function weekTargetLoad(explicit, source, workouts) {
+  const sum = workouts.reduce((total, item) => total + Number(item.planned_load || 0), 0);
+  if (explicit === null) return sum;
+  const raw = (Array.isArray(source.workouts) ? source.workouts : []).reduce((total, item) => total + (Number(item?.planned_load) || 0), 0);
+  if (raw > 0 && sum < raw) return Math.round(explicit * sum / raw);
+  return LoadScale.toIntervals(explicit, (numberOrNull(source.planned_hours, 0, 200) || 0) * 60) || 0;
 }
 
 function normaliseWeek(body, athleteId) {
@@ -919,7 +932,7 @@ function normaliseWeek(body, athleteId) {
     week_type: sanitiseText(source.week_type || source.microcycle_type || 'Carga controlada', 80),
     title: sanitiseText(source.title || source.name, 250),
     coach_comment: sanitiseText(source.coach_comment || source.notes, 4000),
-    target_load: numberOrNull(explicitLoad, 0, 5000) ?? workouts.reduce((sum, item) => sum + Number(item.planned_load || 0), 0),
+    target_load: weekTargetLoad(numberOrNull(explicitLoad, 0, 5000), source, workouts),
     status: source.status === 'published' || source.publication_status === 'published' ? 'published' : 'draft',
     workouts,
   };
@@ -1362,7 +1375,7 @@ function normaliseTemplateData(source) {
   return {
     sport: sanitiseText(item.sport || 'Run', 40),
     priority: ['A', 'B', 'C'].includes(item.priority) ? item.priority : 'B',
-    planned_load: numberOrNull(item.planned_load, 0, 1000) ?? 0,
+    planned_load: LoadScale.toIntervals(numberOrNull(item.planned_load, 0, 1000) ?? 0, numberOrNull(item.planned_duration_min, 0, 2000), item.is_strength ? 'Strength' : item.sport) || 0,
     planned_duration_min: numberOrNull(item.planned_duration_min, 0, 2000),
     planned_distance_km: numberOrNull(item.planned_distance_km, 0, 2000),
     planned_elevation_m: numberOrNull(item.planned_elevation_m, 0, 100000),
@@ -2080,7 +2093,7 @@ function normaliseMesocycle(body, existing = {}) {
     planned_hours: numberOrNull(source.planned_hours, 0, 10000) ?? 0,
     planned_distance_km: numberOrNull(source.planned_distance_km ?? source.planned_distance, 0, 100000) ?? 0,
     planned_elevation_m: numberOrNull(source.planned_elevation_m ?? source.planned_elevation, 0, 1000000) ?? 0,
-    planned_load: numberOrNull(source.planned_load, 0, 1_000_000) ?? 0,
+    planned_load: LoadScale.toIntervals(numberOrNull(source.planned_load, 0, 1_000_000) ?? 0, (numberOrNull(source.planned_hours, 0, 10000) || 0) * 60) || 0,
     planned_strength_sessions: Math.round(numberOrNull(source.planned_strength_sessions, 0, 10000) ?? 0),
     planned_intensity_distribution: safeObject(source.planned_intensity_distribution || source.intensity_distribution),
     progression_pattern: safeStringArray(source.progression_pattern, 30, 100),
@@ -2337,7 +2350,7 @@ function normaliseMicrocycle(body, existing = {}) {
       80
     ),
     coach_comment: sanitiseText(source.notes || source.coach_comment, 4000),
-    target_load: numberOrNull(plannedLoad, 0, 1_000_000) ?? 0,
+    target_load: LoadScale.toIntervals(numberOrNull(plannedLoad, 0, 1_000_000) ?? 0, (numberOrNull(plannedHours, 0, 10000) || 0) * 60) || 0,
     planned_hours: numberOrNull(plannedHours, 0, 10000) ?? 0,
     planned_distance_km: numberOrNull(plannedDistance, 0, 100000) ?? 0,
     planned_elevation_m: numberOrNull(plannedElevation, 0, 1000000) ?? 0,
@@ -2383,6 +2396,15 @@ async function ensureMicrocycleStartAvailable(athleteId, weekStart, excludeId = 
   }
 }
 
+// Si las sesiones llegaban en sRPE y se han pasado a escala Intervals, el objetivo de la semana se escala igual.
+function scaleTargetWithWorkouts(data, body, workouts) {
+  if (!workouts || !workouts.length) return;
+  const raw = (Array.isArray(body?.workouts) ? body.workouts : []).reduce((total, item) => total + (Number(item?.planned_load) || 0), 0);
+  const sum = workouts.reduce((total, item) => total + (Number(item.planned_load) || 0), 0);
+  const rawTarget = numberOrNull(body?.planned && typeof body.planned === 'object' ? body.planned.load : (body?.planned_load ?? body?.target_load), 0, 1_000_000);
+  if (raw > 0 && sum < raw && rawTarget !== null) data.target_load = Math.round(rawTarget * sum / raw);
+}
+
 async function addMicrocycle(athleteId, mesocycleId, body) {
   const mesocycle = await getMesocycleForAthlete(athleteId, mesocycleId);
   const data = normaliseMicrocycle(body);
@@ -2398,6 +2420,7 @@ async function addMicrocycle(athleteId, mesocycleId, body) {
   };
   const sourceWorkouts = Array.isArray(body && body.workouts) ? body.workouts : [];
   const workouts = sourceWorkouts.map((item, index) => normaliseWorkout(item, athleteId, data.week_start, index));
+  scaleTargetWithWorkouts(data, body, workouts);
   await assertWorkoutsFitAvailability(athleteId, workouts);
 
   if (DEMO_MODE) {
@@ -2435,7 +2458,10 @@ async function updateMicrocycle(microcycleId, athleteId, body) {
   const incomingWorkouts = Array.isArray(body && body.workouts)
     ? body.workouts.map((item, index) => normaliseWorkout(item, athleteId, data.week_start, index))
     : null;
-  if (incomingWorkouts) await assertWorkoutsFitAvailability(athleteId, incomingWorkouts);
+  if (incomingWorkouts) {
+    scaleTargetWithWorkouts(data, body, incomingWorkouts);
+    await assertWorkoutsFitAvailability(athleteId, incomingWorkouts);
+  }
 
   if (DEMO_MODE) {
     const athlete = demo.athletes.find(item => item.id === athleteId);

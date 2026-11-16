@@ -22,6 +22,8 @@
   const avg = values => { const list = values.map(num).filter(v => v !== null); return list.length ? list.reduce((a, b) => a + b, 0) / list.length : null; };
   const signed = (value, digits = 0, suffix = '') => value === null ? '' : `${value > 0 ? '+' : value < 0 ? '−' : ''}${fmtNum(Math.abs(value), digits)}${suffix}`;
   const training = () => window.RunFlowTraining;
+  // Carga planificada siempre en escala Intervals (load-scale.js), aunque la sesión se guardara en sRPE.
+  const planLoad = w => { const v = num(w?.planned_load); return v === null || !window.RunFlowLoadScale ? v : Math.round(window.RunFlowLoadScale.toIntervals(v, w.planned_duration_min, w.is_strength ? 'Strength' : w.sport)); };
 
   const intensityColor = text => {
     const t = String(text || '').toLowerCase();
@@ -264,7 +266,7 @@
       weekRows.push({
         start, end, current: start === monday,
         type: typeWeek?.week_type || '',
-        plannedLoad: planned.reduce((s, w) => s + (num(w.planned_load) || 0), 0),
+        plannedLoad: planned.reduce((s, w) => s + (planLoad(w) || 0), 0),
         doneLoad: recs.reduce((s, r) => s + (r.load ?? 0), 0),
         plannedCount: planned.length,
         doneCount: planned.filter(done).length,
@@ -442,7 +444,7 @@
         const w = s.workout || {}, a = s.activity || null;
         const title = a?.name || w.title || 'Sesión';
         const status = s.status === 'planned' ? '<span class="evo-pill n">Programada</span>' : sessionStatus(data, s);
-        const load = s.status === 'done' ? (s.load !== null && s.load !== undefined ? fmtNum(Math.round(s.load)) : '—') : num(w.planned_load) !== null ? `<span class="evo-muted">plan ${fmtNum(num(w.planned_load))}</span>` : '—';
+        const load = s.status === 'done' ? (s.load !== null && s.load !== undefined ? fmtNum(Math.round(s.load)) : '—') : planLoad(w) !== null ? `<span class="evo-muted">plan ${fmtNum(planLoad(w))}</span>` : '—';
         return `<tr data-evo-week-row="${i}" tabindex="0"><td class="d">${esc(dayDate(s.date))}</td>
           <td><div class="evo-sname"><i style="background:${sessionColor(s)}"></i><div><b>${esc(title)}</b><small>${esc(sessionSubtitle(s))}</small></div></div></td>
           <td>${sourcePill(s)}</td><td class="n"><b>${load}</b>${s.estimated ? '<small title="Carga estimada a partir de la duración registrada">*</small>' : ''}</td><td>${status}</td></tr>`;
@@ -471,7 +473,7 @@
       const minutes = f.kind === 'match' ? num(f.minutes_played) : num(f.duration_min);
       return [FOOTBALL_KINDS[f.kind], minutes !== null ? `${fmtNum(minutes)} min${f.kind === 'match' ? ' jugados' : ''}` : '', num(f.rpe) !== null ? `RPE ${fmtNum(num(f.rpe))}` : ''].filter(Boolean).join(' · ');
     }
-    return w.id ? [w.title && a?.name && a.name !== w.title ? w.title : '', num(w.planned_duration_min) ? `${fmtNum(num(w.planned_duration_min))} min` : '', num(w.planned_load) !== null ? `plan ${fmtNum(num(w.planned_load))}` : ''].filter(Boolean).join(' · ') : 'Sin sesión planificada';
+    return w.id ? [w.title && a?.name && a.name !== w.title ? w.title : '', num(w.planned_duration_min) ? `${fmtNum(num(w.planned_duration_min))} min` : '', planLoad(w) !== null ? `plan ${fmtNum(planLoad(w))}` : ''].filter(Boolean).join(' · ') : 'Sin sesión planificada';
   }
 
   function athleteStrip(data) {
@@ -536,6 +538,13 @@
       </section>`;
   }
 
+  // Carga absoluta de la semana: realizada (+ paseos estimados) / planificada.
+  function weekLoadCell(w) {
+    const done = Math.round(w.doneLoad || 0), walk = Math.round(w.walkLoad || 0), plan = Math.round(w.plannedLoad || 0);
+    if (!done && !walk && !plan) return '—';
+    return `<span class="evo-load"><b>${done ? fmtNum(done) : '0'}</b>${walk ? `<span class="evo-walk-txt"> + ${fmtNum(walk)}</span>` : ''}${plan ? `<small> / ${fmtNum(plan)}</small>` : ''}</span>`;
+  }
+
   function weeksTable(data) {
     const rows = data.model.weekRows;
     const pill = w => { if (!w.plannedCount) return '<span class="evo-pill n">—</span>'; const ratio = w.doneCount / w.plannedCount; return `<span class="evo-pill ${ratio >= 1 ? 'ok' : ratio >= .75 ? 'mid' : 'bad'}">${w.doneCount}/${w.plannedCount}</span>`; };
@@ -544,6 +553,7 @@
       ${line('Tipo', w => esc(w.type || '—'))}
       ${line('Sesiones', pill)}
       ${line('Km', w => w.km ? fmtNum(w.km) : '—')}
+      ${line('Carga', weekLoadCell)}
       ${line('Cumpl. carga', w => w.plannedLoad ? `${fmtNum(Math.round(w.doneLoad / w.plannedLoad * 100))}%` : '—')}
       ${data.walks?.walk_days ? line('Paseos', w => w.walkLoad ? `<span class="evo-walk-txt">+${fmtNum(w.walkLoad)}</span>` : '—') : ''}
     </tbody></table>`;
@@ -708,6 +718,10 @@
         const seg = el('rect', { x: cx + 1.5, y: pt + ih - hd - hw, width: b, height: hw, rx: 3, fill: 'url(#evoWalkHatch)' }, svg);
         el('title', {}, seg, `Paseos estimados por pasos: +${Math.round(w.walkLoad)}`);
       }
+      // Cifra de carga encima de cada barra: planificada en gris, realizada (con paseos) en negro.
+      if (w.plannedLoad) el('text', { x: cx - b / 2 - 1.5, y: pt + ih - hp - 3, 'text-anchor': 'middle', 'font-size': 9, fill: '#9aa19a', 'font-weight': 700 }, svg, fmtNum(Math.round(w.plannedLoad)));
+      const doneTotal = Math.round(w.doneLoad + (w.walkLoad || 0));
+      if (doneTotal) el('text', { x: cx + b / 2 + 1.5, y: pt + ih - ih * doneTotal / max - 3, 'text-anchor': 'middle', 'font-size': 9, fill: '#181d19', 'font-weight': 800 }, svg, fmtNum(doneTotal));
       const t = el('text', { x: cx, y: H - 8, 'text-anchor': 'middle', 'font-size': 10, fill: w.current ? '#181d19' : '#858c86', 'font-weight': w.current ? 800 : 600 }, svg, w.current ? 'Esta sem.' : shortDate(w.start));
       el('title', {}, t, `Semana del ${shortDate(w.start)}: ${Math.round(w.doneLoad)} realizada / ${Math.round(w.plannedLoad)} planificada`);
     });

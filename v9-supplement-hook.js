@@ -4,6 +4,7 @@ const http=require('http');
 const crypto=require('crypto');
 const {URL}=require('url');
 const {activityIntervals,findPreviousComparable,identity,metricForSession}=require('./session-comparison-metrics');
+const LoadScale=require('./public/js/load-scale.js');
 const SUPABASE_URL=String(process.env.SUPABASE_URL||'').replace(/\/$/,'');
 const SUPABASE_ANON_KEY=String(process.env.SUPABASE_ANON_KEY||'');
 const SUPABASE_SERVICE_ROLE_KEY=String(process.env.SUPABASE_SERVICE_ROLE_KEY||'');
@@ -56,8 +57,8 @@ async function athleteLoadEstimate(athleteId,sport,duration,rpe,plannedLoad=0,pl
   const acts=await sb('activities',`athlete_id=eq.${encodeURIComponent(athleteId)}&load=gt.0&select=load,duration_sec,sport&order=activity_date.desc&limit=100`).catch(()=>[]);
   const pm=acts.filter(a=>sportKey(a.sport)===sport&&Number(a.duration_sec)>0).map(a=>Number(a.load)/(Number(a.duration_sec)/60)).filter(x=>Number.isFinite(x)&&x>0);
   if(pm.length>=3){const base=pctl(pm,.25),factor=Math.min(1.05,Math.max(.6,.75+(Number(rpe||5)-5)*.06));return{load:Math.max(1,Math.round(duration*base*factor)),source:'estimated_athlete_sport_history',confidence:pm.length>=8?'medium':'low'}}
-  if(plannedLoad>0&&plannedDuration>0)return{load:Math.max(1,Math.round(plannedLoad*duration/plannedDuration)),source:'estimated_from_planned_load',confidence:'low'};
-  if(rpe>0)return{load:Math.max(1,Math.round(duration*rpe/10)),source:'estimated_conservative_fallback',confidence:'low'};
+  if(rpe>0)return{load:LoadScale.fromRpe(duration,rpe,sport==='strength'?'Strength':sport),source:'estimated_rpe_intervals_scale',confidence:'low'};
+  if(plannedLoad>0&&plannedDuration>0)return{load:Math.max(1,Math.round(LoadScale.toIntervals(plannedLoad,plannedDuration,sport==='strength'?'Strength':sport)*duration/plannedDuration)),source:'estimated_from_planned_load',confidence:'low'};
   return{load:null,source:'insufficient',confidence:'none'};
 }
 async function reconcileFeedback(athleteId){
