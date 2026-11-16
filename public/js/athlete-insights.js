@@ -33,10 +33,27 @@
     other: { label: 'Sesión', effort: 'Según indicaciones', rpe: null, purpose: 'Sesión preparada por tu entrenador para esta semana.', improves: 'Forma general', recover: '24 h', feel: 'Sigue las indicaciones de tu entrenador.', tips: [] },
   };
 
+  // Quita lo que el texto dice que NO hay que hacer ("Nada rápido ni cuestas fuertes",
+  // "sin cuestas", "evita series"): si no, un trote suave se leía como sesión de cuestas.
+  function dropNegations(text) {
+    return String(text || '').replace(/\b(nada|sin|ni|no|nunca|evita|evitar|evitando)\b[^.·,;:()!?]*/g, ' ');
+  }
+
   function workoutText(workout) {
     const blocks = Array.isArray(workout && workout.blocks) ? workout.blocks : [];
-    return norm([workout && workout.title, workout && workout.summary, workout && workout.adaptation_target, workout && workout.session_objective, ...blocks.map(b => `${b.name || ''} ${b.target || ''}`)].join(' '));
+    return dropNegations(norm([workout && workout.title, workout && workout.summary, workout && workout.adaptation_target, workout && workout.session_objective, ...blocks.map(b => `${b.name || ''} ${b.target || ''}`)].join(' . ')));
   }
+
+  // true cuando todos los bloques de trabajo marcan zonas 1-2: la sesión es suave sí o sí,
+  // diga lo que diga el texto.
+  function onlyEasyBlocks(workout) {
+    const blocks = (Array.isArray(workout && workout.blocks) ? workout.blocks : [])
+      .filter(b => b && !['runflow_meta', 'strength', 'warmup', 'cooldown', 'activation'].includes(b.type));
+    if (!blocks.length) return false;
+    return blocks.every(b => { const r = zoneRange(b.target); return !!(r && r.zones && r.zones[1] <= 2); });
+  }
+
+  const RECOVERY_TARGETS = /^(recovery|recuperacion activa|return to run|rehab)$/;
 
   function classifySession(workout) {
     if (!workout) return 'rest';
@@ -46,6 +63,13 @@
     if (sport.includes('ride') || sport.includes('bike') || /\bbici\b|ciclismo/.test(text)) return 'bike';
     if (sport.includes('walk') || /\bpaseo\b|caminar/.test(norm(workout.title))) return 'walk';
     if (sport.includes('rest') || /^descanso/.test(norm(workout.title))) return 'rest';
+    const easyOnly = onlyEasyBlocks(workout);
+    if (RECOVERY_TARGETS.test(norm(workout.adaptation_target).trim())) return 'recovery';
+    if (easyOnly) {
+      if (/recupera|regenera|muy suave|soltar|trote/.test(text)) return 'recovery';
+      if (/tirada|larga|largo|long/.test(text) || (num(workout.planned_duration_min) || 0) >= 80) return 'long';
+      return 'easy';
+    }
     if (/cuesta|hill/.test(text)) return 'hills';
     if (/vo2|vo₂|ritmo 5 ?k|\bz5\b|series cortas/.test(text)) return 'vo2';
     if (/umbral|threshold|lt2|\bz4\b/.test(text)) return 'threshold';
