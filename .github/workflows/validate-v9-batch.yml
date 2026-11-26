@@ -90,6 +90,13 @@ jobs:
           node --check public/js/football-week.js
           node --check public/js/coach-football-week.js
           node --test scripts/test-football-schedule.cjs
+      - name: Validate questionnaires
+        run: |
+          node --check questionnaire-api.js
+          node --check public/js/runflow-questionnaires.js
+          node --check public/js/runflow-questionnaire-athlete.js
+          node --check public/js/coach-questionnaires.js
+          node --test scripts/test-questionnaires.cjs
       - name: Test guided running plan
         run: |
           node --check public/js/coach-running-guided-plan.js
