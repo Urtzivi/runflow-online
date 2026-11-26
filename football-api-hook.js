@@ -572,3 +572,6 @@ http.createServer = function footballApiCreateServer(listener) {
     return listener(req, res);
   });
 };
+
+// Cuestionarios del coach al deportista (misma identificación que el módulo de fútbol).
+require('./questionnaire-api.js').install({ rows, athleteIdentity, coachUser, coachIdentity, sendJson });
