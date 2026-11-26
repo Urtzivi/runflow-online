@@ -73,6 +73,7 @@ jobs:
           npx cap sync android
           node scripts/android-system-bars.cjs
           node scripts/android-background-runner.cjs
+          node scripts/android-audio-permission.cjs
 
       - name: Build debug APK
         working-directory: mobile/android
