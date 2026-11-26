@@ -35,7 +35,7 @@
   const WEEK_TYPE_LABEL = { adaptation: 'Adaptación', load: 'Carga', development: 'Construcción', overload: 'Sobrecarga', deload: 'Descarga', recovery: 'Vuelta suave', taper: 'Afinamiento', competition: 'Carrera' };
   const MICRO_TYPE_LABEL = { ...WEEK_TYPE_LABEL };
 
-  const ui = { installed: false, selected: null, busy: '', library: null, legacy: false, modal: null, advice: {} };
+  const ui = { installed: false, selected: null, busy: '', library: null, legacy: false, modal: null, advice: {}, loose: null };
 
   // ---------- Datos ----------
   function guidedMacro() {
@@ -219,6 +219,80 @@
       render();
       notify('Temporada borrada. Lo realizado por el atleta se conserva.', 'success');
     } catch (error) { ui.busy = ''; render(); notify(error.message, 'error'); }
+  }
+
+  // ---------- Semanas sueltas (atleta sin temporada) ----------
+  // Un atleta puede no tener temporada (p. ej. Saioa) y aun así tener semanas en borrador,
+  // como las que deja el Planificador al aprobar su propuesta. Sin esto, «Ir a publicar»
+  // llevaba a «Todavía no hay temporada» sin forma de publicarlas.
+  function looseWeekPayload(week, status) {
+    return {
+      week_start: week.week_start, week_type: week.week_type || 'Carga controlada', title: week.title || '',
+      coach_comment: week.coach_comment || '', target_load: Number(week.target_load || 0), status,
+      mesocycle_id: week.mesocycle_id || null, end_date: P.addDays(week.week_start, 6),
+      microcycle_type: week.microcycle_type || null, primary_objective: week.primary_objective || '',
+      planned_hours: Number(week.planned_hours || 0), planned_distance_km: Number(week.planned_distance_km || 0),
+      planned_elevation_m: Number(week.planned_elevation_m || 0), planned_strength_sessions: Number(week.planned_strength_sessions || 0),
+      recovery_target: week.recovery_target || '', lifecycle_status: week.lifecycle_status || 'planned',
+      workouts: week.workouts || [],
+    };
+  }
+  async function loadLooseWeeks() {
+    const id = athleteId();
+    if (!id || (ui.loose && ui.loose.athlete === id)) return;
+    const today = localToday();
+    ui.loose = { athlete: id, loading: true, weeks: [] };
+    try {
+      const data = await apiCall(`${base()}/calendar?oldest=${P.addDays(today, -7)}&newest=${P.addDays(today, 42)}`);
+      if (ui.loose?.athlete !== id) return;
+      const weeks = (data.weeks || []).map(week => ({ ...week, week_start: String(week.week_start || '').slice(0, 10), workouts: Array.isArray(week.workouts) ? week.workouts : [] }))
+        .filter(week => week.week_start && week.status !== 'published' && week.workouts.length && P.addDays(week.week_start, 6) >= today)
+        .sort((a, b) => a.week_start.localeCompare(b.week_start));
+      ui.loose = { athlete: id, weeks };
+    } catch (error) { if (ui.loose?.athlete === id) ui.loose = { athlete: id, weeks: [], error: error.message }; }
+    render();
+  }
+  function renderLooseWeeks() {
+    const loose = ui.loose;
+    if (!loose || loose.athlete !== athleteId() || loose.loading || !loose.weeks.length) return '';
+    const weeks = loose.weeks.map(week => {
+      const minutes = week.workouts.filter(w => !isOptional(w)).reduce((sum, w) => sum + (Number(w.planned_duration_min) || 0), 0);
+      // Misma fila que en la temporada; «Editar» abre la sesión de esta semana suelta.
+      const rows = week.workouts.slice().sort((a, b) => String(a.workout_date).localeCompare(String(b.workout_date)))
+        .map(workout => workoutRow({ ...workout, workout_date: String(workout.workout_date).slice(0, 10) }, { published: true }).replace('data-sp-edit="', `data-sp-loose-edit="${esc(week.week_start)}|`)).join('');
+      return `<div class="sp-loose-week"><h3>${esc(dayName(week.week_start))} ${esc(fmt(week.week_start))} – ${esc(fmt(P.addDays(week.week_start, 6)))} <span class="sp-badge s-draft">Borrador</span></h3>
+        ${week.title ? `<p><b>${esc(week.title)}</b>${week.coach_comment ? ` · ${esc(week.coach_comment)}` : ''}</p>` : ''}
+        <ul class="sp-sessions">${rows}</ul>
+        <div class="sp-week-foot"><span class="sp-muted">${plural(week.workouts.length, 'sesión', 'sesiones')} · ≈ ${minutes} min</span>
+        <div class="sp-actions"><button class="btn primary" type="button" data-sp-loose-publish="${esc(week.week_start)}" ${ui.busy ? 'disabled' : ''}>Publicar semana</button></div></div></div>`;
+    }).join('');
+    return `<section class="sp-card sp-loose"><span class="sp-eyebrow">Semanas preparadas · sin temporada</span>
+      <p class="sp-muted">Este atleta no tiene temporada, pero tiene ${plural(loose.weeks.length, 'semana', 'semanas')} en borrador (por ejemplo, las que has aprobado del Planificador). Revísalas y publícalas aquí para que le lleguen a la app y a Intervals.</p>
+      ${ui.busy ? `<div class="sp-busy">${esc(ui.busy)}</div>` : ''}${weeks}</section>`;
+  }
+  async function publishLooseWeek(weekStart) {
+    const week = ui.loose?.weeks.find(item => item.week_start === weekStart);
+    if (!week) return;
+    if (window.RunFlowAvailability?.validateWorkout) {
+      for (const workout of week.workouts) {
+        const result = await window.RunFlowAvailability.validateWorkout(workout);
+        if (!result.ok) return notify(result.error, 'error');
+      }
+    }
+    if (!window.confirm(`¿Publicar ${plural(week.workouts.length, 'sesión', 'sesiones')} de la semana del ${fmt(week.week_start)}? Le llegarán al atleta en Intervals y en la app.`)) return;
+    ui.busy = 'Publicando…'; render();
+    try {
+      const response = await apiCall(`${base()}/week/publish`, { method: 'POST', body: JSON.stringify(looseWeekPayload(week, 'published')) });
+      ui.busy = ''; ui.loose = null;
+      await loadLooseWeeks();
+      const sync = response.intervals?.skipped ? ` ${response.intervals.reason || ''}` : ` ${response.intervals?.exported || 0} sesiones enviadas a Intervals.`;
+      notify(`Semana publicada.${sync}`, 'success');
+    } catch (error) { ui.busy = ''; render(); notify(error.message, 'error'); }
+  }
+  function editLooseWorkout(value) {
+    const [weekStart, workoutId] = String(value).split('|');
+    const week = ui.loose?.weeks.find(item => item.week_start === weekStart);
+    if (week) editWorkout({ start: weekStart, workouts: week.workouts }, workoutId);
   }
 
   // ---------- Pintado ----------
@@ -697,7 +771,7 @@
     if (!athleteId()) { root.innerHTML = '<div class="sp-card sp-empty"><h2>Selecciona un deportista</h2></div>'; return; }
     const model = seasonModel();
     const slot = '<div id="spAgentSlot"></div>'; // propuesta del agente Planificador (coach-running-guided-plan.js)
-    if (!model) { root.innerHTML = slot + renderEmpty() + legacyLink(); return; }
+    if (!model) { loadLooseWeeks(); root.innerHTML = slot + renderLooseWeeks() + renderEmpty() + legacyLink(); return; }
     let week = model.structure.weeks.find(item => item.start === ui.selected);
     if (!week) { week = defaultWeek(model); ui.selected = week.start; }
     if (adviceApplies(model, week) && !ui.advice[adviceKey(week)]) loadAdvice(model, week);
@@ -713,10 +787,12 @@
     return { model, week };
   }
   function onClick(event) {
-    const el = event.target.closest('[data-sp-act],[data-sp-week],[data-sp-edit],[data-sp-remove],[data-sp-state],[data-sp-light]');
+    const el = event.target.closest('[data-sp-act],[data-sp-week],[data-sp-edit],[data-sp-remove],[data-sp-state],[data-sp-light],[data-sp-loose-publish],[data-sp-loose-edit]');
     if (!el || !q('#spRoot')?.contains(el) && !el.matches('[data-sp-act="back"]')) return;
     if (el.dataset.spWeek !== undefined) { if (el.dataset.spWeek) { ui.selected = el.dataset.spWeek; render(); } return; }
     if (ui.busy) return;
+    if (el.dataset.spLoosePublish) return publishLooseWeek(el.dataset.spLoosePublish);
+    if (el.dataset.spLooseEdit) return editLooseWorkout(el.dataset.spLooseEdit);
     const { model, week } = currentContext();
     if (el.dataset.spState) return changeState(el.dataset.spState);
     if (el.dataset.spLight) return applyLight(el.dataset.spLight);
@@ -765,14 +841,15 @@
     const originalPersist = window.persistCalendarWeek;
     if (typeof originalPersist === 'function') window.persistCalendarWeek = async (...args) => {
       const result = await originalPersist(...args);
+      ui.loose = null;
       if (!ui.legacy && q('#planView')?.classList.contains('active')) await window.loadPlan?.(appState()?.selectedSeasonId || plan()?.season?.id || null);
       return result;
     };
-    window.addEventListener('runflow:v9-athlete-ready', () => { ui.selected = null; setTimeout(render, 60); });
+    window.addEventListener('runflow:v9-athlete-ready', () => { ui.selected = null; ui.loose = null; setTimeout(render, 60); });
     document.addEventListener('click', event => {
       const navigation = event.target.closest('[data-v8-view],[data-view]');
       const view = navigation?.dataset.v8View || navigation?.dataset.view;
-      if (view === 'plan') setTimeout(async () => { if (!plan() && athleteId()) { try { await window.loadPlan?.(appState()?.selectedSeasonId || null); } catch {} } render(); }, 120);
+      if (view === 'plan') setTimeout(async () => { ui.loose = null; if (!plan() && athleteId()) { try { await window.loadPlan?.(appState()?.selectedSeasonId || null); } catch {} } render(); }, 120);
     }, true);
     render();
     setTimeout(render, 400);
