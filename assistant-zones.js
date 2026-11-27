@@ -101,4 +101,14 @@ function buildZonesPatch(args) {
   return { patch, errors };
 }
 
-module.exports = { HISTORY_LABEL, buildZonesPatch, readable, paceSeconds, fmtPace };
+// Intervals exige un nombre por zona de pulso: si cambia el número de zonas, se mandan nombres nuevos.
+const HR_NAMES_5 = ['Z1 Recuperación', 'Z2 Aeróbico', 'Z3 Tempo', 'Z4 Umbral', 'Z5 Máximo'];
+function withZoneNames(patch, settings) {
+  if (!Array.isArray(patch.hr_zones)) return patch;
+  const current = Array.isArray(settings && settings.hr_zone_names) ? settings.hr_zone_names : [];
+  if (current.length === patch.hr_zones.length) return patch;
+  const n = patch.hr_zones.length;
+  return { ...patch, hr_zone_names: n === 5 ? HR_NAMES_5 : Array.from({ length: n }, (_, i) => `Z${i + 1}`) };
+}
+
+module.exports = { HISTORY_LABEL, buildZonesPatch, withZoneNames, readable, paceSeconds, fmtPace };
