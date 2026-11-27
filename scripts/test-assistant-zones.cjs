@@ -35,3 +35,10 @@ test('lectura sencilla de un perfil Run de Intervals',()=>{
   assert.equal(r.zonas_ritmo[0].hasta,'7:35');
   assert.equal(r.zonas_ritmo[4].hasta,'más rápido');
 });
+
+test('si cambia el número de zonas de pulso, manda nombres (Intervals los exige)',()=>{
+  const p=z.withZoneNames({hr_zones:[123,150,157,169,175]},{hr_zone_names:['a','b','c','d','e','f','g']});
+  assert.equal(p.hr_zone_names.length,5);
+  const same=z.withZoneNames({hr_zones:[1,2,3]},{hr_zone_names:['a','b','c']});
+  assert.equal('hr_zone_names' in same,false);
+});
